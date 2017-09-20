@@ -1,0 +1,610 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>XSSI攻击探究 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="XSSI,攻击,探究,同源策略,安全,策略,浏览器"/>
+    
+        <meta name="description" content="同源策略是由Netscape提出的一个著名的安全策略。现在所有支持JavaScript 的浏览器都会使用这个策略。所谓同源是指,域名,协议,端口相同。不同源的客户端脚本(javascript、ActionScript)在没明确授权的情况下,不能读写对方的资源。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>XSSI攻击探究</h2>
+                <div class="article-msg">
+                    <span class="time">2015-11-30 17:08:17</span>
+                    
+                                        <span class="read">阅读：12652次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_2418"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="2418" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://mp.weixin.qq.com/s?__biz=MzA4NTU5Mzk0Mw==&amp;mid=401868556&amp;idx=1&amp;sn=78bb3102416d4d66a52fe5c840bf7b6a&amp;scene=23&amp;srcid=1130RPklcvLAP3RurEdoqTdS#rd"
+                             target="_blank">来源： 黑暗行者</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2584632837" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2584632837" style="color:#848e99;">SecDarker</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 16px; color: rgb(0, 112, 192);"><strong><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">autho:黑暗行者</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(255, 0, 0);"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">同源策略</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">同源策略是由Netscape提出的一个著名的安全策略。现在所有支持JavaScript 的浏览器都会使用这个策略。所谓同源是指,域名,协议,端口相同。不同源的客户端脚本(javascript、ActionScript)在没明确授权的情况下,不能读写对方的资源。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t017d5a5e71f422c2c2.jpg" title="t017d5a5e71f422c2c2.jpg" alt="http://p2.qhimg.com/t017d5a5e71f422c2c2.jpg"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">JavaScript的同源策略<span style="font-size: 18px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px; text-indent: 2em;">JavaScript的同源策略有两点值得注意:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">1、包含第三方的脚本是必要的(比如广告、jQuery 等)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">2、同源策略对继承自源网站的包含脚本代码有所放松</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">Json hijacking:又被称为JavaScript劫持(如下图所示)</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01c654da3f128b3b19.jpg" title="t01c654da3f128b3b19.jpg" alt="http://p1.qhimg.com/t01c654da3f128b3b19.jpg"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">那么我们还能不能找到其他方式可以使得网站的个人数据被泄露?</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">思路如下:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">1、是否有动态的JavaScript文件?</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">2、如果有,这些文件中是否包含用户数据?</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">3、这些数据可能会以类似的方式被泄露吗?</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">首先检测是否有动态的JavaScript文件</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px; text-indent: 2em;">然后我们做了个实际的探究,尝试在150个热门网站中注册测试账户,使用个人化的数据来对该账户数据进行填充,用我们的浏览器扩展来与该网站进行彻底的互动以获取这些脚本,最后手动研究这些动态脚本。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">对150个网站的JavaScript文件进行了检测——是否有包含用户数据?</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">以下是检测结果:</span></p><table width="670"><tbody style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important;"><tr style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important; height: 44px;" class="firstRow"><td width="238" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"></td><td width="330" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-left-style: none; border-top-color: windowtext; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">域名数量</span></p></td></tr><tr style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important; height: 49px;"><td width="238" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-right-color: windowtext; border-bottom-color: windowtext; border-left-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">域名总量</span></p></td><td width="330" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">150</span></p></td></tr><tr style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important; height: 47px;"><td width="238" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-right-color: windowtext; border-bottom-color: windowtext; border-left-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">基于cookies的动态脚本</span></p></td><td width="330" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">49</span></p></td></tr><tr style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important; height: 47px;"><td width="238" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-right-color: windowtext; border-bottom-color: windowtext; border-left-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">包含唯一标识符</span></p></td><td width="330" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">34</span></p></td></tr><tr style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important; height: 47px;"><td width="238" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-right-color: windowtext; border-bottom-color: windowtext; border-left-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">包含其他个人资料</span></p></td><td width="330" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">15</span></p></td></tr><tr style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important; height: 49px;"><td width="238" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-right-color: windowtext; border-bottom-color: windowtext; border-left-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">包含CSRF或身份验证token</span></p></td><td width="330" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">7</span></p></td></tr></tbody></table><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">XSSI(跨站脚本包含)</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px; text-indent: 2em;">Cross Site Script Inclusion (XSSI) 跨站脚本包含是一种允许攻击者通过恶意JS绕过边界窃取信息的攻击技术。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">攻击者会将可泄露用户信息的JavaScript文件包含进来:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">(1)JavaScript中泄露的用户数据存储在全局变量中</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">动态JS</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t013a20f1ded9c3425e.png" title="t013a20f1ded9c3425e.png" alt="http://p8.qhimg.com/t013a20f1ded9c3425e.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">攻击者的JS</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t010e821010bef11323.png" title="t010e821010bef11323.png" alt="http://p5.qhimg.com/t010e821010bef11323.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">Javascript有两种变量:局部变量和全局变量。局部变量是指只能在本变量声明的函数内部调用的变量,而全局变量则是在整个代码中都可以调用的变量。(延伸阅读:http://www.jb51.net/article/61442.htm)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">(2)JavaScript中泄露的数据来自全局函数</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">动态JS</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t0160f83720bb36dfc2.png" title="t0160f83720bb36dfc2.png" alt="http://p0.qhimg.com/t0160f83720bb36dfc2.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">攻击者的JS</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t0109c9d3c0b99862ed.png" title="t0109c9d3c0b99862ed.png" alt="http://p9.qhimg.com/t0109c9d3c0b99862ed.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">对150个网站中的存在泄露信息风险的JS文件是否可以被利用进行了统计,结果如下:</span></p><table width="670"><tbody style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important;"><tr style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important; height: 44px;" class="firstRow"><td width="151" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"></td><td width="209" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-left-style: none; border-top-color: windowtext; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">域名数量</span></p></td><td width="208" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-left-style: none; border-top-color: windowtext; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">可利用的</span></p></td></tr><tr style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important; height: 49px;"><td width="151" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-right-color: windowtext; border-bottom-color: windowtext; border-left-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">基于cookies的动态脚本</span></p></td><td width="209" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">49</span></p></td><td width="208" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">40</span></p></td></tr><tr style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important; height: 47px;"><td width="151" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-right-color: windowtext; border-bottom-color: windowtext; border-left-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">包含唯一标识符</span></p></td><td width="209" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">34</span></p></td><td width="208" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">28</span></p></td></tr><tr style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important; height: 47px;"><td width="151" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-right-color: windowtext; border-bottom-color: windowtext; border-left-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">包含其他个人资料</span></p></td><td width="209" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">15</span></p></td><td width="208" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">11</span></p></td></tr><tr style="margin: 0px; padding: 0px; max-width: 100%; box-sizing: border-box !important; word-wrap: break-word !important; height: 46px;"><td width="151" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-right-color: windowtext; border-bottom-color: windowtext; border-left-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">包含CSRF或身份验证token</span></p></td><td width="209" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">7</span></p></td><td width="208" valign="top" style="margin: 0px; padding: 0px 7px; word-break: break-all; border-top-style: none; border-left-style: none; border-right-color: windowtext; border-bottom-color: windowtext; max-width: 100%; word-wrap: break-word !important; box-sizing: border-box !important;"><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">4</span></p></td></tr></tbody></table><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">实例探究-案例学习</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px; text-indent: 2em;">1、全局变量导致数据泄露</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">当泄露的数据存储在脚本的全局变量中时,攻击者只要包含了该脚本,就能将该变量添加到当前环境中,攻击者就可以轻松的通过访问该全局变量读取数据。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">先看产生数据泄露的脚本文件leak1.js</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01ba51444789697be7.png" title="t01ba51444789697be7.png" alt="http://p1.qhimg.com/t01ba51444789697be7.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">这里包含有一个全局变量secret</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">(延伸阅读 Javascript 自执行函数 http://blog.csdn.net/limlimlim/article/details/9198111)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">再看攻击者</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t0170e5ccdf1271b6c1.png" title="t0170e5ccdf1271b6c1.png" alt="http://p7.qhimg.com/t0170e5ccdf1271b6c1.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">先引入该leak1.js</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">然后secret这个变量就进入了本地的环境中</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">最后再通过window.secret来取得这个变量的值</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t019cd08bd6814cec83.png" title="t019cd08bd6814cec83.png" alt="http://p8.qhimg.com/t019cd08bd6814cec83.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">2、全局功能参数导致数据泄露(1)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">许多网站都会将其功能函数分割以写入到不同脚本文件中。常用的功能函数通常会集中在一个基本库中,而实际的业务逻辑函数则被包含在另一个单独的文件中。通常情况下,包含业务逻辑的脚本会调用全局范围内已经注册的那些基本功能函数。攻击者在包含这些脚本的同时,通过重写脚本中的全局函数来实现对泄露数据的操控。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">先看产生数据泄露的脚本文件lack2.js</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01aec14dfe0a1ef9c0.png" title="t01aec14dfe0a1ef9c0.png" alt="http://p4.qhimg.com/t01aec14dfe0a1ef9c0.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">这里有个globalFunction函数会传入secret参数,通过改写该函数来实现获取变量的值</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">看攻击者</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01be6507118127a287.png" title="t01be6507118127a287.png" alt="http://p8.qhimg.com/t01be6507118127a287.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">先重写该globalFunction函数,用来输出该变量的值</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">然后再引入这个产生数据泄露的脚本文件</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">最后这个globalFunction函数被执行,输出数据</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01595ddd19b0a69daa.png" title="t01595ddd19b0a69daa.png" alt="http://p8.qhimg.com/t01595ddd19b0a69daa.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">3、全局函数的参数导致数据泄露(2)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">同上一个例子类似,漏洞代码调用了一个全局函数然后传递了一些数据给它。然而这次传递给函数的数据是一个包含了我们想要的数据的回调函数,攻击者可以通过使用 toString 方法来获得回调函数中的这些数据。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">(延伸阅读:toString() &nbsp;http://www.nowamagic.net/librarys/veda/detail/1743)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">先看产生数据泄露的脚本文件lack3.js</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01dc4549a4dc2e7131.png" title="t01dc4549a4dc2e7131.png" alt="http://p4.qhimg.com/t01dc4549a4dc2e7131.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">我们要的数据在callback()函数中</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">这里的globalFunction函数将callback作为了参数,如果我们能够重写该globalFunction函数,然后调用toString()方法,就能得到callback()函数中的secret值</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">看攻击者</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t016fdb886eb780f388.png" title="t016fdb886eb780f388.png" alt="http://p0.qhimg.com/t016fdb886eb780f388.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">先重写globalFunction函数,参数为callback,然后调用toString()方法把callback函数转换为字符类型。(如下举例)</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t016fa4debe88de7d6f.png" title="t016fa4debe88de7d6f.png" alt="http://p2.qhimg.com/t016fa4debe88de7d6f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">然后再通过正则读取该secret值</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">最后引入这个产生数据泄露的脚本文件</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01d9d71c5985ff9c6c.png" title="t01d9d71c5985ff9c6c.png" alt="http://p1.qhimg.com/t01d9d71c5985ff9c6c.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">4、原型链导致数据泄露(1)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">利用JavaScript基于原型的继承,对象可以通过指向继承的对象来形成所谓的原型链。比如,一个array实例的原型属性指向全局对象Array.prototype,即再一次指向了Object.prototype。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">当一个对象做一个属性查询时,JavaScript引擎会检查该对象是否具有所谓的自定义属性。如果对象本身不包含所请求的属性,JavaScript引擎就会向上一级父节点查询相同的属性。当一个对象具有所要求的属性时,相应的值将被返回,不再向上一级父节点查询。如果这一属性通过向上一级父节点递归查询后还是没有找到,则该引擎将返回属性未定义。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">相对于静态范围内的标准变量,这里的关键其实是动态范围。从本质上来讲,这其实意味着如果一个函数被一个对象调用了,那么其实只是意味着其被对象原型中的某一个调用,而不一定是该对象。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">此行为可以使得数据虽然无法直接访问,但却可以被一个函数调用。例如我们可以重写Array.prototype.forEach和attacker-controlled函数,如果包含敏感数据的某些代码被forEach函数调用了,attacker-controlled函数将会被包含敏感数据的对象原型中的某一个对象所调用。(这里翻译出来可能会比较晦涩,建议看原文)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">(延伸阅读:</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px; text-indent: 2em;">JavaScript prototype &nbsp; <a href="http://www.cnblogs.com/dolphinX/p/3286177.html" target="_blank">http://www.cnblogs.com/dolphinX/p/3286177.html</a></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">javascript必知必会之prototype <a href="http://www.cnblogs.com/mindsbook/archive/2009/09/19/javascriptYouMustKnowPrototype.html" target="_blank">http://www.cnblogs.com/mindsbook/archive/2009/09/19/javascriptYouMustKnowPrototype.html</a></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">实在有些晦涩难懂,直接看例子好了:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">先看产生数据泄露的脚本文件leak4.js</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t012a654a89ad6162eb.png" title="t012a654a89ad6162eb.png" alt="http://p0.qhimg.com/t012a654a89ad6162eb.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">secret为一个包含数据的数组,然后调用了浏览器的forEach遍历函数</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">再看攻击者</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t0168200c03dd2d4ecb.png" title="t0168200c03dd2d4ecb.png" alt="http://p6.qhimg.com/t0168200c03dd2d4ecb.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">因为secret为数组,所以我们直接通过prototype属性将数组的forEach函数进行重写来对数据进行操纵</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">最后再引入泄露数据的脚本文件</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t010a857b160d67be6e.png" title="t010a857b160d67be6e.png" alt="http://p6.qhimg.com/t010a857b160d67be6e.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">这个思路的重点在于对prototype的认识以及对他的利用!</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">5、原型链导致数据泄露(2)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">和上一个例子一样,但是使用了一个函数和toString方法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">先看产生数据泄露的脚本文件leak5.js</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t0174c3e5f17e94fb55.png" title="t0174c3e5f17e94fb55.png" alt="http://p3.qhimg.com/t0174c3e5f17e94fb55.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">再看攻击者</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t0120d79b636aa7072e.png" title="t0120d79b636aa7072e.png" alt="http://p3.qhimg.com/t0120d79b636aa7072e.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">通过prototype将所有Functiorn的call方法重写,然后再调用.toString()方法将函数转换为字符串类型再读取内容,最后再引入产生数据泄露的脚本文件执行。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t0152c48219963ab165.png" title="t0152c48219963ab165.png" alt="http://p1.qhimg.com/t0152c48219963ab165.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">6、全局函数调用导致数据泄露</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">如果一个函数在被调用时,能够通过调用者的属性来引用该调用函数。比如一个被命名为&quot;aFunction&quot;的函数,如果通过aFunction.caller.就可以得到调用者的引用。而在函数被引用时,我们可以利用toString方法去返回函数的源代码。如果调用的函数包含任何硬编码的敏感数据,攻击者可以通过解析字符串表示来轻松地访问数据。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">同3有点类似</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">总结</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px; text-indent: 2em;">那么如何防止XSSI漏洞?</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">1、这种攻击方式并不是基于浏览器的,所以不能用基于浏览器的方式来进行防护。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">2、防止第三方包含脚本文件</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">解决方法:严格的调用审查以及使用token等标识</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">3、从敏感数据中分离出JavaScript 代码</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">创建静态JS文件并在运行时动态的加载数据</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">数据服务可通过SOP被保护</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">需要强调的几点:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">1、动态生成JS是非常广泛的做法,许多动态JS文件包含用户 的session 信息,这些脚本文件中包含的数据可被访问。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">2、在150个热门网站中有三分之一使用了动态脚本,80%的容易受到 XSSI攻击,通过其可以完全入侵账户获得个人隐私。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">3、最后还有一点需要强调,XSSI与内容安全策略(CSP)存在矛盾。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">CSP是一个用于防止跨站脚本(XSS)的机制, 其通过白名单的形式来加载信任的JavaScript ,并且要求所有内嵌脚本独立到外部文件中。而动态的内嵌脚本本身是不容易被XSSI的,但外部化之后就会很容易出现XSSI漏洞,因此不要盲目的将脚本独立到外部文件,否则将使得这一问题变得更加糟糕。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文转载自 黑暗行者<br/><a class="text-more" href="http://mp.weixin.qq.com/s?__biz=MzA4NTU5Mzk0Mw==&amp;mid=401868556&amp;idx=1&amp;sn=78bb3102416d4d66a52fe5c840bf7b6a&amp;scene=23&amp;srcid=1130RPklcvLAP3RurEdoqTdS#rd" target="_blank">原文链接：http://mp.weixin.qq.com/s?__biz=MzA4NTU5Mzk0Mw==&amp;mid=401868556&amp;idx=1&amp;sn=78bb3102416d4d66a52fe5c840bf7b6a&amp;scene=23&amp;srcid=1130RPklcvLAP3RurEdoqTdS#rd</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="XSSI攻击探究 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="2418" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="64d932c9bb50dc5a83db601d9b02e735">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2569238341" class="response" data-bind-id="2569238341" data-target="1624" user-name="城管" href="javascript:;">
+                城管            </a>
+                        <span class="comment-time">2015-11-30 22:14:00</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2569238341" data-target="1624">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_1624" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">The best </p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2569238341" class="response" data-bind-id="2569238341" data-target="1623" user-name="360U2569238341" href="javascript:;">
+                360U2569238341            </a>
+                        <span class="comment-time">2015-11-30 22:13:44</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2569238341" data-target="1623">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_1623" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">Test</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2569238341" class="response" data-bind-id="2569238341" data-target="1622" user-name="360U2569238341" href="javascript:;">
+                360U2569238341            </a>
+                        <span class="comment-time">2015-11-30 22:13:29</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2569238341" data-target="1622">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_1622" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">Test </p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="2418" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+                                <li><a href="/learning/detail/4424.html" alt="【知识】9月16日 - 每日安全知识热点" target="_blank">【知识】9月16日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

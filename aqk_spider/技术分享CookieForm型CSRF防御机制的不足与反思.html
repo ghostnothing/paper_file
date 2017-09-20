@@ -1,0 +1,682 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】Cookie-Form型CSRF防御机制的不足与反思 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Cookie-Form,CSRF,防御机制,Web安全,漏洞,Session,CSRF漏洞,防御漏洞"/>
+    
+        <meta name="description" content="我曾经分享过知乎的一个漏洞《知乎某处XSS+刷粉超详细漏洞技术分析》，很经典的一个案例。攻击者获得了一个”看似十分鸡肋“的XSS漏洞（domain是子域名，而且关键cookie都有httponly），无法做一些正常XSS漏洞可以做的攻击，但却可以写入Cookie。
+"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】Cookie-Form型CSRF防御机制的不足与反思</h2>
+                <div class="article-msg">
+                    <span class="time">2016-09-28 13:12:04</span>
+                    
+                                        <span class="read">阅读：28310次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3069"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3069" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=725715450" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t018dbae4f8676012e4.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=725715450" style="color:#848e99;">ph17h0n</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align:center"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p5.qhimg.com/t016694f7b951bfd2ca.jpg" title="t0197733ff384427fc2.jpg" alt="http://p8.qhimg.com/t0197733ff384427fc2.jpg"/></span></strong></span></p><p><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></strong></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; white-space: normal; background-color: rgb(255, 255, 255); text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><span style="font-weight: 900;"><span style="color: rgb(79, 129, 189); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">作者：</span></span></span><a href="http://bobao.360.cn/member/contribute?uid=725715450" target="_blank"><span style="color: rgb(0, 112, 192);"><span style="font-weight: 900;"><span style="color: rgb(79, 129, 189); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; line-height: 25px;">ph17h0n</span></span></span></a></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; white-space: normal; background-color: rgb(255, 255, 255); text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><span style="font-weight: 900;"><span style="color: rgb(79, 129, 189); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">稿费：500RMB（不服你也来投稿啊！）</span></span></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; white-space: normal; background-color: rgb(255, 255, 255); text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><span style="font-weight: 900;"><span style="color: rgb(79, 129, 189); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></span></span></p><p><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x01 借助Session防御CSRF漏洞</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">我最早接触Web安全的时候（大概大一暑假），写过一个站点。当时边看道哥的《白帽子讲Web安全》，边在写站点的过程中熟悉每种漏洞，并编写尽量安全的代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">初识CSRF漏洞的我使用了一种中规中矩的方法来防御CSRF漏洞：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">1、后端生成随机字符串Token，储存在SESSION中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2、每当有表单时，从SESSION中取出Token，写入一个隐藏框中，放在表单最底部。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">3、接受POST数据时，先验证$_POST[&#39;token&#39;] === $_SESSION[&#39;token&#39;]，再执行其他逻辑。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这是一个很标准的CSRF防御方法，也很难找出其破绽。<span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(255, 0, 0);"><strong>但这个方法有个致命的弱点：Session。</strong></span></span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">原因：</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">1、所有用户，不论是否会提交表单，不论是否会用到这些功能，都将生成一个Session，这将是很大的资源浪费。举个例子，Sec-News的Session储存在redis里，每天会生成数千到数万的Session，自动化脚本每天夜里会遍历并清理没有使用的Session，以避免过度消耗资源。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2、除了PHP的很多开发语言中，Session是可选项，很多网站根本没有Server Session。开发框架不能强迫开发者使用Session，所以在设计防御机制的时候也不会使用Session。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">所以，像Django之类的Python框架，会选择基于Cookie的CSRF防御方式。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x02 Cookie-Form型CSRF防御机制</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">顾名思义，Cookie-Form型CSRF防御机制，是和Cookie和Form有关。它确切的名字我还不太清楚，暂且这样称之。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Sec-News曾经分享过一篇文章 《</span><a href="http://wiki.ioin.in/url/ojY" style="text-decoration: underline; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">前后端分离架构下的CSRF防御机制</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">》，当时 @neargle 就提出过疑问。</span></p><p style="text-align: center;"><img src="http://p9.qhimg.com/t0172bafa6c5ba9af62.jpg" alt="" style="vertical-align: middle; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">其实借助Cookie来防御CSRF的方法是一个通用的防御方法，单纯应对CSRF漏洞是绝对可行的。该文章的解决方案是，后端生成一个token和一个散列，均储存于Cookie中，在提交表单时将token附带在表单中提交给后端，后端即可根据表单中的token和cookie中的散列来验证是否存在CSRF攻击。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">实际上散列这一步是没有必要的，后端只需要生成好一个随机token储存于Cookie中，前端提交表单时提交该Cookie基本就万无一失了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我第一次接触这种防御方法是在学习CodeIgniter的过程中（这里提一下，CI框架默认的CSRF防御方法就是本文说的这个方法），当时认为这种防御方法很不可理喻。因为Cookie是可以控制的，如果攻击者将Cookie控制地和Form中相同，不就可以绕过这个防御了么？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">但是细想来，立马打脸了：攻击者如何修改受害者的Cookie？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">既然是CSRF漏洞，也就不能控制目标域的脚本，当然就无法获取Cookie（如果能获取Cookie就不叫CSRF漏洞了）。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">总结一下，基于Cookie的CSRF防御方法，较基于Session的方法有如下优点：</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">1、无需使用Session，适用面更广，适合“Secure By Default“原则。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2、Token储存于客户端中，不会给服务器带来压力。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">3、没有其他漏洞的情况下，黑客无法接触Cookie，所以保证了Token的机密性，也就可以防御CSRF漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 0, 0); font-size: 18px;"><strong><span style="color: rgb(0, 0, 0); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x03 破解Cookie-Form型CSRF防御</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">那么，基于Cookie的CSRF防御机制，有什么弊端？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">弊端也很明显，即<span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(255, 0, 0);"><strong>一旦有其他漏洞（即使是看起来很鸡肋的漏洞）的存在，很容易就能破坏这种防御手法。</strong></span></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我曾经分享过知乎的一个漏洞《</span><a href="https://www.leavesongs.com/HTML/zhihu-xss-worm.html" style="text-decoration: underline; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">知乎某处XSS+刷粉超详细漏洞技术分析</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">》，很经典的一个案例。攻击者获得了一个”看似十分鸡肋“的XSS漏洞（domain是子域名，而且关键cookie都有httponly），无法做一些正常XSS漏洞可以做的攻击，但却可以写入Cookie。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">攻击者通过写入一个新的&quot;CSRF_TOKEN&quot;，将原有的无法获取的Token覆盖掉，就成功绕过了0x02中描述的防御手法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这种绕过方法的核心就是：利用其它漏洞写入Cookie，覆盖原有Cookie，来达到Form[token]===Cookie[token]的目的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">那么，寻找此类绕过漏洞的核心就是寻找注入新Cookie的方法，看过一些案例，我归纳出来几种：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">1、某些单纯而不做作的前端编写的页面可以写入Cookie</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2、鸡肋XSS漏洞</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">3、利用CRLF漏洞注入Cookie</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">4、利用畸形字符使后端解析Cookie出错，注入Cookie</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第一种，很久以前我在QQ空间的不止一处看到过，某些页面从location.search中获取参数并设置为Cookie。但找这种地方比较难，没有什么特别的方法，可遇而不可求。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第二种，就看知乎那个案例吧。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第三种，@/fd 曾用一个Twitter的overflow漏洞演示了Cookie的注入：《</span><a href="http://blog.innerht.ml/page/7/" style="text-decoration: underline; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Overflow Trilogy</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">》。这个漏洞原本是可以用来绕过Twitter的CSRF检测的，不过后来Twitter把CSRF防御方式从0x02换成0x01了，有点可惜：</span></p><p style="text-align: center;"><img src="http://p6.qhimg.com/t014da4bd57f01ce8f6.jpg" alt="" style="vertical-align: middle; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent;"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><span style="text-indent: 32px;"></span><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第四种，就是利用Google Analytics来绕过Django的CSRF防御方式。这个方法其实作者早在&nbsp;</span><a href="https://hackerone.com/reports/14883" style="text-indent: 2em; white-space: normal; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2015年</a><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;就已经提出来了（当时是作为Twitter的一个漏洞提交的）。</span></span><br/></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x04 Web Server解析Cookie的特性</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">Google Analytics会将网站的path写入Cookie中，而没有进行编码，导致攻击者可以输入一些“特殊”的字符。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当时使用的是逗号“,”，有些Web Server在解析Cookie时，逗号也会成为分隔符。这样就导致了Cookie: param1=1111,param2=2222;这样的Cookie被解析成Cookie[param1]=1111和Cookie[param2]=2222，成功注入了一个新Cookie，Param2 。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这次Django的Cookie注入也类似。其实原因来自于Python原生的cookielib库，在分割Cookie头的时候，将“]”也作为了分隔符，导致Cookie: param1=value1]param2=value2被解析成Cookie[param1]=value1和Cookie[param2]=value2，成功注入了一个新Cookie，Param2。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">关于畸形Cookie注入的一些姿势，可以看看 </span><a href="https://habrahabr.ru/post/272187/" style="text-decoration: underline; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">https://habrahabr.ru/post/272187/</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"> 。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">成功注入Cookie后，后续“CSRF攻击”流程就和0x03中讲的一样了，不再赘述。思路很不错，所以写文章说说，和大家分享一下自己的一些看法。</span></p><hr/><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t015ac5b7397a500c34.jpg" title="t015ac5b7397a500c34.jpg" alt="http://p3.qhimg.com/t015ac5b7397a500c34.jpg"/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3069.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】Cookie-Form型CSRF防御机制的不足与反思 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3069" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/5x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="4326" user-name="kazaff" href="javascript:;">
+                kazaff            </a>
+                        <span class="comment-time">2016-09-30 16:47:06</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4326">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4326" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">cookie存token的话，默认访问目标网址，cookie是会被携带上去的吧。</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="4324" user-name="wilee" href="javascript:;">
+                wilee            </a>
+                        <span class="comment-time">2016-09-30 11:12:06</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4324">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4324" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">我是《前后端分离架构下的CSRF防御机制》 一文作者，这篇文章更深刻一些，学习！</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/6x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="4313" user-name="lalala" href="javascript:;">
+                lalala            </a>
+                        <span class="comment-time">2016-09-28 22:45:51</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4313">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4313" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">可以</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="4308">战五渣</a> <span class="comment-time">2016-09-28 13:40:27</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4308">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4308" data-type="comment">点赞</a></span>            </div>
+            <p>应该是 p牛的读后感吧，可以先看看 【CVE-2016-7401-Django CSRF防御绕过漏洞分析】这篇</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="4309" user-name="小牛" href="javascript:;">
+                小牛            </a>
+                        <span class="comment-time">2016-09-28 14:01:17</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4309">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4309" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">有收获，好文章！</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="4308">战五渣</a> <span class="comment-time">2016-09-28 13:40:27</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4308">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4308" data-type="comment">点赞</a></span>            </div>
+            <p>应该是 p牛的读后感吧，可以先看看 【CVE-2016-7401-Django CSRF防御绕过漏洞分析】这篇</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/4x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="4308" user-name="战五渣" href="javascript:;">
+                战五渣            </a>
+                        <span class="comment-time">2016-09-28 13:40:27</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4308">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4308" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">应该是 p牛的读后感吧，可以先看看 【CVE-2016-7401-Django CSRF防御绕过漏洞分析】这篇</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3069" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

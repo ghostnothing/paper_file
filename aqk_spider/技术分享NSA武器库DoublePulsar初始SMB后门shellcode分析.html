@@ -1,0 +1,556 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】NSA武器库：DoublePulsar初始SMB后门shellcode分析 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Shadow Brokers,影子经纪人,DoublePulsar"/>
+    
+        <meta name="description" content="一个月前，Shadow Brokers泄露了方程式组织的一个类似于Metasploit的利用框架：FuzzBunch。其中DoublePulsar是FuzzBunch中SMB和RDP漏洞利用使用的主要的payload。本篇文章为对shellcode的详细分析。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】NSA武器库：DoublePulsar初始SMB后门shellcode分析</h2>
+                <div class="article-msg">
+                    <span class="time">2017-05-17 15:42:40</span>
+                    
+                                        <span class="read">阅读：19450次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3867"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3867" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://zerosum0x0.blogspot.com/2017/04/doublepulsar-initial-smb-backdoor-ring.html"
+                             target="_blank">来源： zerosum0x0.blogspot.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2775084127" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2775084127" style="color:#848e99;">myswsun</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p3.qhimg.com/t0128bd21dd9f123fbf.png" alt="http://p7.qhimg.com/t0140d3569451a770ee.png"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2775084127" target="_blank" textvalue="myswsun"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>myswsun</strong></span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; word-break: break-all; text-indent: 2em; background-color: rgb(255, 255, 255);"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">预估稿费：190RMB</span></strong></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>传送门</strong></span></p><hr style="white-space: normal;"/><p style="white-space: normal; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3747.html" target="_self" textvalue="【漏洞分析】NSA Eternalromance （永恒浪漫） 漏洞分析"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>【漏洞分析】NSA Eternalromance （永恒浪漫） 漏洞分析</strong></span></a></p><p style="white-space: normal; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3738.html" target="_self" textvalue="【漏洞分析】MS 17-010：NSA Eternalblue SMB 漏洞分析"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>【漏洞分析】MS 17-010：NSA Eternalblue SMB 漏洞分析</strong></span></a></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x00 前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">大约在一个月前，Shadow Brokers（影子经纪人）泄露了方程式组织（为NSA效力的黑客组织）的软件FuzzBunch，一个类似于Metasploit的利用框架。这个框架中有几个针对Windows的未认证的远程利用（如EternalBlue, EternalRomance和 EternalSynergy）。很多利用的漏洞在MS17-010中被修复了，它可能是近十年来最关键的Windows补丁。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">提示：你能使用我的<a href="https://zerosum0x0.blogspot.com/2017/04/ms17-010-smb-rce-metasploit-scanner.html" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>MS17-010 Metasploit auxiliary module</strong></span></a>来扫描你网络中没有打补丁的系统。如果没有安装补丁，还会检查是否感染DoublePulsar。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x01 介绍</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">DoublePulsar是FuzzBunch中SMB和RDP利用中使用的主要的payload。下面分析是在Windows Server 2008 R2 SP1 x64上使用EternalBlue SMBv1/SMBv2 exploit完成的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Shellcode基本上执行了下面几个步骤：</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">步骤0：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">判断x86还是x64。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">步骤1：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"> 从<a href="https://en.wikipedia.org/wiki/Processor_Control_Region" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>KPCR</strong></span></a>中定位<a href="http://wiki.osdev.org/Interrupt_Descriptor_Table" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>IDT</strong></span></a>，从第一个中断处理反向遍历找到ntoskrnl.exe的基址（DOS MZ头）。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">步骤2：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">读取ntoskrnl.exe的导出目录，并使用哈希（和应用层shellcode类似）来找到ExAllocatePool/ExFreePool/ZwQuerySystemInformation函数地址。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">步骤3：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用枚举值SystemQueryModuleInformation调用ZwQuerySystemInformation，得到一个加载驱动的列表。通过这个定位到Srv.sys，一个SMB驱动。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">步骤4：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将位于SrvTransaction2DispatchTable[14]的SrvTransactionNotImplemented()函数指针指向自己的hook函数。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">步骤5：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用辅助的DoublePulsar payload（如注入dll），hook函数检查是否正确运行并分配一个可执行的缓冲区来运行原始的shellcode。所有的其他请求直接转发给原始的SrvTransactionNotImplemented()函数。&quot;Burning&quot; DoublePulsar不会完全擦除内存中hook函数，只是休眠它。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在利用后，你能看到缺少SrvTransaction2DispatchTable符号。在这里应该有两个处理程序与SrvTransactionNotImplemented符号。这是DoublePulsar后门（数组索引14）：</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t0150a150756f9bad80.png" title="t0156b5e36a2e8fe6eb.png" alt="http://p9.qhimg.com/t0156b5e36a2e8fe6eb.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我真的很好奇这个payload，在Countercept的</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9); text-decoration: none;"><a href="https://countercept.com/our-thinking/analyzing-the-doublepulsar-kernel-dll-injection-technique/" target="_self">DLL注入代码</a></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">分析之外没有看到很多它的细节。但是我很好奇初始SMB后门是如何安装的，这也是本文的内容。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用IA32_LSTAR系统调用MSR（0xc000082）和包含FEFE的Srv.sys的区域的EternalBlue利用中有一些有趣的设置，但是我将专注于原始的DoublePulsar的方法…很像EXTRABACON shellcode，这个非常狡猾并不只是产生一个shell。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x02 shellcode详细分析</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在shadow brokers的转储中你能找到DoublePulsar.exe和EternalBlue.exe。当你使用FuzzBunch中的DoublePulsar，有个选项是将它的shellcode输出到一个文件中。我们还发现EternalBlue.exe包含了它自己的payload。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">步骤0：判断CPU架构</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">主payload非常大，因为它包含x86和x64的shellcode。前面一些字节使用操作码技巧来决定正确的架构（参考我之前的文章<a href="https://zerosum0x0.blogspot.com/2014/12/detect-x86-or-x64-assembly-stub.html" target="_self" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>汇编架构检测</strong></span></a>）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面是x86头几个字节。</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01e8623c43784f06ee.png" title="t014b5a90146696eaa9.png" alt="http://p8.qhimg.com/t014b5a90146696eaa9.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你该注意到inc eax意思是je指令不执行。接着是一个call和pop，获取正确的指令指针。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面是x64的：</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t012daaaaba669f8a80.png" title="t01469a95b715625800.png" alt="http://p4.qhimg.com/t01469a95b715625800.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其中inc eax由rex替换。因此zf标志寄存器由xor eax,eax操作设置。因为x64有RIP相对寻址，不需要获取RIP寄存器。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">X86的payload和x64的基本一样，所以这里只关注x64。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于NOP在x64中一个真正的NOP，我使用16进制编辑器用CC CC（int 3）覆写40 90。中断3是调试器的软件断点。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01e2b7fcc10e53d1ea.png" title="t010a1d09443b8dc510.png" alt="http://p9.qhimg.com/t010a1d09443b8dc510.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在执行利用，我们附加的内核调试器将自动断点在shellcode开始执行处。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">步骤1：找到ntoskrnl.exe的基址</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一旦shellcode判断是在x64上面运行，它将开始搜索ntoskrnl.exe的基地址。代码片段如下：</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01cc01b2dc8009e224.png" title="t01197a0adc36415017.png" alt="http://p1.qhimg.com/t01197a0adc36415017.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">相当简单的代码。在用户模式下，x64的GS段包含<a href="https://en.wikipedia.org/wiki/Win32_Thread_Information_Block" target="_self"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>线程信息块</strong></span>（</a>TIB）,其保存了<a href="http://blog.rewolf.pl/blog/?p=573" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>进程环境块</strong></span></a>（PEB），该结构包含了当前运行进程的各种信息。在内核模式中，这个段寄存器包含<a href="https://en.wikipedia.org/wiki/Processor_Control_Region" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>内核进程控制区</strong></span></a>（KPCR），其中偏移0处包含当前进程的PEB。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">该代码获取KPCR的偏移0x38处，是IdtBase并包含一个<a href="http://doar-e.github.io/blog/2013/10/12/having-a-look-at-the-windows-userkernel-exceptions-dispatcher/" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>KIDTENTRY64</strong></span></a>结构的指针。在x86中很熟悉，能知道这是<a href="http://wiki.osdev.org/Interrupt_Descriptor_Table" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>中断描述符表</strong></span></a>。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在KIDTENTRY64的偏移4，你能得到中断处理的函数指针，其代码定义在ntoskrnl.exe中。从那里按页大小（0x1000）增长反向搜索内存中.exe的DOS MZ头（cmp bx,0x5a4d）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">步骤2：定位必要的函数指针</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一旦你知道了PE文件的MZ头的位置，你能定位到<a href="https://win32assembly.programminghorizon.com/pe-tut7.html" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>导出目录</strong></span></a>，并得到你想要的函数的相对虚拟地址。用户层的shellcode一直能做到这个，通常是找到ntdll.dll和kernel32.dll的一些必要的函数。只需要和用户层shellcode一样，ring0 shellcode也使用哈希算法代替硬编码字符串，以便找到必要的函数。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面是要找的函数：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="text-indent: 2em;"><a href="http://ZwQuerySystemInformation ExAllocatePool ExFreePool" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ZwQuerySystemInformation</span></strong></span></a></p><p style="text-indent: 2em;"><a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff544501(v=vs.85).aspx" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ExAllocatePool</span></strong></span></a></p><p style="text-indent: 2em;"><a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff544590(v=vs.85).aspx" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ExFreePool</span></strong></span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">ExAllocatePool能用来创建可执行内存区域，并且ExFreePool能用来清理内存区域。这些是重要的，因此shellcode能为它的hook函数和其他函数分配空间。ZwQuerySystemInformation在下一步中是重要的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">步骤3：定位SMB驱动Srv.sys&nbsp;</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用SystemQueryModuleInformation（0xb）调用ZwQuerySystemInformation能实现。得到所有加载的驱动的列表。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t0106a77e53f6364445.png" title="t01dd804c3ed58f2da5.png" alt="http://p3.qhimg.com/t01dd804c3ed58f2da5.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Shellcode在这个列表中搜索两个不同的哈希，定位到Srv.sys，这是SMB运行的主要驱动。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t0131ba0a9f92dfbd80.png" title="t01b8620386347a0cc2.png" alt="http://p8.qhimg.com/t01b8620386347a0cc2.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">过程和用户层一样，通过PEB-&gt;Ldr得到，遍历搜索加载的DLL。这里要查找的是SMB驱动。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">步骤4：Patch SMB的trans2派遣表</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在DoublePulsar已经有了主要的SMB驱动，它遍历.sys的PE节，直到找到.data节。</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01e8e3def6d44704b5.png" title="t016e5ed34e8b079be6.png" alt="http://p1.qhimg.com/t016e5ed34e8b079be6.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">.data节中通常是全局读写内存，在这里存储着SrvTransaction2DispatchTable，一个处理不同的SMB任务的函数指针数组。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Shellcode分配一些内存并实现函数hook。</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01a9eb9767b70abf14.png" title="t01cfa683edd97692ba.png" alt="http://p1.qhimg.com/t01cfa683edd97692ba.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来shellcode存储派遣函数SrvTransactionNotImplemented()的函数指针（以便能在hook函数中调用）。然后使用hook覆盖SrvTransaction2DispatchTable中的这个成员。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t016e6846c1501a7d7a.png" title="t018f21722c4d8a6722.png" alt="http://p7.qhimg.com/t018f21722c4d8a6722.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">后门完成了。现在它返回到它自己的调用栈，并做一些小的清理操作。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">步骤5：发送“Knock”和原始的shellcode</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当DoublePulsar发送了指定的“knock”请求（被视为不可靠的SMB调用），派遣表调用hook的假的SrvTransactionNotImpletemented()函数。能观察到奇怪的行为：正常的SMB响应MultiplexID必须匹配SMB请求的MultiplexID，但是增加了delta作为一个状态码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">操作能够隐身，在Wireshark中没有合适的解析。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01829ac0460b6d9b01.png" title="t015c4f52c1ef6fe675.png" alt="http://p0.qhimg.com/t015c4f52c1ef6fe675.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">状态码（通过MultiplexID delta）：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x10 = 成功</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x20 = 不可靠的参数</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x30 = 分配失败</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">操作列表：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x23 = ping</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0xc8 = exec</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x77 = kill</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你能使用下面的算法得到操作码：</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t0132c152b37774325c.png" title="t017dad9a2061368141.png" alt="http://p2.qhimg.com/t017dad9a2061368141.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">反之，你能使用这个算法制作包，其中k是随机生成的：</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t014b01775f89ac7539.png" title="t01895001c16c06a50d.png" alt="http://p2.qhimg.com/t01895001c16c06a50d.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在一个Trans2 SESSION_SETUP请求中发送一个ping操作将得到一个响应，其中包含需要为exec请求计算的XOR密钥的一部分。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">“XOR密钥”的算法是：</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t012bae8b79ed1048ec.png" title="t0109e5bba1fcd17691.png" alt="http://p4.qhimg.com/t0109e5bba1fcd17691.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">更多的shellcode能使用Trans2 SESSION_SETUP请求和exec操作发送。使用XOR密钥作为基本流密码，一次性在数据包4096字节的“数据payload”部分中发送。后门将分配一块可执行内存区域，解密复制shellcode并运行。注入dll的payload能注入你想要的DLL。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们能看见hook被安装在SrvTransaction2DispatchTable+0x70 (112/8 = index 14)处：</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t013f5f9ec71bf8386c.png" title="t010999c70824909b01.png" alt="http://p1.qhimg.com/t010999c70824909b01.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">全部的汇编在<a href="https://gist.github.com/msuiche/50a36710ee59709d8c76fa50fc987be1" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>这里</strong></span></a>。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x03 总结</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这是一个复杂的多平台的SMB后门。它是一个非常酷的payload，因为你能感染一个系统，驻留，并能在你想要的时候做更多的事。它在系统中找到了一个很好的隐藏位置，并且不会触<a href="https://en.wikipedia.org/wiki/Kernel_Patch_Protection" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(227, 108, 9);"><strong>PatchGuard</strong></span></a>。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通常我们只能在本地漏洞利用看到内核shellcode，因为它会变换进程令牌以便提权。然而，微软在内核中做了很多网络相关的事，例如Srv.sys和HTTP.sys。所描述的技术在很多方式完全符合远程利用中用户模式的shellcode的操作方式。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当它移植到Metasploit中，我可能不会逐字节复制，而是跳过后门的想法。它不是最安全的，因为它不再是秘密，任何人都可以使用你的后门。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面是可以代替做的事：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. 和DoublePulsar相同的方式获得ntoskrnl.exe地址，并读取导出目录获得必要的函数。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. 启动一个隐藏的进程（如notepad.exe）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. 使用Meterpreter payload插入APC</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4. 恢复进程，退出内核</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5. ？？？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6. 收获</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>传送门</strong></span></p><hr style="white-space: normal;"/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span><a href="http://bobao.360.cn/learning/detail/3747.html" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>【漏洞分析】NSA Eternalromance （永恒浪漫） 漏洞分析</strong></a></p><p style="white-space: normal; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3738.html" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>【漏洞分析】MS 17-010：NSA Eternalblue SMB 漏洞分析</strong></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span><br/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://zerosum0x0.blogspot.com/2017/04/doublepulsar-initial-smb-backdoor-ring.html" target="_blank">原文链接：https://zerosum0x0.blogspot.com/2017/04/doublepulsar-initial-smb-backdoor-ring.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】NSA武器库：DoublePulsar初始SMB后门shellcode分析 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3867" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/5x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14222" user-name="boywhp" href="javascript:;">
+                boywhp            </a>
+                        <span class="comment-time">2017-05-17 16:11:44</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14222">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14222" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">mark</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3867" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

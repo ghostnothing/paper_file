@@ -1,0 +1,618 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】Windows内核池漏洞利用技术 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Windows,内核池"/>
+    
+        <meta name="description" content="本文将介绍如何利用HackSys Team Extremely Vulnerable Driver中的释放后重用和池溢出问题。为此我们需要对Windows内核内存管理有所了解。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】Windows内核池漏洞利用技术</h2>
+                <div class="article-msg">
+                    <span class="time">2017-07-05 14:54:10</span>
+                    
+                                        <span class="read">阅读：17708次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4066"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4066" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://samdb.xyz/windows-kernel-exploitation-part-4/"
+                             target="_blank">来源： samdb.xyz</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2794169747" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2794169747" style="color:#848e99;">华为未然实验室</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-align: center; text-indent: 0em;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);"><img src="http://p8.qhimg.com/t0158bb54fdeb3f9812.jpg" title="t01dce9497cf0882332.jpg" alt="http://p7.qhimg.com/t01dce9497cf0882332.jpg"/></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">译者：</span><a href="http://bobao.360.cn/member/contribute?uid=2794169747" target="_blank" textvalue="华为未然实验室" style="text-decoration: none;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">华为未然实验室</span></a></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">预估稿</span><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">费：300RMB</span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em;"><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">本文将介绍如何利</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">用</span><a href="https://github.com/hacksysteam/HackSysExtremeVulnerableDriver" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">HackSys Team Extremely Vulnerable Driver</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">中</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">的释放后重用和池溢出问题。为此我们需要对Windows内核内存管理有所了解。因此，本文将涵盖以下内容：</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. Windows内核内存分配概述</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. Windows内核池风水演练</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. 利用HackSys Team Extremely Vulnerable Driver的释放后重用</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4. 通过两种不同的方法利用HackSys Team Extremely Vulnerable Driver的池溢出</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本文专注于windows 7 sp1（32位）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Windows内核池</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">了解内存管理的基础知识有所帮助，如果你不曾了解虚拟内存和分页，那么有必要快速阅读以下内容：</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. </span><a href="http://duartes.org/gustavo/blog/post/anatomy-of-a-program-in-memory/" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内存程序剖析</span></a></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. </span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><a href="http://duartes.org/gustavo/blog/post/how-the-kernel-manages-your-memory/" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;">内核如何管理你的内存</a></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Windows内核使用两种动态大小的“池”来分配系统内存，这些内核等同于用户模式下的堆。我只介绍理解利用方法原理所需的详情，更多信息请查看：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.</span> <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;</span><a href="https://media.blackhat.com/bh-dc-11/Mandt/BlackHat_DC_2011_Mandt_kernelpool-wp.pdf" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Windows 7 内核池利用</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，作者：</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Tarjei Mandt</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. 《Windows Internals》第7版第1部分第5章或《Windows Internals》第6版第2部分第10章——内存管理</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. </span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;</span><a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff554389(v=vs.85).aspx" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Windows驱动程序的内存管理</span></a></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Windows中有两种关键类型的池——非分页池和分页池。还有特殊池（我将在介绍释放后重用利用方法时介绍）和win32k使用的会话池（本文不作介绍）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">分页池对比非分页池</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">非分页池由保证总是存储在物理</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内存中的内存组成，而分页池中分配的内存可以被分页。这是必需的，因为某些内核结构需要在高于可满足缺页中断的</span><a href="https://blogs.technet.microsoft.com/askperf/2008/01/22/what-is-irql-and-why-is-it-important/" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">IRQL</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可访问。有关IRQL的更多详细信息以及各级别支持的操作，请参阅“</span><a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff554368(v=vs.85).aspx" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">管理硬件优先级</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">”。</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这意味着非分页池用于存储进程、线程、信号量等关键控制结构。而分页池用于存储文件映射、对象句柄等。分页池实际上由几个单独的池组成，而在Windows 7中，只有一个非分页池。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了分配池内存，驱动程序和内核通常使用ExAllocatePoolWithTag函数，其定义如下：</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><img src="http://p8.qhimg.com/t01b569aa85f90ee0b7.png" title="t01eb57ae976a7798f9.png" alt="http://p8.qhimg.com/t01eb57ae976a7798f9.png"/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">PoolType参数包含一个POOL_TYPE枚举中的值。这定义了正在请求什么类型的池内存，我们将主要看到其用0调用，这对应于非分页池。</span><br/></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><img src="http://p5.qhimg.com/t01878a780c9802c7f0.png" title="t01072ddb329800e1ae.png" alt="http://p6.qhimg.com/t01072ddb329800e1ae.png"/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">第二个参数是所需的池内存的字节数，最后的PoolTag参数是一个32位值，其被完全视为用于标记内存用途的4个字符，这在调试时非常方便，并且也被大量内核内存instrumentation使用——跟踪使用某个标签进行了多少分配，当内存分配到某个标签时中断，等等。</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了释放分配的池内存，通常使</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">用</span><a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff544593(v=vs.85).aspx" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">ExFreePoolWithTag</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">函数。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t01ac38ce6bf8dfa0a0.png" title="t015bbb7f54a6212f51.png" alt="http://p8.qhimg.com/t015bbb7f54a6212f51.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这只需要一个指向有效池分配的指针，池元数据将给予所有其他所需的东西，在标准条件下，提供的池标签将不会被验证。但是，启用正确的调试设置后，标签将被验证，如果其不匹配，则会触发一个BSOD。现在我们来看看这些函数的工作原理。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">分配内存</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">反编译器 ExAllocatePoolWithTag 乍看之下很吓人。</span><br/></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t012af3aed2d278412c.png" title="t01d99f16132711c507.png" alt="http://p1.qhimg.com/t01d99f16132711c507.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">还好，Tarjei Mandt已经在</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其</span><a href="https://media.blackhat.com/bh-dc-11/Mandt/BlackHat_DC_2011_Mandt_kernelpool-wp.pdf" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">论文</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">中将函</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">数转化为伪代码，这可以作为一个很好的指导。我将使用他的伪代码和IDA中的一些检查等，并通过windbg来解释函数的工作原理。他的解释可能更好、更准确，本节中的所有代码片段都来自其论文。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，函数检查请求的字节数是否超过4080字节，如果是，则调用Big Pool 分配器。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p9.qhimg.com/t01b5463c6fe7e197a0.png" title="t0129b27692aa6b81e4.png" alt="http://p0.qhimg.com/t0129b27692aa6b81e4.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">此处，esi包含请求的字节数，如果高于0xff0，则转到nt!ExpAllocateBigPool。否则采取true分支，处理继续。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t010ce2667ce66e6d75.png" title="t01a88db5129d80b12e.png" alt="http://p0.qhimg.com/t01a88db5129d80b12e.png"/></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t0123e95199106a9cc2.png" title="t01631fef0bec29e1aa.png" alt="http://p7.qhimg.com/t01631fef0bec29e1aa.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这一点上，[esp+48h+var_20]持有末尾为1的PoolType。所以如果该值等于0，则其是一个非分页池，跳过上面的if语句并转到随即显示的else，同时，如果类型是用于分页池内存，则采取true分支。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t010e27722b95680eef.png" title="t01263358bc8bb1f764.png" alt="http://p5.qhimg.com/t01263358bc8bb1f764.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在true分支上，其检查池类型是否用于会话池。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t0185c4e2af0a512beb.png" title="t0103e0f02be9f3a8fb.png" alt="http://p3.qhimg.com/t0103e0f02be9f3a8fb.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其随后立即检查请求的字节数是否高于32。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t015b98a258242ca9ee.png" title="t014286dec1947a8b10.png" alt="http://p6.qhimg.com/t014286dec1947a8b10.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">同时，在false分支上，其还检查分配是否高于32字节。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p1.qhimg.com/t015c53c6bc25637307.png" title="t015c7cf9d3c8690e35.png" alt="http://p9.qhimg.com/t015c7cf9d3c8690e35.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果任一检查通过，逻辑会有点麻烦，</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">更多详情可见</span><a href="https://media.blackhat.com/bh-dc-11/Mandt/BlackHat_DC_2011_Mandt_kernelpool-wp.pdf" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Tarjei的论文</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。该函数将尝试通过在相关池的Lookaside列表中找到一个条目来分配请求的块。Lookaside列表是每个池的每处理器结构，对它的引用存储在</span><a href="http://www.codemachine.com/article_kernelstruct.html#KPCR" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内核处理器控制块</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">中。Lookaside列表由通常请求的内存大小的单链表组成，对于一般池内</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">存，这是频繁进行的小分配。使用Lookaside列表可以使这些频繁的分配更快地进行。对于非常频繁进行的固定大小的分配，存在其他更具体的lookaside列表。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果两个大小检查均未通过，或者从lookaside列表分配内存失败，则分页池描述符被锁定，这与用于非分页池的结构相同，并且以相同的方式使用，所以我稍后将对此进行描述。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们有了请求的分配是非分页池类型时运行的代码，此处我们在上面的loc_518175处采取了false分支。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p5.qhimg.com/t01c8a906f635ef0167.png" title="t01ba0c57273d9ec3c2.png" alt="http://p2.qhimg.com/t01ba0c57273d9ec3c2.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来，代码将检查请求的块大小是小于还是等于32字节，如下所示。如上所述，如果分配足够小，其将尝试使用lookaside列表，如果成功则返回true。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t01b3d33abb26ba0282.png" title="t01386b4dce0274162d.png" alt="http://p2.qhimg.com/t01386b4dce0274162d.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果lookaside列表不能使用或请求的块大小大于32字节，则非分页池描述符将被锁定。首先将获取非分页池描述符的指针，如果有超过1个的非分页池，将进行查找。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，将根据可用的非分页池数量和“本地节点”（论文解释了这一点，但出于性能原因，多核系统中的每个处理器都可以有首选本地内存）来计算ExpNonPagedPoolDescriptor表中的索引：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p1.qhimg.com/t01123cb673fe86a08b.png" title="t01362bb5a5a1099545.png" alt="http://p9.qhimg.com/t01362bb5a5a1099545.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">此处eax最终持有所选索引。然后从表中读取引用：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t013a87ba0a4c586617.png" title="t01f7abc6b022ac8ec6.png" alt="http://p6.qhimg.com/t01f7abc6b022ac8ec6.png"/><img src="http://p0.qhimg.com/t0103dfa31f1d712bf3.png" title="t01f7abc6b022ac8ec6.png" alt="http://p0.qhimg.com/t01f7abc6b022ac8ec6.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这与分页池的逻辑相同，计算索引然后获得引用：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t01dfa12f19cf80e250.png" title="t01524234218c8c8b40.png" alt="http://p0.qhimg.com/t01524234218c8c8b40.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">此时，分页和非分页分配的代码路径已达到同一点。分配器将检查页面描述符是否被锁定，如果没有锁定则获取锁定。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p7.qhimg.com/t0115dd6807a18e064b.png" title="t018beaac402181236f.png" alt="http://p1.qhimg.com/t018beaac402181236f.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在描述符结构实际上包含什么？还好，其包含在Windows 7的公共符号中。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t01ad9be16ec4d7e78c.png" title="t01248ef2b9872a7e7f.png" alt="http://p0.qhimg.com/t01248ef2b9872a7e7f.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们刚刚看到，(Non)PagedLock字段在函数明确获取描述符锁定之前被检查。PoolType是自解释的，PoolIndex字段指示可以在内核导出的ExpPagedPoolDescriptor或ExpNonPagedPoolDescriptors表中找到哪些条目。我们真正关心的其他字段是PendingFrees 和PendingFreeDepth（在下一节中解释），以及我们需要现在看一看的ListHeads。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ListHeads是8个字节倍数到大分配的空闲内存块列表。每个条目包括一个LIST_ENTRY结构，其是相同大小的块的链表的一部分。列表由请求的块大小+ 8（以给POOL_HEADER留出空间，稍后描述）索引，除以8以获得字节数。分配器将从所需的确切大小的条目开始通览列表，查找要使用的有效块，如果不能精确匹配，则其查找更大的条目并将其拆分。伪代码如下：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t01d7638a7d62e49419.png" title="t016b62386cb39cc54b.png" alt="http://p4.qhimg.com/t016b62386cb39cc54b.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">因篇幅限制，此处我们有所删减，不过我们可以更详细地介绍函数实际上成功找到正确大小的内存块时会发生什么。分配器进行的分配是请求的数量+8字节，以给之前提到的POOL_HEADER留出空间。该结构包含在Windows 7的公共符号中，如下所示：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p7.qhimg.com/t01924ae3937f088e98.png" title="t019b40fca3d7f2532c.png" alt="http://p4.qhimg.com/t019b40fca3d7f2532c.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PreviousSize字段是内存中先前分配的大小，这是在释放分配以检查损坏时使用的。如前所述，PoolIndex字段可用于查找分配的POOL_DESCRIPTOR。BlockSize是包括header在内的分配的总大小，最后，PoolType是来自分配的POOL_TYPE枚举的值，如果块不空闲，则为2。PoolTag是自解释的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，如果函数在已分配的内存页中找不到分配空间，则其将调用MiAllocatePoolPages，以创建更多，并返回新内存中的地址。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p4.qhimg.com/t01f50d671ef140615c.png" title="t01fa5e6c7d7fef6490.png" alt="http://p8.qhimg.com/t01fa5e6c7d7fef6490.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如下所示：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t011d627cf295b979ec.png" title="t01669e72fc33b1b8ce.png" alt="http://p5.qhimg.com/t01669e72fc33b1b8ce.png"/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">释放内存</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这一次我只提供了一些关</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">于</span><a href="https://media.blackhat.com/bh-dc-11/Mandt/BlackHat_DC_2011_Mandt_kernelpool-wp.pdf" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Tarjei Mandt</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的反</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">转代码的评论，我不知道程序集片段有多大用处，希望我的补充有作用。这只包括与漏洞利用有关的组件，所有代码和细节请参阅原论文。</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">块大小应等于下一个池对象头中的上一个大小字段，如果不是，则内存已损坏，BugCheck被触发。当覆盖这个结构时，我们需要确保用正确的值覆盖块大小，否则会蓝屏。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t01e20f8e24acb40db4.png" title="t01b630b08594305676.png" alt="http://p6.qhimg.com/t01b630b08594305676.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后检查分页池类型，我跳过了会话部分。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p5.qhimg.com/t01c950a1d30e4d4aba.png" title="t01d1ecad48ee14f8b4.png" alt="http://p3.qhimg.com/t01d1ecad48ee14f8b4.png"/></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t018fd4f4abe3fffa6b.png" title="t013dc1b3100c5a0757.png" alt="http://p5.qhimg.com/t013dc1b3100c5a0757.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果启用了延迟释放，则查看等待列表是否有&gt;= 32个条目，如果有，则全部释放，并将当前条目添加到列表中。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p7.qhimg.com/t016bee84673e7a85a6.png" title="t016a58e11b90d7885b.png" alt="http://p9.qhimg.com/t016a58e11b90d7885b.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们只查看允许DefferedFree的系统，所以我将跳过旧的合并逻辑。ExDeferredFreePool中的逻辑相当直观，函数定义如下。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p7.qhimg.com/t0152cc27d0ec39d398.png" title="t0113796ed600df8f33.png" alt="http://p8.qhimg.com/t0113796ed600df8f33.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其接收一个指向POOL_DESCRIPTOR的指针，该指针先前被ExFreePoolWithTag锁定。然后其循环通过PendingFrees，并释放每个条目。如果上一个或下一个条目被释放，则其将与当前被释放的块合并。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Windows内核池风水</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了执行内核池风水，我们需要在正确类型的池中分配对象，及哪些是对我们有用的大小。我们知道，关键的内核数据结构（如信号量）存储在非分页池（也因所有基于池的挑战而被HackSys驱动程序使用）中。要开始，我们需要找出一些在非分页池中分配的内核结构及其大小。实现此目标的简单方法是分配一些控件对象，然后使用内核调试器来查看相应的池分配。我使用以下代码来做到这一点。</span><br/></p><p style="text-align: center; text-indent: 0em;"><img src="http://p4.qhimg.com/t01a7b27f8cf04f17bd.png" title="t01f534d1c261c5e147.png" alt="http://p8.qhimg.com/t01f534d1c261c5e147.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">编译并运行此代码得到如下输出，然后敲击回车键后，我们附带的内核调试器应该中断。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p4.qhimg.com/t014ab653107edb539a.png" title="t010d59fb6b4865f298.png" alt="http://p3.qhimg.com/t010d59fb6b4865f298.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用调试器，我们可以找到每个结构驻留在内存中的位置以及为其分配了多少内存。在windbg中，可以输入!handle命令来获取对象的详细信息。此处我正在检索Reserve对象的详细信息。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t015c047c6d5a73d4bb.png" title="t0195fd267c76dd618d.png" alt="http://p8.qhimg.com/t0195fd267c76dd618d.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一旦我们知道对象地址，我们就可以使用!pool命令查找其池详细信息。作为其第二个参数解析2意味着其只显示我们感兴趣的确切分配，删除2将显示内存页内的周围分配。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t010e5b24e0f513cdc1.png" title="t0115f2241d8a7f715c.png" alt="http://p8.qhimg.com/t0115f2241d8a7f715c.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里我们可以看到，Reserve对象被分配了一个&#39;IoCo&#39;标签，占用了60个字节。为其他对象重复此过程得到以下结果。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p9.qhimg.com/t0102648a09d1a6ca05.png" title="t01275ef39252119164.png" alt="http://p5.qhimg.com/t01275ef39252119164.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">知道对象大小将在稍后我们需要确保确定大小的目标对象被可靠地分配内存空间中时有用。现在我们尝试使用Event对象进行池修饰，这些对象为我们提供了一个空闲和分配的0x40字节池块的模式。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">因为分配器开始在空闲页上分配内存之前通过查找空闲块为对象分配内存，因此我们需要先填充现有的0x40字节空闲块。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">比如下面的代码将分配五个事件对象。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t01252af05f8469c744.png" title="t016e386049d79610e8.png" alt="http://p2.qhimg.com/t016e386049d79610e8.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在，如果我们构建这个代码并使用附带的内核调试器来运行它，我们可以看到五个事件对象的句柄。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p0.qhimg.com/t01444248b9c014f47d.png" title="t0105e9d666b389a8f7.png" alt="http://p1.qhimg.com/t0105e9d666b389a8f7.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">检查windbg中的最后两个句柄发现，其没有被分配到彼此接近之处。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p9.qhimg.com/t013bcf33ff6ef529df.png" title="t01a21a5425da7b7321.png" alt="http://p8.qhimg.com/t01a21a5425da7b7321.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">进一步查看分配了倒数第二个Event对象的页面的池信息后发现，其刚好被放置在两个随机对象之间的第一个可用间隙中。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t014595049cb7cdc107.png" title="t01b8cd5c2daeb7770f.png" alt="http://p8.qhimg.com/t01b8cd5c2daeb7770f.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">但是，如果我们将DEFRAG_EVENT_COUNT增加到更大的数，结果大不相同。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t014afd6a1813e58b06.png" title="t01bf29051aeb08706a.png" alt="http://p9.qhimg.com/t01bf29051aeb08706a.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">再次运行它并查看最后的五个句柄。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t017b5a2cee48e724d2.png" title="t01f964152b882a081d.png" alt="http://p9.qhimg.com/t01f964152b882a081d.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">检查windbg中的句柄可以看到，其被连续分配在内存中。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t014b364acfbbc600d4.png" title="t0138646b5e29725455.png" alt="http://p7.qhimg.com/t0138646b5e29725455.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">检查分配有两个Event对象的页面的池布局可以发现，一长串Event对象被连续分配。内存分配器的确定性表明，如果我们分配足够的Event对象，这最终总会发生。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t01ed21e7cb174877b1.png" title="t01abd6db2aa8dd5012.png" alt="http://p3.qhimg.com/t01abd6db2aa8dd5012.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们要在受控大小的地址空间中创建“孔”。此时我们知道，分配的任何更多事件对象将大部分被连续分配，所以，通过分配大量对象，然后间隔释放，我们应该得到一个空闲和分配对象的模式。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我将以下代码添加到了上面的示例（循环打印最后五个句柄的位置）中。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t01ad45f1e9ee48e3bb.png" title="t01adde5356ea4cd849.png" alt="http://p2.qhimg.com/t01adde5356ea4cd849.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">运行后，我们得到一个示例句柄，该句柄从一个模糊随机索引打印到其余句柄中。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p4.qhimg.com/t010b5a967f63f62e3b.png" title="t01b8554801a209330a.png" alt="http://p7.qhimg.com/t01b8554801a209330a.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">检查windbg中的句柄后可以找到其在内存中的地址。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p5.qhimg.com/t016cb5a2dec830b236.png" title="t017251dd8162a6fbd2.png" alt="http://p5.qhimg.com/t017251dd8162a6fbd2.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">知道分配地址后，我们可以再次查看其分配的页的池布局。此处我们可以看到，我们已经成功地创建了一个空闲和分配的事件对象的模式。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p4.qhimg.com/t011c5a5c84f336a495.png" title="t01c7c67ddf4bb6def8.png" alt="http://p7.qhimg.com/t01c7c67ddf4bb6def8.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于我们无法找到相同大小的相应内核对象的对象/分配，我们可以使用分割大小的对象的多个副本，或尝试更精细的东西。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">HackSysTeam极其脆弱的驱动程序释放后重用利用</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内存在释放后被使用时存在释放后重用(UAF)漏洞。通过查找代码执行此操作的地方，可能可以用其他内容替换释放的内存。那么当引用内存并且代码认为一个结构/对象在那里时，另一个是。通过在可用内存中放置正确的新数据，可以获得代码执行。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">正如我刚才所解释的，为了利用UAF，我们需要以下几点：</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. 一种创建对象的方式</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. 一种释放对象的方式</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. 一种替换其的方法</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4. 一种导致替换对象作为原始对象被引用的方式</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">和以前一样，简要看一下IDA中的驱动程序表明了我们的所有需求，我将从第1、2及4点开始，因为这些让我们开发了一个崩溃PoC。首先，我们需要一种使用驱动程序在内核内存中创建一个对象的方法，查看IOCTL分派函数给我们呈现了一个通过记录以下字符串进行的函数调用：****** HACKSYS_EVD_IOCTL_CREATE_UAF_OBJECT ******。这看似正是我们所寻找的。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t01a8446a45520762eb.png" title="t01269617a77b862c50.png" alt="http://p3.qhimg.com/t01269617a77b862c50.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看函数本身后可以看到在非分页池上分配了0x58字节的内存。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t01b0907d29576a3dad.png" title="t01cd3726fbc0b6e687.png" alt="http://p9.qhimg.com/t01cd3726fbc0b6e687.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果此分配成功，则其继续将值加载到内存中，并在全局变量中保存对其的引用。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p7.qhimg.com/t01007288422c2e31b0.png" title="t0102e2dac5e663088e.png" alt="http://p8.qhimg.com/t0102e2dac5e663088e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在1处，函数将所有分配的内存设置为用“0x41”字节填充。然后将0字节加载到内存的最后一个字节。在3处加载到对象的前四个字节的函数指针是一个记录其被调用的简单函数。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p9.qhimg.com/t011254167a627fa4ca.png" title="t01585dac1f5cc6a1e5.png" alt="http://p4.qhimg.com/t01585dac1f5cc6a1e5.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后在4处，驱动程序在名为P的全局变量中保存指向内存的指针。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们可以创建对象，我们需要一种方法来释放它。记录****** HACKSYS_EVD_IOCTL_FREE_UAF_OBJECT ******之后的IOCTL分派函数中的函数调用可能是一个很好的调用。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t01a584a58285ba98ac.png" title="t01a971acc541263cec.png" alt="http://p1.qhimg.com/t01a971acc541263cec.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看函数本身可以看到，其不需要任何输入，而是在我们查看的最后一个函数存储的引用之上操作。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t0146f7176475dfb6f2.png" title="t0142a000049c98490e.png" alt="http://p8.qhimg.com/t0142a000049c98490e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一旦被调用，函数在1处检查在create函数中引用的全局指针“P”是否为空，然后在2处继续在其上调用ExFreePoolWithTag。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">到我们的第三个需求——一种使驱动程序以某种方式引用释放的对象的方法，****** HACKSYS_EVD_IOCTL_USE_UAF_OBJECT ******似乎可以做到这一点。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t014acc1f9f45eefa7e.png" title="t018f0ccfe7c8a01f42.png" alt="http://p9.qhimg.com/t018f0ccfe7c8a01f42.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看函数后可知，其尝试通过create函数调用加载到UAF对象的前四个字节的函数指针。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t0167c6babaa82d6923.png" title="t019811a4c3f2b32f7f.png" alt="http://p3.qhimg.com/t019811a4c3f2b32f7f.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在1处，其确保P包含指向对象的指针，且不是空指针。然后其将前四个字节的内存加载到eax中，并在2处确保其不是空字节。如果这两个检查都成功，则在3处进行回调。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">敲定所需的IOCTL代码为我们提供了我们需要的三种IOCTL代码。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p9.qhimg.com/t01500b9ed272d055c6.png" title="t01e3c6f93dbfd05e88.png" alt="http://p1.qhimg.com/t01e3c6f93dbfd05e88.png"/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">编写崩溃PoC</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了可靠地检测是否已发生UAF，我使用了一些Windows内核池调试功能。在这种情况下，使用以下命令启用HackSysExtremeVulnerableDr</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">iver的</span><a href="https://docs.microsoft.com/en-us/windows-hardware/drivers/devtest/special-pool" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">专用池</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。</span><br/></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t0105879e57650f3ad1.png" title="t01358ec30e08908e83.png" alt="http://p4.qhimg.com/t01358ec30e08908e83.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果这成功运行，我们应会看到以下输出。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t01b2c54de6f1b9c6c8.png" title="t019750d32fa8b0fe19.png" alt="http://p5.qhimg.com/t019750d32fa8b0fe19.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当启用了特殊池的二进制程序调用ExAllocatePoolWithTag函数时，其将使用ExAllocatePoolWithTagSpecialPool函数来分配内存，而不是遵循其标准逻辑。如下所示。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p1.qhimg.com/t0116bca79e73347f8c.png" title="t01a85c48f535380f47.png" alt="http://p3.qhimg.com/t01a85c48f535380f47.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ExFreePoolWithTag函数具有匹配的逻辑。特殊池作为由单独的内存页支持的文字分离内存池工作。特殊池有一些不同的选项。默认情况下，其处于验证结束模式，简言之，这意味着由驱动程序所作的所有分配被放置在尽可能靠近内存页末尾处，后续和之前页面被标记为不可访问。这意味着，如果驱动程序尝试在分配结束后访问内存，将会触发错误。此外，页面上未使用的内存用特殊模式标记，因此如果这些内存损坏，则该内存释放后可检测到错误。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">此外，特殊池将标记其释放的内存，并尽可能长时间地避免重新分配该内存。如果释放的内存被引用，其将触发错误。这会对驱动程序产生巨大的性能影响，因此其只在调试内存问题时启用。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在特殊池为启用状态下，我们可以为此漏洞创建一个简单的崩溃概念证明。下面的代码将创建UAF对象、释放该对象，然后导致其被引用。如果驱动程序引用释放的内存，这应该因特殊池调试功能而触发蓝屏。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t010b8a0b90d7eb9bd1.png" title="t01f5ad367c6be8db29.png" alt="http://p0.qhimg.com/t01f5ad367c6be8db29.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在编译并运行，然后...</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t01ef0e98d8341af353.png" title="t014b1db26c8d645cb1.png" alt="http://p6.qhimg.com/t014b1db26c8d645cb1.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用附带的内核调试器重新启动系统，重新启用特殊池并重新运行PoC，这样我们可以确认崩溃是否由被引用的释放的内存引起。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p5.qhimg.com/t01700e31333e2cb26f.png" title="t014e52563145535d7e.png" alt="http://p4.qhimg.com/t014e52563145535d7e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">!analyze -v输出立即告诉我们，崩溃可能是由被引用的释放的内存引起的，进一步查看分析输出可知，崩溃指令是之前在调用UAF对象回调函数的IOCTL中看到的push [eax]指令。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p1.qhimg.com/t01f4ed71ae82e6f58c.png" title="t0149a3f7f93102ae5e.png" alt="http://p2.qhimg.com/t0149a3f7f93102ae5e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">检查驱动程序尝试再次访问的内存地址的池详细信息后确认，内存可能之前已被释放。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t013643375db067080f.png" title="t010a26dc021650cb59.png" alt="http://p6.qhimg.com/t010a26dc021650cb59.png"/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将其转化为利用方法</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">有了崩溃后，我们需要用可让我们在引用时实现代码执行的东西代替对象使用的内存。通常，我们必须寻找一个适当的对象，并可能使用一个基本的原语来让我们获得一个我们可以用于提升我们的权限的更有用的原语。不过幸运的是，HackSys驱动程序有一个让这更容易的函数。日志消息****** HACKSYS_EVD_IOCTL_CREATE_FAKE_OBJECT ******之后暴露的函数可以实现我们需要的功能。</span><br/></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t01de317189bb691c9d.png" title="t01c1f827b2d1fdbcfe.png" alt="http://p6.qhimg.com/t01c1f827b2d1fdbcfe.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看函数实现后可知，其分配0x58字节的数据，然后检查分配是否成功。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p1.qhimg.com/t01d4276a3c168b193e.png" title="t0139fb1683580d789c.png" alt="http://p0.qhimg.com/t0139fb1683580d789c.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一旦其分配了所需的内存，其便将数据从IOCTL输入缓冲区复制到其中。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t018c0ab2f79f7f4e38.png" title="t018c85d71eb83ed279.png" alt="http://p1.qhimg.com/t018c85d71eb83ed279.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在1处，指向分配的内存的指针为ebx，在2处，其验证从输入缓冲区读取数据是否是安全的，然后在3处，其在返回之前将0x16, 4字节块从输入缓冲区复制到新分配的内存中。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">伪分配的对象与我们可以释放并导致被引用的对象大小相同，这一事实是理想的场景。通过使用先前描述的内核池按摩技术，我们可以导致伪对象分配到UAF对象的地址。通过加载一个指向伪对象开头的某些令牌窃取shellcode的指针，我们可以触发使用UAF对象IOCTL代码处理程序，从而使驱动程序执行我们的payload。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">与我在池风水示例中使用的Event对象不同，UAF对象不是0x40字节，所以我们将使用Reserve对象，因为我们早先发现，当包括8字节POOL_HEADER时，这些是匹配0x58字节的UAF对象的内存中的0x60字节。首先，我们需要添加以下header。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p9.qhimg.com/t01efe3b00303131b8a.png" title="t0121f208d6f73998ac.png" alt="http://p4.qhimg.com/t0121f208d6f73998ac.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来，我们添加以下代码来执行实际的池风水，这将填充任何现有的空闲0x60字节区域，然后创建一个分配和空闲的0x60字节块的模式。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p1.qhimg.com/t01481ac354dd331982.png" title="t014bb3c74d828779f9.png" alt="http://p2.qhimg.com/t014bb3c74d828779f9.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们可以强制我们的伪对象分配到我们需要制作伪对象的UAF对象之前所在的位置。我们首先将本系列前面部分中使用的令牌窃取器添加到我们的用户空间代码中。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t019cf5c4a355b7b9ee.png" title="t0153d6fdb766d62fbd.png" alt="http://p9.qhimg.com/t0153d6fdb766d62fbd.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来我们来创建我们的伪对象，我们知道其需要是0x58字节，前四个包含一个函数指针，其余的字节我们不关心。将函数指针设置为我们的令牌窃取shellcode的地址后，其将在驱动程序引用我们的伪对象并触发其所认为的原始对象回调时执行。这紧随用于释放UAF对象的DeviceIOControl调用。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t01b562aa246aed729f.png" title="t01f3578d27db83ddda.png" alt="http://p4.qhimg.com/t01f3578d27db83ddda.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我创建了0x250的伪对象，用于填充我们之前创建的所有间隙。另外，我们需要在我们文件的顶部定义HACKSYS_EVD_IOCTL_ALLOCATE_FAKE_OBJECT。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t01e0f69f8614338a2b.png" title="t01af66b29ea23ebf33.png" alt="http://p6.qhimg.com/t01af66b29ea23ebf33.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后一些清理代码和调用系统启动calc.exe适合代码的末尾。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p7.qhimg.com/t0156e7966938fd8292.png" title="t01a2c0b36e213291f4.png" alt="http://p8.qhimg.com/t01a2c0b36e213291f4.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">构建然后运行代码（特殊池为禁用状态）给我们提供了一个作为SYSTEM运行的良好计算器。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t01f378a2b2c0583049.png" title="t019d4101e3e0f4dbca.png" alt="http://p1.qhimg.com/t019d4101e3e0f4dbca.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞利用的最终/完整</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">代码见</span><a href="https://github.com/sam-b/HackSysDriverExploits/blob/master/HackSysUseAfterFree/HackSysUseAfterFree/HackSysUseAfterFree.cpp" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Github</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">HackSysTeam极其脆弱的驱动程序池溢出</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">触发驱动程序池溢出漏洞的IOCTL代码很容易找到，****** HACKSYS_EVD_IOCTL_POOL_OVERFLOW ******记录后随即进行的函数调用是明显的目标。</span><br/></p><p style="text-align: center; text-indent: 0em;"><img src="http://p7.qhimg.com/t0131bfda9362e66b4e.png" title="t01c358ae1930c1b6fb.png" alt="http://p8.qhimg.com/t01c358ae1930c1b6fb.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看处理程序函数后可知，其在非分页池上进行大小为0x1F8字节的池分配（edi 在函数的开始与自身xor）。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p1.qhimg.com/t01c7caba9fcbc424ac.png" title="t019e00f925c91d462b.png" alt="http://p0.qhimg.com/t019e00f925c91d462b.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果分配成功，则处理程序将数据从用户提供的缓冲区复制到池中。然而，复制的数据量由IOCTL中提供的大小控制。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t01a8c571bfdfc3f836.png" title="t01d5543a584999bb14.png" alt="http://p0.qhimg.com/t01d5543a584999bb14.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这意味着，如果一个调用者提供的长度大于0x1F8个字节，就会发生越界写入，这也可称为池溢出。我们将再次启用特殊池，从而使触发漏洞更容易。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t01c03b5629a2ea0252.png" title="t01cf23ccb84fc71112.png" alt="http://p6.qhimg.com/t01cf23ccb84fc71112.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以下代码将提供一个IOCTL请求，其将在池分配结束后写入4个字节，这应该导致其访问标记为不可访问的页面，并导致系统蓝屏。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t019f842f18daea52df.png" title="t01a506151b919ad10e.png" alt="http://p7.qhimg.com/t01a506151b919ad10e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">编译然后运行，我们得到了我们想要的。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t0196f66d91bf90b4ed.png" title="t01f02f461c200da3b3.png" alt="http://p2.qhimg.com/t01f02f461c200da3b3.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">调试崩溃后可以看到，和预期的一样，驱动程序尝试在分配结束后写入。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p0.qhimg.com/t015365908cc486ea49.png" title="t015ebc28b168be4253.png" alt="http://p7.qhimg.com/t015ebc28b168be4253.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看崩溃详情后可知，其是在我们之前在HACKSYS_EVD_IOCTL_POOL_OVERFLOW处理程序中看到的rep movs指令处崩溃。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t0187a590d15e00a1b3.png" title="t0104de3dc3446797c7.png" alt="http://p1.qhimg.com/t0104de3dc3446797c7.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">检查损坏的内存地址后可以看到，和预期一样，一连串0x41字节后是无法访问的内存。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p7.qhimg.com/t01c41dacf5885d0e3d.png" title="t015f667d050da23875.png" alt="http://p3.qhimg.com/t015f667d050da23875.png"/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">池溢出池风水</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">与UAF利用一样，我们需要能确保我们的内存在分配时位置正确。在这种情况下，我们要确保另一个对象在内存中紧随其后。这一次，我们分配的内存大小为0x200字节（0x1F8 + 8字节header），Reserve对象分配总大小为60个字节，这太小，并清楚地分开了我们想使其不切实际的数量，但是，我们之前看过的Event对象是0x40字节的分配。这一清楚的划分分配到8是理想的。</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了修整堆，这次我们再次使用Event对象对其进行碎片整理，然后我们将分配大量连续的Event对象，并以8个块的形式释放它们。这应该使我们获得分配200字节的模式，然后分配非分页池内存。下面的代码在触发调试器中断之前执行池修饰，这样我们可以检查它是否有效。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p7.qhimg.com/t01fc8fed2b515d8ece.png" title="t013ee725e20a8bb197.png" alt="http://p2.qhimg.com/t013ee725e20a8bb197.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个运行后我们便可看到打印的指针值，然后按下Enter键触发断点。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p9.qhimg.com/t011248a76444f590e8.png" title="t01360aa73c39f347a9.png" alt="http://p4.qhimg.com/t01360aa73c39f347a9.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在内核调试器中，我转储了句柄信息以获取对象的详细信息。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p0.qhimg.com/t01f19b43db8e1f5d14.png" title="t0138100e5bc025a067.png" alt="http://p4.qhimg.com/t0138100e5bc025a067.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看对象分配周围的池内存，可以看到一个很好的重复模式——8个分配的事件对象，随后是8个空闲的事件对象，与计划的完全一致。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t01a8f628fbedafb4f5.png" title="t01c8814aa60dd5a01f.png" alt="http://p0.qhimg.com/t01c8814aa60dd5a01f.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们可以触发我们的溢出，40字节的Event对象肯定将跟随我们控制的内存，所以我们可以开始整合利用方法。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">池溢出利用第一回合</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们可以可靠地覆盖一个Event对象的header，我们需要实际覆盖一些东西。我将使用两种不同的方法，一种是最</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">初在“</span><a href="https://media.blackhat.com/bh-dc-11/Mandt/BlackHat_DC_2011_Mandt_kernelpool-wp.pdf" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Windows 7 内核池利用</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">”中讨论的，另一种是在“</span><a href="https://www.blackhat.com/docs/us-14/materials/us-14-Tarakanov-Data-Only-Pwning-Microsoft-Windows-Kernel-Exploitation-Of-Kernel-Pool-Overflows-On-Microsoft-Windows-8.1.pdf" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">纯数据Pwning微软Windows内核：微软Windows 8.1内核池溢出利用</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">”中讨论的。首先，我将使用Object Type索引覆盖技术。<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如</span><a href="http://codemachine.com/article_objectheader.html" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Code Machine博文</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">中所</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">述，Windows内核内存中的每个对象都由几个结构以及对象结构本身组成。第一个是我们之前讨论的POOL_HEADER结构。以下是一个Event对象的例子，这次我们不会破坏该结构，所以当我们在内存中进一步重写另一个结构时，我们将重用我们的利用方法中的值，以使其保持原样。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t01625996a258d583f6.png" title="t01f8e217a34a3bb309.png" alt="http://p8.qhimg.com/t01f8e217a34a3bb309.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来有一个或多个可选结构，存在哪些可选结构可通过查看出现在实际对象OBJECT_HEADER之前的最后一个结构找到。来自Event对象的示例OBJECT_HEADER布局如下所示：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t01e3fc0dfe5770926d.png" title="t01ba94814a3c617199.png" alt="http://p2.qhimg.com/t01ba94814a3c617199.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">InfoMask字段只有0x8位设置，这意味着，如Code Machine文章中所述，池header和对象header之间的唯一可选结构是OBJECT_HEADER_QUOTA_INFO。该文章还告诉我们，其大小为0x10字节，所以我们可以通过回看0x10字节在内存中查看它。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t01941b899b46b6412e.png" title="t0111b7e02cda6d6afe.png" alt="http://p0.qhimg.com/t0111b7e02cda6d6afe.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">OBJECT_HEADER结构是我们将破坏的结构，所以当我们覆盖这个结构时，我们将使用其默认值使其保持原样。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">OBJECT_HEADER结构包含用于管理对象的对象元数据，用于指示可选header、存储调试信息等。如Nikita的幻灯片中所述，该header包含“TypeIndex”字段，这用作ObTypeIndexTable（用于存储指向OBJECT_TYPE结构的指针，这些结构提供有关每个内核对象的重要细节）的索引。查看Windbg中的ObTypeIndexTable，我们可以看到条目。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p4.qhimg.com/t0171fe54c27b1caf9c.png" title="t01dfd4b3f981946383.png" alt="http://p0.qhimg.com/t01dfd4b3f981946383.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将条目0xc视作OBJECT_TYPE结构使我们获得以下内容：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p4.qhimg.com/t01ddab3bb615e3d0e9.png" title="t01fa2b21fb52a603f2.png" alt="http://p8.qhimg.com/t01fa2b21fb52a603f2.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">所以我们肯定有正确的对象类型，但没有什么可以明显让我们实现代码执行。进一步查看结构后我们看到TypeInfo字段，在windbg中更仔细检查该字段后发现了一系列很好的函数指针。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t015dfee9c4208d27d8.png" title="t016a7ac90b231a4e0f.png" alt="http://p3.qhimg.com/t016a7ac90b231a4e0f.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这意味着正根据结构跳转到函数。如果我们可以控制其中的一个，我们应该能够让内核在我们选择的地址处执行shellcode。通过回看可以看到， ObTypeIndexTable的第一个条目是一个NULL指针，所以我们用0覆盖OBJECT_HEADER中的TypeIndex字段，然后，当内核尝试执行时，内核应该尝试从NULL页面读取函数指针。因为我们是在Windows 7 32位上执行此操作，所以我们可以分配NULL页，从而可以控制内核执行跳转到的位置，这样我们便可使用与我之前所用相同的shellcode来提升我们的权限。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们要覆盖TypeIndex字段，保持缓冲区末尾和和Event对象之间的所有其他字段不变。我们从增加我们之前使用的InBuffer的大小开始。额外的0x28字节将覆盖POOL_HEADER（0x8字节）、OBJECT_HEADER_QUOTA_INFO（0x10字节）及OBJECT_HEADER，直到并包括TypeIndex（0x10字节）。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t015e415550448e67e8.png" title="t0142075d5391e30394.png" alt="http://p8.qhimg.com/t0142075d5391e30394.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，我们使用之前看到的默认值覆盖POOL_HEADER和OBJECT_HEADER_QUOTA_INFO结构。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p7.qhimg.com/t01e88d54a2b19fe89e.png" title="t0116b70837dcb3aa02.png" alt="http://p8.qhimg.com/t0116b70837dcb3aa02.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，我们覆盖了OBJECT_HEADER结构，主要使用其默认值，但TypeIndex值设置为0。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t01d0ff96aef7d8afcd.png" title="t010eb05594ed71d340.png" alt="http://p8.qhimg.com/t010eb05594ed71d340.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在让我们运行代码（确保特殊池已禁用），我们应该会得到因内核尝试在地址0x0处访问OBJECT_TYPE结构而导致的崩溃。我立即在我附带的调试器中获得了一个BugCheck，在发生异常的时候查看指令和寄存器，我们看到的正是我们所希望的。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p7.qhimg.com/t01a1e9509ec9dde626.png" title="t017b2671c062f7c9fb.png" alt="http://p1.qhimg.com/t017b2671c062f7c9fb.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一个名为ObpCloseHandleTableEntry的函数在尝试从ebx+0x74读取内存时出错（ebx为0）。这应对应于OBJECT_TYPE结构中的DeleteProcedure条目（如果其按照计划从NULL页读取）。现在我们只需要使用与本系列中之前使用的相同的方法分配NULL页，并设置一个函数指针偏移量，以指向我们的令牌窃取shellcode。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在main的开始添加了以下代码，以分配NULL页。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t0116330b6840f364de.png" title="t01e7aed45502227c14.png" alt="http://p8.qhimg.com/t01e7aed45502227c14.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">成功分配NULL页后，我们只需要放置一个指向我们的shellcode的指针，以代替其中一个函数指针。我尝试在每个函数的偏移量处放置一个shellcode指针，发现Delete、OkayToClose及Close程序会导致shellcode以一种直接的方式被执行。我决定覆盖Delete程序，因为b33f使</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">用了</span><a href="http://www.fuzzysecurity.com/tutorials/expDev/20.html" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">OkayToClose</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，Ashfaq使</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">用了</span><a href="https://github.com/hacksysteam/HackSysExtremeVulnerableDriver/blob/master/Exploit/PoolOverflow.c" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Close</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t0191216419b854e3e0.png" title="t01d5f0272092c037fa.png" alt="http://p3.qhimg.com/t01d5f0272092c037fa.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，我们需要稍微修改shellcode，因为Delete程序预期4字节的参数需要从栈中删除，以避免事情变得不稳定。将ret 4;添加到shellcode的末尾即可搞定。最后，在我们开始整理内存前，添加一个不错的system(&quot;calc.exe&quot;);。现在我们再次运行代码，应该会得到一个作为SYSTEM运行的计算器，如下所示。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t01191df6204afc4039.png" title="t01ad78a7e77dca8c35.png" alt="http://p3.qhimg.com/t01ad78a7e77dca8c35.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞利用的最终/完整代码</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">见</span><a href="https://github.com/sam-b/HackSysDriverExploits/blob/master/HackSysPoolOverflowObjectTypeOverwrite/HackSysPoolOverflowObjectTypeOverwrite/HackSysPoolOverflowObjectTypeOverwrite.cpp" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Github</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">池溢出利用第二回合</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我将使用的利用该漏洞的第二种技术是PoolIndex覆盖技术——作为例子</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在“</span><a href="https://media.blackhat.com/bh-dc-11/Mandt/BlackHat_DC_2011_Mandt_kernelpool-wp.pdf" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Windows 7 内核池利用</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">”中使用，并在“</span><a href="http://doar-e.github.io/blog/2014/03/11/first-dip-into-the-kernel-pool-ms10-058/" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">First Dip Into the Kernel Pool : MS10-058</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">”中通过示例代码使用。<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这次我们只覆盖相邻Event对象的POOL_HEADER结构，所以我们的缓冲</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">区可以小一些。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p1.qhimg.com/t012414cdae35361deb.png" title="t017f72dc9dddcf65b8.png" alt="http://p6.qhimg.com/t017f72dc9dddcf65b8.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们将要覆盖的字段是PoolIndex字段。默认情况下，Windows 7主机将只有一个非分页池，这意味着该字段将不会被实际使用。所以首先我们将覆盖PoolType字段，使块看起来是分页池的一部分。如前所述，该字段中需要的值可以在POOL_TYPE枚举中找到，最终为3。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t019fd93abe1a24d4f0.png" title="t01034647d608e9e36e.png" alt="http://p6.qhimg.com/t01034647d608e9e36e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PoolIndex字段用于索引 nt!ExpPagedPoolDescriptor 数组，以便在对象被释放时为其找到正确的PoolDescriptor。查看windbg中的数组可以看到：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p1.qhimg.com/t01ca84aa9ac737b91a.png" title="t017ee4c35d74814bcd.png" alt="http://p6.qhimg.com/t017ee4c35d74814bcd.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你会注意到，仅前五个条目是有效的指针，其余的是NULL，这意味着，如果我们用大于或等于5的值覆盖POOL_HEADER的PoolIndex字段，当对象被释放时，内核将尝试从NULL页开始引用 一个POOL_DESCRIPTOR。像以前一样，我们可以从用户空间分配NULL页，并以可以实现代码执行的方式设置结构值。首先，我们来覆盖PoolIndex字段，并确保内核按预期崩溃。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t017dea49239fb580a2.png" title="t01e3a57a454415174b.png" alt="http://p0.qhimg.com/t01e3a57a454415174b.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在编译并运行二进制文件，我们得到了崩溃。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t018c7e1fb775420c3e.png" title="t0189dd127db0b09e7b.png" alt="http://p2.qhimg.com/t0189dd127db0b09e7b.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内核成功崩溃，尝试在释放池分配时访问0x0 + 0x80地址的内存。现在我们如何从控制池描述符转到代码执行？</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如前所述，池描述符包括一个PendingFrees列表，如果其包含32个或更多条目，其将被释放。通过伪造一个Pool Descriptor对象，我们可以使PendingFrees列表指向我们控制的伪池分配，如果我们将PendingFreesDepth设置为32或更多，则内核将尝试释放它们。释放的对象地址将被添加到ListHeads列表中，通过在该列表中创建指向要覆盖的目标地址的伪条目，刚刚被释放的伪对象的地址将被写到ListHeads列表中第一个条目的Blink地址。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这使我们可将受控用户模式地址写入内存中的任何地址。现在，我们让内核将伪对象地址写到0x41414141。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">希望一些代码会使这个更清楚。所有这些代码都放在池喷射代码之前。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先我们像之前一样分配NULL页。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p9.qhimg.com/t01fd9bbefa1c8c2b9d.png" title="t01a5f67c008162c98e.png" alt="http://p9.qhimg.com/t01a5f67c008162c98e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们需要从0x0开始创建伪POOL_DESCRIPTOR结构。我基本上是通过</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">逆向</span><a href="http://doar-e.github.io/blog/2014/03/11/first-dip-into-the-kernel-pool-ms10-058/" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Jeremy的解决方案</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">来说明如何做到这一点，所以我使用了他的值。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p0.qhimg.com/t013adcd7997f457c6c.png" title="t011bcf1db9e3bb132a.png" alt="http://p8.qhimg.com/t011bcf1db9e3bb132a.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后我们在0x1208创建伪块，相应的POOL_HEADER需要为0x1200。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p4.qhimg.com/t01f0e0e7abad7f0874.png" title="t01d41d064df65df532.png" alt="http://p8.qhimg.com/t01d41d064df65df532.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x1208处的内存是一个NULL指针，这一事实意味着DeferedFree将释放它然后停止，因为没有后续条目。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们还需要在对象释放后立即创建另一个伪POOL_HEADER，因为当内存管理器释放前一个块时，其将验证其大小是否等于下一个块前一个大小字段。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p1.qhimg.com/t01140eb44982c3e589.png" title="t012929447643edd883.png" alt="http://p4.qhimg.com/t012929447643edd883.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在构建和运行代码，我们得到了预期的错误。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t016102578f300b9192.png" title="t01955b880a07c67ba1.png" alt="http://p0.qhimg.com/t01955b880a07c67ba1.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里我们可以看到，0x1208由ExDeferredFreePool写入[esi+4]，等于0x41414141。现在我们需要覆盖内存中的一些内容，这让我们可实现代码执行。为此，我选择覆盖HalDispatchTable中的一个条目，和</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我利用</span><a href="https://samdb.xyz/windows-kernel-exploitation-part-6-arbitary-overwrite-null-pointer-type-confusion-and-integer-overflow-examples/" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">任意覆盖漏洞</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">时一样。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一旦条目被覆盖，触发正确的函数将导致使用分派表条目和内核代码执行被重定向到伪池分配之前的位置(0x1208)。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，我们需要找到HalDispatch表地址和我们要覆盖的目标条目，在这种情况下是ntdll中的NtQueryIntervalProfile函数被调用时使用的第二个条目。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t014da1f6f838c04aea.png" title="t01bc9b7258ad389d69.png" alt="http://p6.qhimg.com/t01bc9b7258ad389d69.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来我们更新伪ListHeads条目，以指向 where。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p1.qhimg.com/t016deda56c3b4ea8aa.png" title="t0186e3855aab15bfb6.png" alt="http://p1.qhimg.com/t0186e3855aab15bfb6.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，我们在0x1208处放置一个0xcc字节（int 3操作码）来触发断点，并增加一个对NtQueryIntervalProfile的调用，以便在我们清理所有东西后调用该函数。放置0xCC字节的原因是，如果不这样做，0x1208处的字节是clc（0xf8）的操作码，后跟ret（0xc3），这意味着什么都不会发生，操作系统保持正常。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t01dd0119d0722e0e1d.png" title="t01782d6c591e80bfba.png" alt="http://p5.qhimg.com/t01782d6c591e80bfba.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们还没有设置我们的shellcode，但现在我们应该可在0x1208处实现代码执行。再次运行代码，我们得到了这一结果。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p0.qhimg.com/t01737899acbcb4397c.png" title="t017fa897dd508dea70.png" alt="http://p1.qhimg.com/t017fa897dd508dea70.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后一步是设置shellcode。执行将从0x1208开始，所以我们不能只是在此处放置一个指针，相反，我们在调用NtQueryIntervalProfile之前设置了以下数据。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t0150849a167685d07c.png" title="t0179443b5b3ba8fc51.png" alt="http://p7.qhimg.com/t0179443b5b3ba8fc51.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在重新编译并运行代码，我们得到如下结果：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p5.qhimg.com/t014a36e58dd59eae16.png" title="t012e824721855148c5.png" alt="http://p1.qhimg.com/t012e824721855148c5.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">该漏洞利用的最终/完整</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">代码见</span><a href="https://github.com/sam-b/HackSysDriverExploits/blob/master/HackSysPoolOverflowTypeIndexOverwrite/HackSysPoolOverflowTypeIndexOverwrite/HackSysPoolOverflowTypeIndexOverwrite.cpp" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Github</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。</span></p><p><br/></p><p style="text-indent: 2em;"><br/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://samdb.xyz/windows-kernel-exploitation-part-4/" target="_blank">原文链接：https://samdb.xyz/windows-kernel-exploitation-part-4/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】Windows内核池漏洞利用技术 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4066" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src='http://p1.qhmsg.com/dm/48_48_100/t00df551a583a87f4e9.jpg'/>              
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2794169747" class="response" data-bind-id="2794169747" data-target="14841" user-name="华为未然实验室" href="javascript:;">
+                华为未然实验室            </a>
+                        <span class="comment-time">2017-07-07 10:57:17</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2794169747" data-target="14841">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14841" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">能给大家带来一点有价值的东西是我们最大的欣慰。</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="14829">不明觉厉</a> <span class="comment-time">2017-07-06 10:35:26</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14829">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14829" data-type="comment">点赞</a></span>            </div>
+            <p>这分析，牛！</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/5x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14829" user-name="不明觉厉" href="javascript:;">
+                不明觉厉            </a>
+                        <span class="comment-time">2017-07-06 10:35:26</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14829">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14829" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">这分析，牛！</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/7x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2645193558" class="response" data-bind-id="2645193558" data-target="14828" user-name="吃瓜群众" href="javascript:;">
+                吃瓜群众            </a>
+                        <span class="comment-time">2017-07-06 10:22:02</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2645193558" data-target="14828">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14828" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">mark</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="4066" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

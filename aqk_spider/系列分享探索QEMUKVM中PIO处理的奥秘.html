@@ -1,0 +1,1204 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【系列分享】探索QEMU-KVM中PIO处理的奥秘 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="QEMU,云安全,虚拟化安全"/>
+    
+        <meta name="description" content="我们都知道在kvm/qemu的虚拟机中向端口读写输入会陷入kvm中（绝大部分端口)。但是其具体过程是怎么样的，虚拟机, kvm, qemu这三者的关系在这个过程中又是如何相互联系来完成这一模拟过程的。本文就是对这一问题的探索，通过对kvm进行调试来了解其中的奥秘。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【系列分享】探索QEMU-KVM中PIO处理的奥秘</h2>
+                <div class="article-msg">
+                    <span class="time">2017-07-10 10:13:11</span>
+                    
+                                        <span class="read">阅读：18403次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4079"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4079" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2612165517" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01c466407f2a92aaf5.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2612165517" style="color:#848e99;">360GearTeam</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><span style="text-indent: 2em;"><img src="http://p6.qhimg.com/t018ad0d2dbdef8f30e.jpg" title="t01acc2ea8c4d35d69a.jpg" alt="http://p6.qhimg.com/t01acc2ea8c4d35d69a.jpg"/></span></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><span style="text-indent: 2em;"></span></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=2612165517" target="_self"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">Terenceli @ 360 Gear Team</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, sans-serif; font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们都知道在kvm/qemu的虚拟机中向端口读写输入会陷入kvm中（绝大部分端口)。但是其具体过程是怎么样的，虚拟机、kvm和qemu这三者的关系在这个过程中又是如何相互联系来完成这一模拟过程的。<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(227, 108, 9);"><strong>本文就是对这一问题的探索，通过对kvm进行调试来了解其中的奥秘。</strong></span></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="text-indent: 2em;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="text-indent: 2em;">零. &nbsp;准备工作</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">工欲善其事，必先利其器。为了了解kvm如何对PIO进行截获处理，首先需要调试kvm，这需要 配置双机调试环境，网上很多例子，需要注意的是，4.x内核清除kernel text的可写保护有点问题。 所以本文还是用的3.x内核，具体为3.10.105。所以我们的环境是target为3.10.105的内核，debugger随意。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们直接用kvm/qemu调试，由于一个完整的环境会有非常多的vm exit，会干扰我们的分析。 这里我们只需要建立一个使用kvm api建立起一个最简易虚拟机的例子，在虚拟机中执行in/out 指令即可。网上也有很多这种例子。比如</span><a href="http://www.linuxjournal.com/magazine/linux-kvm-learning-tool" target="_self" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);">使用KVM API实现Emulator Demo, Linux KVM as a Learning Tool</span></strong></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里我们使用第一个例子，首先从</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://github.com/soulxu/kvmsample">https://github.com/soulxu/kvmsample</a>&nbsp; &nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">把代码clone下来，直接make，如果加载了kvm应该就可以看到输出了，kvm的api用法这里不表，仔细看看 前两篇文章之一就可以了，qemu虽然复杂，本质上也是这样运行的。这个例子中的guest是向端口输出数据。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><br/></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong>一. &nbsp;IO端口在KVM中的注册</strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先我们需要明确的一点是，IO port 这个东西是CPU用来与外设进行数据交互的，也不是所有CPU都有。 在虚拟机看来是没有IO port这个概念的，所以是一定要在vm exit中捕获的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于是否截获IO指令，是由vmcs中的VM-Execution controls中的两个域决定的。 参考intel SDM 24.6.2:</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01e409842373cc5485.png" title="t01c3805bdbf1fd509d.png" alt="http://p4.qhimg.com/t01c3805bdbf1fd509d.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们可以看到如果设置了Use I/O bitmpas这一位，Unconditional I/O exiting就无效了，如果在IO bitmap 中某一位被设置为1，则访问该端口就会发生vm exit，否则客户机可以直接访问。 IO bitmap的地址存在vmcs中的I/O-Bitmap Addresses域中，事实上，有两个IO bitmap，我们叫做A和B。 再来看看SDM</span></p><p style="text-align: center;"><img src="http://p0.qhimg.com/t01f110b26871978b78.png" title="t016316aedffae19b8e.png" alt="http://p6.qhimg.com/t016316aedffae19b8e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">每一个bitmap包含4kb，也就是一个页，bitmap A包含了端口0000H到7FFFFH(4*1024*8)，第二个端口包含了8000H到 FFFFH。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">好了，我们已经从理论上对IO port有了了解了，下面看看kvm中的代码。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先我们看到arch/x86/kvm/vmx.c中，定义了两个全局变量表示bitmap A和B的地址。 在vmx_init函数中这两个指针都被分配了一个页大小的空间，之后所有位都置1，然后在bitmap A中对第 80位进行了清零，也就是客户机访</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个0x80端口不会发生vm exit。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;unsigned&nbsp;long&nbsp;*vmx_io_bitmap_a;
+static&nbsp;unsigned&nbsp;long&nbsp;*vmx_io_bitmap_b;
+static&nbsp;int&nbsp;__init&nbsp;vmx_init(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;vmx_io_bitmap_a&nbsp;=&nbsp;(unsigned&nbsp;long&nbsp;*)__get_free_page(GFP_KERNEL);
+&nbsp;&nbsp;&nbsp;&nbsp;vmx_io_bitmap_b&nbsp;=&nbsp;(unsigned&nbsp;long&nbsp;*)__get_free_page(GFP_KERNEL);
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;/*
+&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;Allow&nbsp;direct&nbsp;access&nbsp;to&nbsp;the&nbsp;PC&nbsp;debug&nbsp;port&nbsp;(it&nbsp;is&nbsp;often&nbsp;used&nbsp;for&nbsp;I/O
+&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;delays,&nbsp;but&nbsp;the&nbsp;vmexits&nbsp;simply&nbsp;slow&nbsp;things&nbsp;down).
+&nbsp;&nbsp;&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;memset(vmx_io_bitmap_a,&nbsp;0xff,&nbsp;PAGE_SIZE);
+&nbsp;&nbsp;&nbsp;&nbsp;clear_bit(0x80,&nbsp;vmx_io_bitmap_a);
+&nbsp;&nbsp;&nbsp;&nbsp;memset(vmx_io_bitmap_b,&nbsp;0xff,&nbsp;PAGE_SIZE);
+&nbsp;&nbsp;&nbsp;&nbsp;...
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在同一个文件中，我们看到在对vcpu进行初始化的时候会把这个bitmap A和B的地址写入到vmcs中去，这样 就建立了对IO port的访问的截获。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;vmx_vcpu_setup(struct&nbsp;vcpu_vmx&nbsp;*vmx)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;I/O&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;vmcs_write64(IO_BITMAP_A,&nbsp;__pa(vmx_io_bitmap_a));
+&nbsp;&nbsp;&nbsp;&nbsp;vmcs_write64(IO_BITMAP_B,&nbsp;__pa(vmx_io_bitmap_b));
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}</pre><p style="text-indent: 2em;"><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">二. &nbsp;PIO中out的处理流程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本节我们来探讨一下kvm中out指令的处理流程。首先，将上一节中的test.S代码改一下，只out一次。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">.globl&nbsp;_start
+&nbsp;&nbsp;&nbsp;&nbsp;.code16
+_start:
+&nbsp;&nbsp;&nbsp;&nbsp;xorw&nbsp;%ax,&nbsp;%ax
+&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;$0x0a,%al
+&nbsp;&nbsp;&nbsp;&nbsp;out&nbsp;%ax,&nbsp;$0x10
+&nbsp;&nbsp;&nbsp;&nbsp;inc&nbsp;%ax
+&nbsp;&nbsp;&nbsp;&nbsp;hlt</pre><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">kvm中guest发送vm exit之后会根据发送exit的原因调用各种handler。这也在vmx.c中</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;(*const&nbsp;kvm_vmx_exit_handlers[])(struct&nbsp;kvm_vcpu&nbsp;*vcpu)&nbsp;=&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;[EXIT_REASON_EXCEPTION_NMI]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;handle_exception,
+&nbsp;&nbsp;&nbsp;&nbsp;[EXIT_REASON_EXTERNAL_INTERRUPT]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;handle_external_interrupt,
+&nbsp;&nbsp;&nbsp;&nbsp;[EXIT_REASON_TRIPLE_FAULT]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;handle_triple_fault,
+&nbsp;&nbsp;&nbsp;&nbsp;[EXIT_REASON_NMI_WINDOW]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;handle_nmi_window,
+&nbsp;&nbsp;&nbsp;&nbsp;[EXIT_REASON_IO_INSTRUCTION]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;handle_io,
+&nbsp;&nbsp;&nbsp;&nbsp;...
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对应这里，处理IO的回调是handle_io。我们在target中执行：</span></p><pre class="brush:plain;toolbar:false">root@ubuntu:/home/test#&nbsp;echo&nbsp;g&nbsp;&gt;/proc/sysrq-trigger</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这样调试机中的gdb会断下来，给handle_io下个断点：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;b&nbsp;handle_io
+Breakpoint&nbsp;1&nbsp;at&nbsp;0xffffffff81037dca:&nbsp;file&nbsp;arch/x86/kvm/vmx.c,&nbsp;line&nbsp;4816.
+(gdb)&nbsp;c
+接着，我们用gdb启动target中的kvmsample，并且在main.c的84行下个断点。
+test@ubuntu:~/kvmsample$&nbsp;gdb&nbsp;./kvmsample&nbsp;
+...
+Reading&nbsp;symbols&nbsp;from&nbsp;./kvmsample...done.
+(gdb)&nbsp;b&nbsp;ma
+main&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;main.c&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;malloc&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;malloc@plt&nbsp;&nbsp;
+(gdb)&nbsp;b&nbsp;main.c:84
+Breakpoint&nbsp;1&nbsp;at&nbsp;0x400cac:&nbsp;file&nbsp;main.c,&nbsp;line&nbsp;84.</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第84行恰好是从ioctl KVM_RUN中返回回来的时候。</span></p><p style="text-align: center;"><img src="http://p5.qhimg.com/t01ce99fcc96c8cc870.png" title="t01624359c58c735857.png" alt="http://p7.qhimg.com/t01624359c58c735857.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">好了，开始r，会发现debugger已经断下来了：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">Thread&nbsp;434&nbsp;hit&nbsp;Breakpoint&nbsp;1,&nbsp;handle_io&nbsp;(vcpu=0xffff8800ac528000)
+at&nbsp;arch/x86/kvm/vmx.c:4816
+4816&nbsp;&nbsp;&nbsp;&nbsp;{
+(gdb)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从handle_io的代码我们可以看出，首先会从vmcs中读取exit的一些信息，包括访问这个端口是in还是out, 大小，以及端口号port等。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;handle_io(struct&nbsp;kvm_vcpu&nbsp;*vcpu)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;long&nbsp;exit_qualification;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;size,&nbsp;in,&nbsp;string;
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;port;
+&nbsp;&nbsp;&nbsp;&nbsp;exit_qualification&nbsp;=&nbsp;vmcs_readl(EXIT_QUALIFICATION);
+&nbsp;&nbsp;&nbsp;&nbsp;string&nbsp;=&nbsp;(exit_qualification&nbsp;&amp;&nbsp;16)&nbsp;!=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;in&nbsp;=&nbsp;(exit_qualification&nbsp;&amp;&nbsp;8)&nbsp;!=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;++vcpu-&gt;stat.io_exits;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(string&nbsp;||&nbsp;in)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;emulate_instruction(vcpu,&nbsp;0)&nbsp;==&nbsp;EMULATE_DONE;
+&nbsp;&nbsp;&nbsp;&nbsp;port&nbsp;=&nbsp;exit_qualification&nbsp;&gt;&gt;&nbsp;16;
+&nbsp;&nbsp;&nbsp;&nbsp;size&nbsp;=&nbsp;(exit_qualification&nbsp;&amp;&nbsp;7)&nbsp;+&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;skip_emulated_instruction(vcpu);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;kvm_fast_pio_out(vcpu,&nbsp;size,&nbsp;port);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">之后通过skip_emulated_instruction增加guest的rip之后调用kvm_fast_pio_out，在该函数中， 我们可以看到首先读取guest的rax，这个值放的是向端口写入的数据，这里是，0xa</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;kvm_fast_pio_out(struct&nbsp;kvm_vcpu&nbsp;*vcpu,&nbsp;int&nbsp;size,&nbsp;unsigned&nbsp;short&nbsp;port)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;long&nbsp;val&nbsp;=&nbsp;kvm_register_read(vcpu,&nbsp;VCPU_REGS_RAX);
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;ret&nbsp;=&nbsp;emulator_pio_out_emulated(&amp;vcpu-&gt;arch.emulate_ctxt,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;size,&nbsp;port,&nbsp;&amp;val,&nbsp;1);
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;do&nbsp;not&nbsp;return&nbsp;to&nbsp;emulator&nbsp;after&nbsp;return&nbsp;from&nbsp;userspace&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.pio.count&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;ret;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们可以对比gdb中看看数据：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">Thread&nbsp;434&nbsp;hit&nbsp;Breakpoint&nbsp;1,&nbsp;handle_io&nbsp;(vcpu=0xffff8800ac528000)
+&nbsp;&nbsp;&nbsp;&nbsp;at&nbsp;arch/x86/kvm/vmx.c:4816
+4816&nbsp;&nbsp;&nbsp;&nbsp;{
+(gdb)&nbsp;n
+4821&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;exit_qualification&nbsp;=&nbsp;vmcs_readl(EXIT_QUALIFICATION);
+(gdb)&nbsp;n
+4825&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++vcpu-&gt;stat.io_exits;
+(gdb)&nbsp;n
+4827&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(string&nbsp;||&nbsp;in)
+(gdb)&nbsp;n
+4832&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;skip_emulated_instruction(vcpu);
+(gdb)&nbsp;n
+[New&nbsp;Thread&nbsp;3654]
+4834&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;kvm_fast_pio_out(vcpu,&nbsp;size,&nbsp;port);
+(gdb)&nbsp;s
+kvm_fast_pio_out&nbsp;(vcpu=0xffff8800ac528000,&nbsp;size=16,&nbsp;port=16)
+&nbsp;&nbsp;&nbsp;&nbsp;at&nbsp;arch/x86/kvm/x86.c:5086
+5086&nbsp;&nbsp;&nbsp;&nbsp;{
+(gdb)&nbsp;n
+[New&nbsp;Thread&nbsp;3656]
+5087&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;long&nbsp;val&nbsp;=&nbsp;kvm_register_read(vcpu,&nbsp;VCPU_REGS_RAX);
+(gdb)&nbsp;n
+[New&nbsp;Thread&nbsp;3657]
+5088&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;ret&nbsp;=&nbsp;emulator_pio_out_emulated(&amp;vcpu-&gt;arch.emulate_ctxt,
+(gdb)&nbsp;p&nbsp;/x&nbsp;val
+$1&nbsp;=&nbsp;0xa
+(gdb)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">再往下，我们看到在emulator_pio_out_emulated，把值拷贝到了vcpu-&gt;arch.pio_data中，接着调用 emulator_pio_in_out。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;emulator_pio_out_emulated(struct&nbsp;x86_emulate_ctxt&nbsp;*ctxt,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;size,&nbsp;unsigned&nbsp;short&nbsp;port,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;const&nbsp;void&nbsp;*val,&nbsp;unsigned&nbsp;int&nbsp;count)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;kvm_vcpu&nbsp;*vcpu&nbsp;=&nbsp;emul_to_vcpu(ctxt);
+&nbsp;&nbsp;&nbsp;&nbsp;memcpy(vcpu-&gt;arch.pio_data,&nbsp;val,&nbsp;size&nbsp;*&nbsp;count);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;emulator_pio_in_out(vcpu,&nbsp;size,&nbsp;port,&nbsp;(void&nbsp;*)val,&nbsp;count,&nbsp;false);
+}
+static&nbsp;int&nbsp;emulator_pio_in_out(struct&nbsp;kvm_vcpu&nbsp;*vcpu,&nbsp;int&nbsp;size,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;short&nbsp;port,&nbsp;void&nbsp;*val,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;int&nbsp;count,&nbsp;bool&nbsp;in)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;trace_kvm_pio(!in,&nbsp;port,&nbsp;size,&nbsp;count);
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.pio.port&nbsp;=&nbsp;port;
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.pio.in&nbsp;=&nbsp;in;
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.pio.count&nbsp;&nbsp;=&nbsp;count;
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.pio.size&nbsp;=&nbsp;size;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!kernel_pio(vcpu,&nbsp;vcpu-&gt;arch.pio_data))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.pio.count&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;run-&gt;exit_reason&nbsp;=&nbsp;KVM_EXIT_IO;
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;run-&gt;io.direction&nbsp;=&nbsp;in&nbsp;?&nbsp;KVM_EXIT_IO_IN&nbsp;:&nbsp;KVM_EXIT_IO_OUT;
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;run-&gt;io.size&nbsp;=&nbsp;size;
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;run-&gt;io.data_offset&nbsp;=&nbsp;KVM_PIO_PAGE_OFFSET&nbsp;*&nbsp;PAGE_SIZE;
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;run-&gt;io.count&nbsp;=&nbsp;count;
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;run-&gt;io.port&nbsp;=&nbsp;port;
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在后一个函数中，我们可以看到vcpu-&gt;run-&gt;io.data_offset设置为4096了，我们可以看到之前已经把我们 向端口写的值通过memcpy拷贝到了vpuc-&gt;arch.pio_data中去了，通过调试我们可以看出其中的端倪。 vcpu-&gt;arch.pio_data就在kvm_run后面一个页的位置。这也可以从kvm_vcpu_init中看出来。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">4405&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;run-&gt;io.size&nbsp;=&nbsp;size;
+(gdb)&nbsp;n
+[New&nbsp;Thread&nbsp;3667]
+4406&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;run-&gt;io.data_offset&nbsp;=&nbsp;KVM_PIO_PAGE_OFFSET&nbsp;*&nbsp;PAGE_SIZE;
+(gdb)&nbsp;n
+4407&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;run-&gt;io.count&nbsp;=&nbsp;count;
+(gdb)&nbsp;n
+4408&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;run-&gt;io.port&nbsp;=&nbsp;port;
+(gdb)&nbsp;p&nbsp;count
+$7&nbsp;=&nbsp;1
+(gdb)&nbsp;n
+4410&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+(gdb)&nbsp;x&nbsp;/2b&nbsp;0xffff88002a2a2000+0x1000
+0xffff88002a2a3000:&nbsp;0x0a&nbsp;&nbsp;&nbsp;&nbsp;0x00
+(gdb)&nbsp;p&nbsp;vcpu-&gt;run
+$9&nbsp;=&nbsp;(struct&nbsp;kvm_run&nbsp;*)&nbsp;0xffff88002a2a2000
+(gdb)&nbsp;p&nbsp;vcpu-&gt;arch.pio_data
+$10&nbsp;=&nbsp;(void&nbsp;*)&nbsp;0xffff88002a2a3000
+(gdb)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这样，我们看到vcpu-&gt;run-&gt;io保存了一些PIO的基本信息，比如大小，端口号等，run后面的一个页 vcpu-&gt;arch.pio_data则保存了实际out出来的数据。让target继续执行，这个时候我们断回了kvmsample 程序中。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;p&nbsp;kvm-&gt;vcpus-&gt;kvm_run-&gt;io&nbsp;
+$2&nbsp;=&nbsp;{direction&nbsp;=&nbsp;1&nbsp;&#39;\001&#39;,&nbsp;size&nbsp;=&nbsp;2&nbsp;&#39;\002&#39;,&nbsp;port&nbsp;=&nbsp;16,&nbsp;count&nbsp;=&nbsp;1,&nbsp;
+data_offset&nbsp;=&nbsp;4096}
+(gdb)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里简单说一下kvm_run，这是用于vcpu和应用层的程序（典型如qemu)通信的一个结构，user space的 程序通过KVM__VCPU_MMAP_SIZE这个ioctl得到大小得到大小，然后映射到用户空间。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;x&nbsp;/2b&nbsp;0x7ffff7ff4000+0x1000
+0x7ffff7ff5000:&nbsp;10</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们通过gdb可以看到，我们在guest向端口写入的数据以及端口都能够从user space读出来。在这个示例程序中， 仅仅是把数据输出来，qemu中会根据端口去寻找对应的设备，然后执行对应的回调。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">整体而言，out指令的流程是非常简单的，guest写端口，陷入kvm, kvm回到user space处理。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">三. &nbsp;PIO中in的处理流程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虽然</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们说guest访问端口包含了读写，都会导致vm exit。但是如果我们细想一下会发现，out和in肯定是不一样 的。out只需要guest写一个数据就好了，但是in还需要读回来数据。所以流程应该是guest发起一个in操作， 然后kvm处理，返回到user space之中，把数据填到kvm_run结构中，这样，kvm得到数据了再vm entry，这样 in的数据就能够到guest中了。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们队实例程序做简单修改。在test.S中首先从0x10端口读入一个值，这个值为0xbeff，然后写到端口0x10。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">test.S
+#&nbsp;A&nbsp;test&nbsp;code&nbsp;for&nbsp;kvmsample
+.globl&nbsp;_start
+&nbsp;&nbsp;&nbsp;&nbsp;.code16
+_start:
+&nbsp;&nbsp;&nbsp;&nbsp;xorw&nbsp;%ax,&nbsp;%ax
+&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;$0x0a,%al
+&nbsp;&nbsp;&nbsp;&nbsp;in&nbsp;$0x10,%ax
+&nbsp;&nbsp;&nbsp;&nbsp;out&nbsp;%ax,&nbsp;$0x10
+&nbsp;&nbsp;&nbsp;&nbsp;hlt</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对main.c做如下修改：</span></p><p style="text-align: center;"><img src="http://p4.qhimg.com/t014ddab32c570f4db1.png" title="t01c206cdde382981bd.png" alt="http://p7.qhimg.com/t01c206cdde382981bd.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在处理KVM_EXIT_IO的时候区分了一下in/out，对in我们拷贝一个0xbeff过去。然后用在guest中用out向 端口0x10输出这个值。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">执行in指令的第一次仍然是陷入kvm handle_io处理，只是这次走另一条路：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">Thread&nbsp;486&nbsp;hit&nbsp;Breakpoint&nbsp;1,&nbsp;handle_io&nbsp;(vcpu=0xffff88011d428000)
+&nbsp;&nbsp;&nbsp;&nbsp;at&nbsp;arch/x86/kvm/vmx.c:4816
+4816&nbsp;&nbsp;&nbsp;&nbsp;{
+(gdb)&nbsp;n
+4821&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;exit_qualification&nbsp;=&nbsp;vmcs_readl(EXIT_QUALIFICATION);
+(gdb)&nbsp;
+4825&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++vcpu-&gt;stat.io_exits;
+(gdb)&nbsp;
+4827&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(string&nbsp;||&nbsp;in)
+(gdb)&nbsp;
+4828&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;emulate_instruction(vcpu,&nbsp;0)&nbsp;==&nbsp;EMULATE_DONE;
+(gdb)&nbsp;s
+emulate_instruction&nbsp;(emulation_type=&lt;optimized&nbsp;out&gt;,&nbsp;vcpu=&lt;optimized&nbsp;out&gt;)
+&nbsp;&nbsp;&nbsp;&nbsp;at&nbsp;/home/test/linux-3.10.105/arch/x86/include/asm/kvm_host.h:811
+811&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;x86_emulate_instruction(vcpu,&nbsp;0,&nbsp;emulation_type,&nbsp;NULL,&nbsp;0);
+(gdb)&nbsp;s</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">调用x86_emulate_instruction，这之中调用的最重要的两个函数时x86_decode_insn， x86_emulate_insn。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;x86_emulate_instruction(struct&nbsp;kvm_vcpu&nbsp;*vcpu,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;long&nbsp;cr2,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;emulation_type,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*insn,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;insn_len)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;r;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;x86_emulate_ctxt&nbsp;*ctxt&nbsp;=&nbsp;&amp;vcpu-&gt;arch.emulate_ctxt;
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;writeback&nbsp;=&nbsp;true;
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;write_fault_to_spt&nbsp;=&nbsp;vcpu-&gt;arch.write_fault_to_shadow_pgtable;
+&nbsp;&nbsp;&nbsp;&nbsp;/*
+&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;Clear&nbsp;write_fault_to_shadow_pgtable&nbsp;here&nbsp;to&nbsp;ensure&nbsp;it&nbsp;is
+&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;never&nbsp;reused.
+&nbsp;&nbsp;&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.write_fault_to_shadow_pgtable&nbsp;=&nbsp;false;
+&nbsp;&nbsp;&nbsp;&nbsp;kvm_clear_exception_queue(vcpu);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!(emulation_type&nbsp;&amp;&nbsp;EMULTYPE_NO_DECODE))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;init_emulate_ctxt(vcpu);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r&nbsp;=&nbsp;x86_decode_insn(ctxt,&nbsp;insn,&nbsp;insn_len);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+restart:
+&nbsp;&nbsp;&nbsp;&nbsp;r&nbsp;=&nbsp;x86_emulate_insn(ctxt);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ctxt-&gt;have_exception)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inject_emulated_exception(vcpu);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r&nbsp;=&nbsp;EMULATE_DONE;
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;if&nbsp;(vcpu-&gt;arch.pio.count)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!vcpu-&gt;arch.pio.in)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.pio.count&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;writeback&nbsp;=&nbsp;false;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.complete_userspace_io&nbsp;=&nbsp;complete_emulated_pio;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r&nbsp;=&nbsp;EMULATE_DO_MMIO;
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(writeback)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;toggle_interruptibility(vcpu,&nbsp;ctxt-&gt;interruptibility);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kvm_set_rflags(vcpu,&nbsp;ctxt-&gt;eflags);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kvm_make_request(KVM_REQ_EVENT,&nbsp;vcpu);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.emulate_regs_need_sync_to_vcpu&nbsp;=&nbsp;false;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kvm_rip_write(vcpu,&nbsp;ctxt-&gt;eip);
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.emulate_regs_need_sync_to_vcpu&nbsp;=&nbsp;true;
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;r;
+}
+EXPORT_SYMBOL_GPL(x86_emulate_instruction);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一个函数，x86_decode_insn，顾名思义，就是解码当前的指令。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;x86_decode_insn(struct&nbsp;x86_emulate_ctxt&nbsp;*ctxt,&nbsp;void&nbsp;*insn,&nbsp;int&nbsp;insn_len)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Legacy&nbsp;prefixes.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;(;;)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(ctxt-&gt;b&nbsp;=&nbsp;insn_fetch(u8,&nbsp;ctxt))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Opcode&nbsp;byte(s).&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;opcode&nbsp;=&nbsp;opcode_table[ctxt-&gt;b];
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Two-byte&nbsp;opcode?&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ctxt-&gt;b&nbsp;==&nbsp;0x0f)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;twobyte&nbsp;=&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;b&nbsp;=&nbsp;insn_fetch(u8,&nbsp;ctxt);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;opcode&nbsp;=&nbsp;twobyte_table[ctxt-&gt;b];
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;d&nbsp;=&nbsp;opcode.flags;
+&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;execute&nbsp;=&nbsp;opcode.u.execute;
+&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;check_perm&nbsp;=&nbsp;opcode.check_perm;
+&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;intercept&nbsp;=&nbsp;opcode.intercept;
+&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;decode_operand(ctxt,&nbsp;&amp;ctxt-&gt;src,&nbsp;(ctxt-&gt;d&nbsp;&gt;&gt;&nbsp;SrcShift)&nbsp;&amp;&nbsp;OpMask);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rc&nbsp;!=&nbsp;X86EMUL_CONTINUE)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;done;
+&nbsp;&nbsp;&nbsp;&nbsp;/*
+&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;Decode&nbsp;and&nbsp;fetch&nbsp;the&nbsp;second&nbsp;source&nbsp;operand:&nbsp;register,&nbsp;memory
+&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;or&nbsp;immediate.
+&nbsp;&nbsp;&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;decode_operand(ctxt,&nbsp;&amp;ctxt-&gt;src2,&nbsp;(ctxt-&gt;d&nbsp;&gt;&gt;&nbsp;Src2Shift)&nbsp;&amp;&nbsp;OpMask);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rc&nbsp;!=&nbsp;X86EMUL_CONTINUE)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;done;
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Decode&nbsp;and&nbsp;fetch&nbsp;the&nbsp;destination&nbsp;operand:&nbsp;register&nbsp;or&nbsp;memory.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;decode_operand(ctxt,&nbsp;&amp;ctxt-&gt;dst,&nbsp;(ctxt-&gt;d&nbsp;&gt;&gt;&nbsp;DstShift)&nbsp;&amp;&nbsp;OpMask);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先通过insn_fetch获取指令，从下面的调试可以看到取到的指令正好是我们的in指令的机器码：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;
+4366&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(ctxt-&gt;b&nbsp;=&nbsp;insn_fetch(u8,&nbsp;ctxt))&nbsp;{
+(gdb)&nbsp;
+4414&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ctxt-&gt;rex_prefix&nbsp;&amp;&nbsp;8)
+(gdb)&nbsp;p&nbsp;ctxt-&gt;b
+$38&nbsp;=&nbsp;229&nbsp;&#39;\345&#39;
+(gdb)&nbsp;p&nbsp;/x&nbsp;ctxt-&gt;b
+$39&nbsp;=&nbsp;0xe5</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">之后根据指令，查表opcode_table找到对应的回调函数，将回调赋值给ctxt-&gt;execute.对于我们的in指令 来说这个回调是em_in函数。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">4472&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;execute&nbsp;=&nbsp;opcode.u.execute;
+(gdb)&nbsp;
+4473&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;check_perm&nbsp;=&nbsp;opcode.check_perm;
+(gdb)&nbsp;p&nbsp;ctxt-&gt;execute&nbsp;
+$41&nbsp;=&nbsp;(int&nbsp;(*)(struct&nbsp;x86_emulate_ctxt&nbsp;*))&nbsp;0xffffffff81027238&nbsp;&lt;em_in&gt;
+(gdb)&nbsp;n</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来就是调用三次decode_operand取出对应指令的操作数了。从下面的调试结果我们看出，源操作数 的值为ctxt-&gt;src-&gt;val=16，需要写到的寄存器是RAX，即ctxt-&gt;dst-&gt;addr.reg</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;n
+4528&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;decode_operand(ctxt,&nbsp;&amp;ctxt-&gt;src2,&nbsp;(ctxt-&gt;d&nbsp;&gt;&gt;&nbsp;Src2Shift)&nbsp;&amp;&nbsp;OpMask);
+(gdb)&nbsp;n
+4529&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rc&nbsp;!=&nbsp;X86EMUL_CONTINUE)
+(gdb)&nbsp;p&nbsp;ctxt-&gt;src-&gt;val
+$42&nbsp;=&nbsp;16
+(gdb)&nbsp;n
+4533&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;decode_operand(ctxt,&nbsp;&amp;ctxt-&gt;dst,&nbsp;(ctxt-&gt;d&nbsp;&gt;&gt;&nbsp;DstShift)&nbsp;&amp;&nbsp;OpMask);
+(gdb)&nbsp;s
+...
+(gdb)&nbsp;p&nbsp;op-&gt;addr.reg
+$46&nbsp;=&nbsp;(unsigned&nbsp;long&nbsp;*)&nbsp;0xffff88011d4296c8
+(gdb)&nbsp;p&nbsp;ctxt-&gt;_regs[0]
+$47&nbsp;=&nbsp;10
+(gdb)&nbsp;p&nbsp;&amp;ctxt-&gt;_regs[0]
+$48&nbsp;=&nbsp;(unsigned&nbsp;long&nbsp;*)&nbsp;0xffff88011d4296c8</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">继续回到x86_emulate_instruction函数中，指令解码之后就是执行了，这是通过调用x86_emulate_insn 实现的。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;x86_emulate_insn(struct&nbsp;x86_emulate_ctxt&nbsp;*ctxt)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;const&nbsp;struct&nbsp;x86_emulate_ops&nbsp;*ops&nbsp;=&nbsp;ctxt-&gt;ops;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;rc&nbsp;=&nbsp;X86EMUL_CONTINUE;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;saved_dst_type&nbsp;=&nbsp;ctxt-&gt;dst.type;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ctxt-&gt;execute)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ctxt-&gt;d&nbsp;&amp;&nbsp;Fastop)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*fop)(struct&nbsp;fastop&nbsp;*)&nbsp;=&nbsp;(void&nbsp;*)ctxt-&gt;execute;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;fastop(ctxt,&nbsp;fop);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rc&nbsp;!=&nbsp;X86EMUL_CONTINUE)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;done;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;writeback;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;ctxt-&gt;execute(ctxt);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rc&nbsp;!=&nbsp;X86EMUL_CONTINUE)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;done;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;writeback;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+writeback:
+&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;writeback(ctxt);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rc&nbsp;!=&nbsp;X86EMUL_CONTINUE)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;done;
+done:
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rc&nbsp;==&nbsp;X86EMUL_PROPAGATE_FAULT)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;have_exception&nbsp;=&nbsp;true;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rc&nbsp;==&nbsp;X86EMUL_INTERCEPTED)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;EMULATION_INTERCEPTED;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rc&nbsp;==&nbsp;X86EMUL_CONTINUE)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;writeback_registers(ctxt);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;(rc&nbsp;==&nbsp;X86EMUL_UNHANDLEABLE)&nbsp;?&nbsp;EMULATION_FAILED&nbsp;:&nbsp;EMULATION_OK;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最重要的当然是调用回调函数了</span></p><pre class="brush:plain;toolbar:false">rc&nbsp;=&nbsp;ctxt-&gt;execute(ctxt);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从之前的解码中，我们已经知道这是em_in了,相关调用函数如下：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;em_in(struct&nbsp;x86_emulate_ctxt&nbsp;*ctxt)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!pio_in_emulated(ctxt,&nbsp;ctxt-&gt;dst.bytes,&nbsp;ctxt-&gt;src.val,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;ctxt-&gt;dst.val))
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;X86EMUL_IO_NEEDED;
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;X86EMUL_CONTINUE;
+}
+static&nbsp;int&nbsp;pio_in_emulated(struct&nbsp;x86_emulate_ctxt&nbsp;*ctxt,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;int&nbsp;size,&nbsp;unsigned&nbsp;short&nbsp;port,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*dest)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;read_cache&nbsp;*rc&nbsp;=&nbsp;&amp;ctxt-&gt;io_read;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rc-&gt;pos&nbsp;==&nbsp;rc-&gt;end)&nbsp;{&nbsp;/*&nbsp;refill&nbsp;pio&nbsp;read&nbsp;ahead&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc-&gt;pos&nbsp;=&nbsp;rc-&gt;end&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!ctxt-&gt;ops-&gt;pio_in_emulated(ctxt,&nbsp;size,&nbsp;port,&nbsp;rc-&gt;data,&nbsp;n))
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc-&gt;end&nbsp;=&nbsp;n&nbsp;*&nbsp;size;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ctxt-&gt;rep_prefix&nbsp;&amp;&amp;&nbsp;!(ctxt-&gt;eflags&nbsp;&amp;&nbsp;EFLG_DF))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;dst.data&nbsp;=&nbsp;rc-&gt;data&nbsp;+&nbsp;rc-&gt;pos;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;dst.type&nbsp;=&nbsp;OP_MEM_STR;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;dst.count&nbsp;=&nbsp;(rc-&gt;end&nbsp;-&nbsp;rc-&gt;pos)&nbsp;/&nbsp;size;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc-&gt;pos&nbsp;=&nbsp;rc-&gt;end;
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy(dest,&nbsp;rc-&gt;data&nbsp;+&nbsp;rc-&gt;pos,&nbsp;size);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc-&gt;pos&nbsp;+=&nbsp;size;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;1;
+}
+static&nbsp;int&nbsp;emulator_pio_in_emulated(struct&nbsp;x86_emulate_ctxt&nbsp;*ctxt,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;size,&nbsp;unsigned&nbsp;short&nbsp;port,&nbsp;void&nbsp;*val,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;int&nbsp;count)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;kvm_vcpu&nbsp;*vcpu&nbsp;=&nbsp;emul_to_vcpu(ctxt);
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;ret;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(vcpu-&gt;arch.pio.count)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;data_avail;
+&nbsp;&nbsp;&nbsp;&nbsp;ret&nbsp;=&nbsp;emulator_pio_in_out(vcpu,&nbsp;size,&nbsp;port,&nbsp;val,&nbsp;count,&nbsp;true);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ret)&nbsp;{
+data_avail:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy(val,&nbsp;vcpu-&gt;arch.pio_data,&nbsp;size&nbsp;*&nbsp;count);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.pio.count&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在最后一个函数中，由于vcpu-&gt;arch.pio.count此时还没有数据（需要user spaces提供），所以会执行 emulator_pio_in_out，这在之前已经看过这个函数了，这就是设置kvm_run的相关数据，然后user spaces来 填充。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">执行完了x86_emulate_insn，流程再次回到x86_emulate_instruction，最重要的是设置 vcpu-&gt;arch.complete_userspace_io这样一个回调。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">if&nbsp;(ctxt-&gt;have_exception)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;inject_emulated_exception(vcpu);
+&nbsp;&nbsp;&nbsp;&nbsp;r&nbsp;=&nbsp;EMULATE_DONE;
+}&nbsp;else&nbsp;if&nbsp;(vcpu-&gt;arch.pio.count)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!vcpu-&gt;arch.pio.in)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.pio.count&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;writeback&nbsp;=&nbsp;false;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.complete_userspace_io&nbsp;=&nbsp;complete_emulated_pio;
+&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">之后这一次vm exit就算完事了。这样就会退到user space的ioctl KVM_RUN处。user space发现是一个 KVM_EXIT_IO，并且方向是KVM_EXIT_IO_IN，于是向kvm_run填入数据0xbeff。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;KVM_EXIT_IO:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;KVM_EXIT_IO\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(kvm-&gt;vcpus-&gt;kvm_run-&gt;io.direction&nbsp;==&nbsp;KVM_EXIT_IO_OUT)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;out&nbsp;port:&nbsp;%d,&nbsp;data:&nbsp;0x%x\n&quot;,&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kvm-&gt;vcpus-&gt;kvm_run-&gt;io.port,&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(int&nbsp;*)((char&nbsp;*)(kvm-&gt;vcpus-&gt;kvm_run)&nbsp;+&nbsp;kvm-&gt;vcpus-&gt;kvm_run-&gt;io.data_offset)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;if(kvm-&gt;vcpus-&gt;kvm_run-&gt;io.direction&nbsp;==&nbsp;KVM_EXIT_IO_IN)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;in&nbsp;port:&nbsp;%d\n&quot;,kvm-&gt;vcpus-&gt;kvm_run-&gt;io.port);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(short*)((char*)(kvm-&gt;vcpus-&gt;kvm_run)+kvm-&gt;vcpus-&gt;kvm_run-&gt;io.data_offset)&nbsp;=&nbsp;0xbeff;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于user space的ioctl一般都是运行在一个循环中（如果不这样，guest也就不可能一直运行着了)。所以接着调用 KVM_RUN ioctl。在进入non-root的模式前，有一个工作就是判断vcpu-&gt;arch.complete_userspace_io 是否设置，如果设置就会调用。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;kvm_arch_vcpu_ioctl_run(struct&nbsp;kvm_vcpu&nbsp;*vcpu,&nbsp;struct&nbsp;kvm_run&nbsp;*kvm_run)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;r;
+&nbsp;&nbsp;&nbsp;&nbsp;sigset_t&nbsp;sigsaved;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(unlikely(vcpu-&gt;arch.complete_userspace_io))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;(*cui)(struct&nbsp;kvm_vcpu&nbsp;*)&nbsp;=&nbsp;vcpu-&gt;arch.complete_userspace_io;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.complete_userspace_io&nbsp;=&nbsp;NULL;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r&nbsp;=&nbsp;cui(vcpu);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(r&nbsp;&lt;=&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;out;
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WARN_ON(vcpu-&gt;arch.pio.count&nbsp;||&nbsp;vcpu-&gt;mmio_needed);
+&nbsp;&nbsp;&nbsp;&nbsp;r&nbsp;=&nbsp;__vcpu_run(vcpu);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;r;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从之前的分之知道</span></p><pre class="brush:plain;toolbar:false">vcpu-&gt;arch.complete_userspace_io&nbsp;=&nbsp;complete_emulated_pio;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">看看相应的代码</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;complete_emulated_pio(struct&nbsp;kvm_vcpu&nbsp;*vcpu)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;BUG_ON(!vcpu-&gt;arch.pio.count);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;complete_emulated_io(vcpu);
+}
+static&nbsp;inline&nbsp;int&nbsp;complete_emulated_io(struct&nbsp;kvm_vcpu&nbsp;*vcpu)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;r;
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;srcu_idx&nbsp;=&nbsp;srcu_read_lock(&amp;vcpu-&gt;kvm-&gt;srcu);
+&nbsp;&nbsp;&nbsp;&nbsp;r&nbsp;=&nbsp;emulate_instruction(vcpu,&nbsp;EMULTYPE_NO_DECODE);
+&nbsp;&nbsp;&nbsp;&nbsp;srcu_read_unlock(&amp;vcpu-&gt;kvm-&gt;srcu,&nbsp;vcpu-&gt;srcu_idx);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(r&nbsp;!=&nbsp;EMULATE_DONE)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;1;
+}
+static&nbsp;inline&nbsp;int&nbsp;emulate_instruction(struct&nbsp;kvm_vcpu&nbsp;*vcpu,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;emulation_type)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;x86_emulate_instruction(vcpu,&nbsp;0,&nbsp;emulation_type,&nbsp;NULL,&nbsp;0);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最终也是调用了x86_emulate_instruction，值得注意的是用了参数EMULTYPE_NO_DECODE，这就不会再次 解码。而是直接执行我们之前的em_in函数。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;emulator_pio_in_emulated(struct&nbsp;x86_emulate_ctxt&nbsp;*ctxt,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;size,&nbsp;unsigned&nbsp;short&nbsp;port,&nbsp;void&nbsp;*val,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;int&nbsp;count)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;kvm_vcpu&nbsp;*vcpu&nbsp;=&nbsp;emul_to_vcpu(ctxt);
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;ret;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(vcpu-&gt;arch.pio.count)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;data_avail;
+&nbsp;&nbsp;&nbsp;&nbsp;ret&nbsp;=&nbsp;emulator_pio_in_out(vcpu,&nbsp;size,&nbsp;port,&nbsp;val,&nbsp;count,&nbsp;true);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ret)&nbsp;{
+data_avail:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy(val,&nbsp;vcpu-&gt;arch.pio_data,&nbsp;size&nbsp;*&nbsp;count);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.pio.count&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在最终的emulator_pio_in_emulated中，由于这个时候vcpu-&gt;arch.pio.count已经有值了，表示数据可用了。 最终会把数据拷贝到ctx-&gt;dst.val中。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:php;toolbar:false">(gdb)&nbsp;n
+em_in&nbsp;(ctxt=0xffff88011d429550)&nbsp;at&nbsp;arch/x86/kvm/emulate.c:3440
+3440&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;X86EMUL_CONTINUE;
+(gdb)&nbsp;n
+3441&nbsp;&nbsp;&nbsp;&nbsp;}
+(gdb)&nbsp;p&nbsp;ctxt-&gt;dst.val
+$58&nbsp;=&nbsp;48895
+(gdb)&nbsp;p&nbsp;/x&nbsp;ctxt-&gt;dst.val
+$59&nbsp;=&nbsp;0xbeff
+(gdb)&nbsp;n</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">回到x86_emulate_insn，执行完了指令回调之后，会调到writeback函数去：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">if&nbsp;(ctxt-&gt;execute)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ctxt-&gt;d&nbsp;&amp;&nbsp;Fastop)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*fop)(struct&nbsp;fastop&nbsp;*)&nbsp;=&nbsp;(void&nbsp;*)ctxt-&gt;execute;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;fastop(ctxt,&nbsp;fop);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rc&nbsp;!=&nbsp;X86EMUL_CONTINUE)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;done;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;writeback;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+writeback:
+&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;writeback(ctxt);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rc&nbsp;!=&nbsp;X86EMUL_CONTINUE)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;done;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们之前解码得到ctxt-&gt;dst.type是一个寄存器，所以会执行write_register_operand</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;writeback(struct&nbsp;x86_emulate_ctxt&nbsp;*ctxt)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;rc;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ctxt-&gt;d&nbsp;&amp;&nbsp;NoWrite)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;X86EMUL_CONTINUE;
+&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(ctxt-&gt;dst.type)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;OP_REG:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;write_register_operand(&amp;ctxt-&gt;dst);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;X86EMUL_CONTINUE;
+}
+static&nbsp;void&nbsp;write_register_operand(struct&nbsp;operand&nbsp;*op)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;The&nbsp;4-byte&nbsp;case&nbsp;*is*&nbsp;correct:&nbsp;in&nbsp;64-bit&nbsp;mode&nbsp;we&nbsp;zero-extend.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(op-&gt;bytes)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;1:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(u8&nbsp;*)op-&gt;addr.reg&nbsp;=&nbsp;(u8)op-&gt;val;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;2:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(u16&nbsp;*)op-&gt;addr.reg&nbsp;=&nbsp;(u16)op-&gt;val;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;4:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*op-&gt;addr.reg&nbsp;=&nbsp;(u32)op-&gt;val;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;&nbsp;&nbsp;/*&nbsp;64b:&nbsp;zero-extend&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;8:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*op-&gt;addr.reg&nbsp;=&nbsp;op-&gt;val;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后一个函数op-&gt;addr.reg是解码过程中的目的操作数的寄存器，由之前知道是rax(&amp;ctxt-&gt;_regs[0])，这样 就把数据(0xbeff)写到了寄存器了。但是这里是ctxt的寄存器，最后还需要写到vmcs中去，通过调用如下函数 实现</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">if&nbsp;(rc&nbsp;==&nbsp;X86EMUL_CONTINUE)
+&nbsp;&nbsp;&nbsp;&nbsp;writeback_registers(ctxt);
+static&nbsp;void&nbsp;writeback_registers(struct&nbsp;x86_emulate_ctxt&nbsp;*ctxt)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;reg;
+&nbsp;&nbsp;&nbsp;&nbsp;for_each_set_bit(reg,&nbsp;(ulong&nbsp;*)&amp;ctxt-&gt;regs_dirty,&nbsp;16)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;ops-&gt;write_gpr(ctxt,&nbsp;reg,&nbsp;ctxt-&gt;_regs[reg]);
+}
+static&nbsp;void&nbsp;emulator_write_gpr(struct&nbsp;x86_emulate_ctxt&nbsp;*ctxt,&nbsp;unsigned&nbsp;reg,&nbsp;ulong&nbsp;val)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;kvm_register_write(emul_to_vcpu(ctxt),&nbsp;reg,&nbsp;val);
+}
+static&nbsp;inline&nbsp;void&nbsp;kvm_register_write(struct&nbsp;kvm_vcpu&nbsp;*vcpu,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;enum&nbsp;kvm_reg&nbsp;reg,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;long&nbsp;val)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;vcpu-&gt;arch.regs[reg]&nbsp;=&nbsp;val;
+&nbsp;&nbsp;&nbsp;&nbsp;__set_bit(reg,&nbsp;(unsigned&nbsp;long&nbsp;*)&amp;vcpu-&gt;arch.regs_dirty);
+&nbsp;&nbsp;&nbsp;&nbsp;__set_bit(reg,&nbsp;(unsigned&nbsp;long&nbsp;*)&amp;vcpu-&gt;arch.regs_avail);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这样，接着进入guest状态的时候,guest得RAX就有了user space传来的数据了。下面是一些调试数据。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;n
+x86_emulate_insn&nbsp;(ctxt=0xffff88011d429550)&nbsp;at&nbsp;arch/x86/kvm/emulate.c:4828
+4828&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;dst.type&nbsp;=&nbsp;saved_dst_type;
+(gdb)&nbsp;p&nbsp;ctxt-&gt;dst.val
+$64&nbsp;=&nbsp;48895
+(gdb)&nbsp;p&nbsp;&amp;ctxt-&gt;dst.val
+$65&nbsp;=&nbsp;(unsigned&nbsp;long&nbsp;*)&nbsp;0xffff88011d429640
+(gdb)&nbsp;p&nbsp;&amp;op-&gt;val
+No&nbsp;symbol&nbsp;&quot;op&quot;&nbsp;in&nbsp;current&nbsp;context.
+(gdb)&nbsp;n
+4830&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;((ctxt-&gt;d&nbsp;&amp;&nbsp;SrcMask)&nbsp;==&nbsp;SrcSI)
+(gdb)&nbsp;p&nbsp;ctxt-&gt;dst.type
+$66&nbsp;=&nbsp;OP_REG
+(gdb)&nbsp;n
+[New&nbsp;Thread&nbsp;2976]
+4833&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;((ctxt-&gt;d&nbsp;&amp;&nbsp;DstMask)&nbsp;==&nbsp;DstDI)
+(gdb)&nbsp;n
+[New&nbsp;Thread&nbsp;2978]
+[New&nbsp;Thread&nbsp;2977]
+4836&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ctxt-&gt;rep_prefix&nbsp;&amp;&amp;&nbsp;(ctxt-&gt;d&nbsp;&amp;&nbsp;String))&nbsp;{
+(gdb)&nbsp;n
+4866&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ctxt-&gt;eip&nbsp;=&nbsp;ctxt-&gt;_eip;
+(gdb)&nbsp;n
+4875&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;writeback_registers(ctxt);</pre><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">四. &nbsp;参考</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">oenhan: </span><a href="http://oenhan.com/kvm-src-5-io-pio" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">KVM源代码分析5:IO虚拟化之PIO</a></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Alex Xu: </span><span style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://soulxu.github.io/blog/2014/08/11/use-kvm-api-write-emulator/" target="_self" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用KVM API实现Emulator Demo</a></span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/4079.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【系列分享】探索QEMU-KVM中PIO处理的奥秘 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4079" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14863" user-name="fire-7z" href="javascript:;">
+                fire-7z            </a>
+                        <span class="comment-time">2017-07-10 11:41:02</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14863">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14863" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@李老师要戒刀塔戒刀塔: 对虚拟机来说是没有io port/MMIO概念的，这篇文章首先对io port的实现进行了分析。。。作者是我：）//@Proteas: 转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14862" user-name="福柯式精神病" href="javascript:;">
+                福柯式精神病            </a>
+                        <span class="comment-time">2017-07-10 11:41:02</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14862">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14862" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@fire-7z://@李老师要戒刀塔戒刀塔: 对虚拟机来说是没有io port/MMIO概念的，这篇文章首先对io port的实现进行了分析。。。作者是我：）//@Proteas: 转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14857" user-name="Gear_Team" href="javascript:;">
+                Gear_Team            </a>
+                        <span class="comment-time">2017-07-10 10:51:03</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14857">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14857" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">李老师的新作</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14856" user-name="Gear_Team" href="javascript:;">
+                Gear_Team            </a>
+                        <span class="comment-time">2017-07-10 10:51:01</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14856">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14856" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">李老师的新作</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14855" user-name="opoooi" href="javascript:;">
+                opoooi            </a>
+                        <span class="comment-time">2017-07-10 10:41:02</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14855">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14855" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@李老师要戒刀塔戒刀塔: 对虚拟机来说是没有io port/MMIO概念的，这篇文章首先对io port的实现进行了分析。。。作者是我：）//@Proteas: 转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14854" user-name="李老师要戒刀塔戒刀塔" href="javascript:;">
+                李老师要戒刀塔戒刀塔            </a>
+                        <span class="comment-time">2017-07-10 10:31:01</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14854">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14854" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">对虚拟机来说是没有io port/MMIO概念的，这篇文章首先对io port的实现进行了分析。。。作者是我：）//@Proteas: 转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="4079" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

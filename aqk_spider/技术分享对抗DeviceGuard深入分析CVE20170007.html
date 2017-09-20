@@ -1,0 +1,528 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】对抗 DeviceGuard：深入分析 CVE-2017-0007 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="CVE-2017-0007,DeviceGuard,对抗DeviceGuard"/>
+    
+        <meta name="description" content="Device Guard UMCI是用来阻止未经批准的二进制代码执行的程序，限制Windows Scripting Host，并将PowerShell置于受限语言模式下，除非脚本由可信任的签名者签名过。在花了一些时间研究Device Guard启动的系统中如何处理脚本，最终实现了一种可以执行未经批准的脚本的方法。本文主要向大家分享Device Guard用户模式完整性（UMCI）绕过。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】对抗 DeviceGuard：深入分析 CVE-2017-0007</h2>
+                <div class="article-msg">
+                    <span class="time">2017-04-10 14:05:41</span>
+                    
+                                        <span class="read">阅读：9975次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3708"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3708" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://enigma0x3.net/2017/04/03/defeating-device-guard-a-look-into-cve-2017-0007/"
+                             target="_blank">来源： enigma0x3.net</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2775084127" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2775084127" style="color:#848e99;">myswsun</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p2.qhimg.com/t0177713599a67e3b7f.jpg" title="t01e239c613a0d1865f.jpg" alt="http://p8.qhimg.com/t01e239c613a0d1865f.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; word-break: break-all; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2775084127" target="_self" textvalue="myswsun"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: 900;">myswsun</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">预估稿费：190RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x00 前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">过去几个月以来，我很高兴和<a href="https://twitter.com/mattifestation" target="_self">Matt Graeber</a>和<a href="https://twitter.com/subtee" target="_self">Casey Smith</a>一起研究Device Guard用户模式完整性（UMCI）绕过。如果你不熟悉Device Guard，可以阅读：<a href="https://technet.microsoft.com/en-us/itpro/windows/keep-secure/device-guard-deployment-guide" _src="https://technet.microsoft.com/en-us/itpro/windows/keep-secure/device-guard-deployment-guide">https://technet.microsoft.com/en-us/itpro/windows/keep-secure/device-guard-deployment-guide</a>&nbsp;。简言之，Device Guard UMCI阻止未经批准的二进制执行，限制Windows Scripting Host，并将PowerShell置于受限语言模式下，除非脚本由可信任的签名者签名过。在花了一些时间研究Device Guard启动的系统中如何处理脚本，我最终确定了一种方法能执行任何未经批准的脚本。问题报告给MSRC后，这个bug被标记为CVE-2017-0007，并补丁修复。这个特殊的bug只会影响PowerShell和Windows Scripting Host，不会影响编译的代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x01 分析</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">当执行一个签名的脚本，wintrust.dll处理文件签名的验证。理想情况下，如果你将一个微软签名的脚本修改，文件的完整性将被破环，并且签名不再可靠。这种验证对于Device Guard是重要的，它唯一的目的是阻止未签名或者不受信的代码运行。CVE-2017-0007规避了这种保护，允许你通过简单的修改之前已获得可信签名的脚本来运行任何你想要的未签名的代码。在这种情况下，可以选择一个微软的签名的脚本，因为微软签名的代码需要运行在Device Guard下。举个例子，如果我们试图运行未签名的PowerShell脚本来执行受限制的行为（如大部分COM实例化），由于PowerShell的受限语言模式将失败。任何签名并受信的PowerShell代码能通过部署的代码完整性策略批准在FullLanguage模式下运行，执行没有任何限制。这种情况下，我们的代码未签名或受信，因此位于<a href="https://blogs.technet.microsoft.com/kfalde/2017/01/20/pslockdownpolicy-and-powershell-constrained-language-mode/" target="_self">受限语言模式</a>下，将执行失败。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t015df8c750e2b87c8d.png" title="t01fc1aa8e1be722c93.png" alt="http://p1.qhimg.com/t01fc1aa8e1be722c93.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">幸运的是，微软的脚本有他们的代码签名证书签名。你能使用sigcheck或PowerShell的cmdlet “Get-AuthenticodeSignature“验证脚本确实由微软签名。这种情况下，我抓取了来自Windows SDK中的一个签名的PowerShell脚本，将它重命名为”MicrosoftSigned.ps1“:</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t0199c9f236ba9b2fed.png" title="t0153d98161d3348ac7.png" alt="http://p8.qhimg.com/t0153d98161d3348ac7.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当这些脚本被签名时，他们经常在脚本体中包含一个嵌入的认证代码签名。如果你修改了文件的任何内容，文件的完整性将被破环，并且签名不再可靠。你也能简单的从一个签名文件中复制认证代码证书，并粘帖到一个未签名的脚本中：</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01de884f49893943a3.png" title="t0156a326a20691a9cd.png" alt="http://p0.qhimg.com/t0156a326a20691a9cd.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如你所见，脚本的原始内容用我们的自己的代码替代，并验证签名，结果为“对象的数字签名不能验证“，意味着文件的完整性已经破环，代码将被阻止运行，对吗？</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t0111e7d415e1a0ca23.png" title="t012f66c77547dc9c17.png" alt="http://p9.qhimg.com/t012f66c77547dc9c17.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如你所见，我们的代码还是执行了，尽管数字签名不受信。微软将这个bug定为CVE-2017-0007，分类为MS17-012。这里潜在的问题是确保文件完整性的函数返回的错误代码没有得到验证，导致成功执行了未签名的代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">因此，什么是这个bug的原因，且如何被修复的？Device Guard依赖wintrust.dll处理签名文件的签名和完整性校验。使用bindiff比较补丁前（10.0.14393.0）和补丁后（10.0.14393.953）的wintrust.dll，揭露了添加的代码块。Wintrust.dll中有一个改变，这是验证签名脚本的唯一变化。由于这个，补丁如下：</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01be94225c6bf9bb60.png" title="t018fc27c2b5209af6b.png" alt="http://p3.qhimg.com/t018fc27c2b5209af6b.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">仔细看，你能看到sub_18002D0F8的一些代码被移除了：</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t0163c283f52a802ad3.png" title="t01c14543e1c4103168.png" alt="http://p2.qhimg.com/t01c14543e1c4103168.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">看下新添加的sub_18002D104的代码块，你将看见它包含了一些来自sub_18002D0F8的代码。这些特别的函数没有符号，因此我们必须参考定义的名字。或者，你也能在IDA中重命名这些函数。</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01ee2045ac1a4163fe.png" title="t0196e663db239f15a8.png" alt="http://p0.qhimg.com/t0196e663db239f15a8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上面的文本有点小，但是我将深入分析具体做了什么。我不会详细介绍使用bindiff，但是如果你想学习更多，可以参考<a href="https://www.zynamics.com/bindiff/manual/" target="_self">手册</a>。有了bug修复的位置，我看是确定了当我们的未签名的代码执行时发生了什么。了解到在sub_18002D0F8中删除了一些代码，且添加了一个新块sub_18002D104，这两个地方是个好的分析的起点。首先，我在IDA中打开补丁前版本的wintrust.dll（10.0.14393.0），导航到修改的sub_18002D0F8。这个函数由几个变量开始，然后调用“SoftpubAuthenticode”。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t010dcf97de1ee7d564.png" title="t012c69eedfa5857960.png" alt="http://p3.qhimg.com/t012c69eedfa5857960.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">看下“SoftpubAuthenticode”揭露了它调用了另一个函数”CheckValidSignature“：</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t018be0ba089549746f.png" title="t01a81765ffd1e59a67.png" alt="http://p2.qhimg.com/t01a81765ffd1e59a67.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">很明显，“CheckValidSignature”处理验证文件执行的签名/完整性验证。看下这个函数，我们能得到返回前最后一个执行的位置。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t017fdb849331eaa628.png" title="t019d855fff5898a653.png" alt="http://p4.qhimg.com/t019d855fff5898a653.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过设置windbg断点，我们能看见CheckValidSignature中eax寄存器的错误值，黄色高亮显示如下。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01d6eeec15b1aa393d.png" title="t0160f035fbf595c34f.png" alt="http://p4.qhimg.com/t0160f035fbf595c34f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个情况下，错误值是0x80096010，意为<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/aa376512(v=vs.85).aspx" target="_self">TRUST_E_BAD_DIGEST</a>。这就是为什么我们看见“对象的数字签名不能验证”。对一个修改的签名的文件执行sigcheck。在CheckValidSignature返回后（通过retn），我们来到了SoftpubAuthenticode。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t0103604bf8ef920552.png" title="t01a81765ffd1e59a67.png" alt="http://p2.qhimg.com/t01a81765ffd1e59a67.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">SoftpubAuthenticode继续调用SoftpubCallUI，然后回到sub_18002D0F8，并在eax寄存器存储错误值0x80096010。现在我们知道了错误值存储在哪里了，我们能进一步看下为什么我们的脚本被允许运行，即使CheckValidSignature返回了TRUST_E_BAD_DIGEST。到了这里，在SoftpubAuthenticode调用后，我们恢复执行sub_18002D0F8。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t010128732a4886d55e.png" title="t017e3266791f3294cc.png" alt="http://p4.qhimg.com/t017e3266791f3294cc.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">因为我们的错误码存储在eax中，在SoftpubAuthenticode返回后，立即通过mov rax，[r12]覆盖。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">因为错误码表明我们的脚本的数字签名不是可靠的，它没有得到验证，因此脚本允许执行：</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01a66008d75a9c3dc1.png" title="t0142819ebec0fef220.png" alt="http://p6.qhimg.com/t0142819ebec0fef220.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于这个bug有了透彻的理解，我们能看下微软如何补丁修复它的。为了做这个，我们需要安装KB4013429。看下新版本的wintrust.dll（10.0.14393。953），我们能浏览sub_18002D104，其中添加了验证代码块。我们知道这个bug源于存储我们的错误码的寄存器被覆盖了，且没有得到验证。我们能看见补丁添加了新的调用sub_18002D4BC，跟在SoftpubAuthenticode的后面。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01df23a3ba1d344fdb.png" title="t01bb49d92966eacea1.png" alt="http://p7.qhimg.com/t01bb49d92966eacea1.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你在图片中也可能注意到我们的错误码放在了ecx寄存器中，并且覆盖rcx寄存器的指令依赖一个测试指令，接着是“jump if zero”指令。这意味着现在我们的错误码存储在ecx中，只有在不跳转时才会覆盖。看下新加入的sub_18002D4BC，你将看到：</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01f2ac0bedeff60907.png" title="t018a5fa3227691d252.png" alt="http://p8.qhimg.com/t018a5fa3227691d252.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个函数返回一个BOOL值，取决于错误码执行结果。这个额外的校验可以校验调用SoftpubAuthenticode是否成功（&lt; 0x7FFFFFFF），否则返回值为0x800B0109，为CERT_E_UNTRUSTEDROOT。这种情况下，SoftpubAuthenticode返回0x80096010（TRUST_E_BAD_DIGEST），不匹配任何一个条件，将返回1。</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t017357569867e989f4.png" title="t01ce4d08e0d49c5105.png" alt="http://p3.qhimg.com/t01ce4d08e0d49c5105.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在设置al为1后，返回到前一个函数，我们能看到这个bug如何打补丁的：</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t018cdad94b1e565457.png" title="t01fc11ec08b88b9689.png" alt="http://p0.qhimg.com/t01fc11ec08b88b9689.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">“al”设为1，函数匹配另一个逻辑，以查看al是否为0。如果不是，设置r14b为0（因为之前的test指令不会设置ZF标志）。然后逻辑校验r14b是否为0。如果是，将跳转并跳过覆盖rcx寄存器的代码（保持ecx为我们的错误码）。错误码得到验证，且脚本在受限语言模式下运行，将执行失败。</span></p><p style="text-align: center;"><img src="http://p8.qhimg.com/t0128498ce9558ed7d2.png" title="t013f13292b1a9a82ee.png" alt="http://p3.qhimg.com/t013f13292b1a9a82ee.png"/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://enigma0x3.net/2017/04/03/defeating-device-guard-a-look-into-cve-2017-0007/" target="_blank">原文链接：https://enigma0x3.net/2017/04/03/defeating-device-guard-a-look-into-cve-2017-0007/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】对抗 DeviceGuard：深入分析 CVE-2017-0007 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3708" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

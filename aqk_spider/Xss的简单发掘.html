@@ -1,0 +1,658 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>Xss的简单发掘 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="XSS,漏洞挖掘"/>
+    
+        <meta name="description" content="在前面的内容中，我向大家介绍了一些XSS跨站脚本的基础概念，相信大家现在对跨站脚本有了一定的认识。接下来，我们将讲述如何去发掘一些简单的XSS漏洞。下面演示的示例可能比较简单，如想了解更多发掘和测试X"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>Xss的简单发掘</h2>
+                <div class="article-msg">
+                    <span class="time">2014-12-15 11:24:49</span>
+                                        <span class="read">阅读：12260次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_147"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="147" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://blog.aptsec.net/archives/500"
+                             target="_blank">来源： J4s0n@AptSec Team</a></span>
+                    
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">在前面的内容中，我向大家介绍了一些XSS跨站脚本的基础概念，相信大家现在对跨站脚本有了一定的认识。接下来，我们将讲述如何去发掘一些简单的XSS漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">下面演示的示例可能比较简单，如想了解更多发掘和测试XSS的技术，请关注APTSec官方博客。</span></p><ol class=" list-paddingleft-2"><li><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">搭建测试环境</span></p></li></ol><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">在发掘xss之前，首先要在本地搭建一个Web服务器，简便起见，可以使用AspServer。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">AspServer是一款绿色的ASP服务器，使用它可以便利地开发和调试ASP程序，其下载和安装过程比较简单，这里不再叙述了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">待环境配置完毕，还需要下载一套用来测试的Web程序，这里以“ok3w新闻发布系统”为例。程序下载完后，把相关的程序文件压缩到网站根目录，然后启动AspServer，最后用浏览器打开</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://localhost/"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">http://localhost</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">或者</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://127.0.0.1/"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">http://127.0.0.1</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">即可访问该站点，如图1所示。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">现在，我们要开始对“***新闻发布系统”进行XSS漏洞发掘和测试。进行安全测试的方法有几种，这里使用灰盒测试。什么是灰盒测试？要了解此概念
+首先需要理解黑盒测试和白盒测试，是指知道程序内部的结构，也就是获取源代码的情况下对软件进行测试；黑盒则完全相反；而灰盒测试介于两者之间。</span></p><ol class=" list-paddingleft-2" start="2"><li><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">发掘反射型的XSS</span></p></li></ol><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">众所周知，数据交互（即输入/输出）的地方最容易产生跨站脚本，因此，我们可以着重对网站的输入框、URL参数处进行测试。当然，所有来自COOKIE、POST表单、HTTP头的内容都可能产生XSS。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">浏览***新闻发布系统的页面，可以看见右上方有个“站内查找”的功能，如图2所示。在搜索框中输入跨站测试代码XSS&lt;XSS&gt;’”，然后单击【提交】按钮，提交后注意观察页面的返回的结果，如图3所示。</span></p><h5 style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;"><span style="font-size: 14px; font-family: 微软雅黑,Microsoft YaHei; color: rgb(255, 0, 0);">“XSS’ ‘ “”</span> 搜索结果&gt;&gt;</span></h5><p style="text-align:center"><a href="http://j4s0n.kingchina.com.cn/wp-content/uploads/2014/11/18.jpg"><img src="http://p7.qhimg.com/t01574fef60fe750210.jpg" alt="1" height="217" width="300"/></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">图1 ***新闻发布系统主页</span></p><p style="text-align:center"><a href="http://j4s0n.kingchina.com.cn/wp-content/uploads/2014/11/12.png"><img src="http://p8.qhimg.com/t0192349a96b49b4011.png" alt="1" height="32" width="300"/></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">图2 输入XSS代码</span></p><p style="text-align:center"><a href="http://j4s0n.kingchina.com.cn/wp-content/uploads/2014/11/13.png"><img src="http://p6.qhimg.com/t011d1a72ac8932fe12.png" alt="1" height="108" width="300"/></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">图3 搜索返回页面</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">从图3中可以看到，我们输入的XSS测试代码中的&lt;XSS&gt;没有显示出来，这种情况下，测试代码可能已被程序过滤，也可能程序接受了但
+没有显示出来，因为在HTML语言中，&lt;&gt;表示HTML标记，不会被浏览器直接显示出来，只有通过查看相应的源文件才能看到。所以，我们此时
+需要查看页面的源文件，然后搜索关键字XSS，这时候会发现如图4所示的代码片段：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">可以看到，我们输入的&lt;XSS&gt;确实被完整地写进了页面，由此可证明***新闻发布系统没有过滤&lt;&gt;等关键字符。那么我们就可以直接注入一个完整的&lt;scipt&gt;标签，从而产生一个XSS。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">重新回到搜索栏，输入完整的XSS代码<span style="font-size: 14px; font-family: 微软雅黑,Microsoft YaHei; color: rgb(255, 0, 0);">&lt;script&gt;alert(/xss/)&lt;/script&gt;</span>，然后单击【搜索】按钮，随后在其浏览器界面上弹出了一个内容为XSS的对话框，如图5所示。</span></p><p style="text-align:center"><a href="http://j4s0n.kingchina.com.cn/wp-content/uploads/2014/11/19.jpg"><img src="http://p9.qhimg.com/t01c4e651716a3da795.jpg" alt="1" height="132" width="300"/></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">图4 查看XSS后的HTML源文件</span></p><p style="text-align:center"><a href="http://j4s0n.kingchina.com.cn/wp-content/uploads/2014/11/110.jpg"><img src="http://p5.qhimg.com/t015110aecb5f1d03ed.jpg" alt="1" height="217" width="300"/></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">图5 出现的XSS漏洞</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">细心的读者可能已经发现，此时浏览器地址栏上的链接变成了：</span></p><p style="text-indent: 2em; text-align: left;"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://192.168.1.100/search.asp?keyword=%3Cscript%3Ealert%28%2Fxss%2F%29%3C%2Fscript%3E&Submit=%CB%D1%CB%F7"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">http://192.168.1.100/search.asp?keyword=%3Cscript%3Ealert%28%2Fxss%2F%29%3C%2Fscript%3E&amp;Submit=%CB%D1%CB%F7</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">因此，我们可以证实***新闻发布系统存在一个反射型的XSS。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">我们利用黑盒技术发掘到跨站脚本漏洞后，还要利用白盒技术分析一下该漏洞的成因。找出相关程序文件search.asp，发现有如下代码：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">&lt;%</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Set Page = New TurnPage</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">keyword=CmdSafeLikeSqlStr(Request.QueryString(“keyword”))</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">If keyword=”” Then</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Call MessageBox(“请输入需要查询的关键词。”,””)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">End If</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">%&gt;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">上述代码中，keyword变量代表输入的查询内容，然后程序使用Request.QueryString()直接获取该变量，随后只经过
+CmdSafeLikeSqlStr()函数的处理。CmdSafeLikeSqlStr()在APPCode/fun/function.asp中有定
+义，找到该文件可以了解它的作用：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Function CmdSafeLikeSqlStr(Str)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Str = Replace(Str,”‘”,”””)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Str = Replace(Str,”[“,”[[]”)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Str = Replace(Str,”%”,”[%]”)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Str = Replace(Str,”_”,”[_]”)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">CmdSafeLikeSqlStr = Str</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">End Function</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">以上代码的功能是把查询变量中含有的’ [ % _之类的字符替换成” [[] [%] [_]。显然，这里忽略了对&lt;&gt;等关键字符的过滤，导致用户可任意注入HTML标记来引发XSS。</span></p><ol class=" list-paddingleft-2" start="3"><li><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">发掘持久型的XSS</span></p></li></ol><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">通过分析源程序代码，我们对漏洞成因有了更好的了解，但是在发掘XSS之前，黑盒测试的效果显然比白盒测试的好，而结合利用这两种方式的灰盒测试技术，能大大提高我们发掘XSS的效率。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">接下来继续测试“***新闻发布系统”是否还存在其他跨站漏洞。浏览该系统的其他也没，发现有一个“留言交流”的功能，页面地址为</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://192.168.1.100/guest.asp"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">http://192.168.1.100/guest.asp</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">。在这里用户可以任意输入留言，如果程序没有慎重过滤这些留言信息，很可能会产生一个持久型或存储型的XSS漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">如图6所示，在留言页面的留言处输入如下内容：</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(255, 0, 0); font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">&lt;script&gt;alert(/xss/)&lt;/script&gt;</span></p><p style="text-align:center"><a href="http://j4s0n.kingchina.com.cn/wp-content/uploads/2014/11/14.png"><img src="http://p2.qhimg.com/t01ba5d79379d3c6d64.png" alt="1" height="98" width="300"/></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">图6 在留言内容处输入XSS语句</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">单击【提交】按钮后，发现页面没有任何迹象。先不要着急，因为用户提交的留言一般要通过后台管理员的审核才会显示出来，***新闻发布系统亦是如此。所以在提交XSS代码后，我们以管理员身份登录后台查看留言，后台管理的登录地址为：</span></p><p style="text-indent: 2em; text-align: left;"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://192.168.1.100/admin/ad_login.asp"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">http://192.168.1.100/admin/ad_login.asp</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">打开该页面，输入默认管理员账号和密码admin，如图7所示，然后登录。</span></p><p style="text-align:center"><a href="http://j4s0n.kingchina.com.cn/wp-content/uploads/2014/11/111.jpg"><img src="http://p0.qhimg.com/t011539f406bd7e87f2.jpg" alt="1" height="217" width="300"/></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">图7 登录后台</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">成功登录后台后，单击“留言/评论管理”栏的“等审留言”链接，这时页面显示的内容如图8所示。</span></p><p style="text-align:center"><a href="http://j4s0n.kingchina.com.cn/wp-content/uploads/2014/11/112.jpg"><img src="http://p0.qhimg.com/t010bc00537572171f5.jpg" alt="1" height="217" width="300"/></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">图8 后台查看留言</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">从上图中可以看出，我们输入的XSS语句并没有顺利执行，反而被浏览器直接显示出来。出现这种情况，极有可能是程序对这条XSS代码进行了转义，查看一下当前页面的源代码，如图9所示。</span></p><p style="text-align:center"><a href="http://j4s0n.kingchina.com.cn/wp-content/uploads/2014/11/113.jpg"><img src="http://p6.qhimg.com/t0193b462e476a42ffb.jpg" alt="1" height="134" width="300"/></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">图9 留言页面的源文件</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">经过一轮分析后发现，输入的XSS代码不仅没有被过滤，而且已经成功插入到网页内容中，之所以没有执行代码，是因为XSS代码被嵌入
+到&lt;textarea&gt;标签之中，然后被浏览器直接显示出来。因此，在构造XSS代码时，需要闭合&lt;textarea&gt;标签，重
+新修改XSS代码：</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(255, 0, 0); font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;"><span style="font-size: 14px; font-family: 微软雅黑,Microsoft YaHei; text-decoration: underline; color: rgb(0, 0, 0);">&lt;/textarea&gt;</span>&lt;script&gt;alert(/xss/)&lt;/script&gt;<span style="font-size: 14px; font-family: 微软雅黑,Microsoft YaHei; text-decoration: underline; color: rgb(0, 0, 0);">&lt;textarea&gt;</span></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这两个&lt;textarea&gt;分别用来闭合前后的&lt;textarea&gt;标记。提交此代码，然后再以管理员身份查看留言，这时候页面成功弹出了带有XSS内容的对话框，如图10所示。</span></p><p style="text-align:center"><a href="http://j4s0n.kingchina.com.cn/wp-content/uploads/2014/11/114.jpg"><img src="http://p9.qhimg.com/t0158bfcce4eec4e169.jpg" alt="1" height="216" width="300"/></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">图10 成功弹出XSS</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">以上就是一个典型的持久型XSS，并且这个XSS在管理员查看留言时才触发。这种XSS场景可以发挥的空间很大，因为它攻击的对象是后台管理员，攻
+击者能利用此种XSS劫持管理员会话而执行任意操作，比如修改密码、添加新闻、备份数据等（攻击方法：调用XSS平台，Xss平台网
+址：http://xssec.cc/！）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">最后，分析漏洞成因，找到处理留言的程序文件***3w_Guest.asp，相关代码如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">‘接收表单</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Private Sub GetFormData()</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">UserName = Trim(Request.Form(“username”))</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Mail = Trim(Request.Form(“email”))</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Homepage = Trim(Request.Form(“homeurl”))</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Content = Trim(Request.Form(“content”))</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">QQ = Trim(Request.Form(“qq”))</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">TypeID = Trim(Request.Form(“TypeID”))</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">If TypeID=”” Then TypeID=1</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">TableID = Trim(Request.Form(“TableID”))</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">If TableID=”” Then TableID=0</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">AddTime = Now()</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Ip = Request.ServerVariables(“REMOTE_ADDR”)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">IsPass = 0</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Ad_ask = “”</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">End Sub</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">‘更新记录集</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Private Sub UpdateRs(ByRef Rs)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Rs(“UserName”) = UserName</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Rs(“Mail”) = Mail</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Rs(“Homepage”) = Homepage</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Rs(“Content”) = Content</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Rs(“QQ”) = QQ</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Rs(“TypeID”) = TypeID</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Rs(“TableID”) = TableID</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Rs(“AddTime”) = AddTime</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Rs(“Ip”) = Ip</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Rs(“IsPass”) = IsPass</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Rs(“Ad_ask”) = Ad_ask</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">End Sub</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">上述代码仅用了Request.Form()函数来获取表单数据，包括用户名、邮箱地址、留言内容等信息，然后简单地去除两边的空格，就直接把留言信息写进数据库中，程序没有过滤任何有害字符，从而导致一个持久型XSS的产生。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">可见，XSS跨站脚本始终是Web应用程序中最容易产生、最容易被忽略的安全漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">最后再来个小科普：如何利用xss来进行APT攻击</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">问：Xss可以被利用来做什么？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">答：XSS技术的运用方式灵活多变，利用它可以劫持浏览器用户的会话、窃取客服端的Cookies、网络钓鱼等，在特定场景下或配合其他漏洞，威力会更大！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">那么，我向大家分享一个思路。编写一个JS病毒脚本，其脚本作用是强制远程控制受害者下载木马并且运行该木马，最后再利用XSS技巧来实现这一脚本
+的运行。（劫持用户浏览器会话）受害者的计算机运行了木马后，我们便可以对他的计算机为所欲为了。所以我们可以把这个看成一种APT攻击手法！当然实现这
+个思路是不容易的，你首先要考虑到受害者的浏览器是否防脚本注入，如果是，那么该如何绕过？这是一个值得我们思考的问题。还有对于编写这样的一个脚本，小
+编对于JS脚本的熟练程度还不是很好，编写起来会很困难，但小编会尽快编写好的，并将此脚本添加至XSS平台的模块。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">文章到此结束，如有对这个思路有兴趣的、愿意一起研究的，请联系E-mail:admin@xssec.cc。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文转载自 J4s0n@AptSec Team<br/><a class="text-more" href="http://blog.aptsec.net/archives/500" target="_blank">原文链接：http://blog.aptsec.net/archives/500</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="Xss的简单发掘 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="147" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="64d932c9bb50dc5a83db601d9b02e735">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src='http://p1.qhmsg.com/dm/48_48_100/t016f6bd853233da2d3.jpg'/>              
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="1322576347" class="response" data-bind-id="1322576347" data-target="281" user-name="SudoHac" href="javascript:;">
+                SudoHac            </a>
+                        <span class="comment-time">2014-12-15 16:53:42</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="1322576347" data-target="281">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_281" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">期待着大牛的作品，投稿有现金奖励哦~</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="276">sb</a> <span class="comment-time">2014-12-15 11:39:04</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="276">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_276" data-type="comment">点赞</a></span>            </div>
+            <p>什么APT，真是开玩笑，就像helen等垃圾，把一个本来很好高大上的词弄得如此不堪，真恶心！
+没技术含量的文章不要发了，影响你们什么APT的名誉。。我看不是APT，是SBT吧！技术不过关，就别装</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="1358351454" class="response" data-bind-id="1358351454" data-target="279" user-name="" href="javascript:;">
+                            </a>
+                        <span class="comment-time">2014-12-15 12:13:18</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="1358351454" data-target="279">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_279" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">you can you up          no can noBB</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="276">sb</a> <span class="comment-time">2014-12-15 11:39:04</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="276">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_276" data-type="comment">点赞</a></span>            </div>
+            <p>什么APT，真是开玩笑，就像helen等垃圾，把一个本来很好高大上的词弄得如此不堪，真恶心！
+没技术含量的文章不要发了，影响你们什么APT的名誉。。我看不是APT，是SBT吧！技术不过关，就别装</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="278" user-name="sb" href="javascript:;">
+                sb            </a>
+                        <span class="comment-time">2014-12-15 11:39:56</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="278">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_278" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">还有360，喷文章是觉得文章不好，不好就得改正，用户体验知道吗？你删了是几个意思？莫非你们的水平也就这样？？</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="276" user-name="sb" href="javascript:;">
+                sb            </a>
+                        <span class="comment-time">2014-12-15 11:39:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="276">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_276" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">什么APT，真是开玩笑，就像helen等垃圾，把一个本来很好高大上的词弄得如此不堪，真恶心！
+没技术含量的文章不要发了，影响你们什么APT的名誉。。我看不是APT，是SBT吧！技术不过关，就别装</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="147" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+                                <li><a href="/learning/detail/4424.html" alt="【知识】9月16日 - 每日安全知识热点" target="_blank">【知识】9月16日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

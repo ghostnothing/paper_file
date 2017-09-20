@@ -1,0 +1,946 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】浅谈动态爬虫与去重 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="动态爬虫,动态爬虫去重"/>
+    
+        <meta name="description" content="随着Web 2.0的发展，页面中的AJAX也越来越多。由于传统爬虫依靠静态分析，不能准确的抓取到页面中的AJAX请求以及动态更新的内容，已经越来越不能满足需求。基于动态解析的Web 2.0爬虫应运而生，通过浏览器内核解析页面源码，模拟用户操作，能有效解决上述问题。本文将详细分析利用PhantomJS + Python 编写爬虫并进行去重的思路。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】浅谈动态爬虫与去重</h2>
+                <div class="article-msg">
+                    <span class="time">2017-01-10 16:15:17</span>
+                    
+                                        <span class="read">阅读：42593次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3391"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3391" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2515404114" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2515404114" style="color:#848e99;">0keeTeam</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="text-indent: 2em; color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><img src="http://p5.qhimg.com/t01bb83469d1cddc197.png" title="t01bb83469d1cddc197.png" alt="http://p5.qhimg.com/t01bb83469d1cddc197.png"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">作者：</span></strong></span><a href="http://bobao.360.cn/member/contribute?uid=2515404114" target="_blank" textvalue="Fr1day@0keeTeam" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">Fr1day@0keeTeam</span></strong><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></span></a></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">预估稿费：600RMB（不服你也来投稿啊！）</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong><strong>投稿方式：发送邮件至</strong><a href="mailto:linwei@360.cn" target="_self" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong>linwei#360.cn</strong></span></a><strong>，或登陆</strong><a href="http://bobao.360.cn/contribute/index" target="_blank" style="color: rgb(0, 112, 192); text-decoration: none;"><strong>网页版</strong></a><strong>在线投稿</strong></strong></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x01 简介</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">随着Web 2.0的发展，页面中的AJAX也越来越多。由于传统爬虫依靠静态分析，不能准确的抓取到页面中的AJAX请求以及动态更新的内容，已经越来越不能满足需求。基于动态解析的Web 2.0爬虫应运而生，通过浏览器内核解析页面源码，模拟用户操作，能有效解决上述问题。本文将详细分析利用PhantomJS + Python 编写爬虫并进行去重的思路。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x02 PhantomJS</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><a href="http://phantomjs.org/" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0);">PhantomJS</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"> 是无界面的 Webkit 解析器，提供了 JavaScript API 。由于去除了可视化界面，速度比一般 Webkit 浏览器要快很多。同时提供了很多监控和事件接口，可以方便的操作 DOM 节点，模拟用户操作等。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来我们通过一个简单的例子，来展示下动态爬虫和传统爬虫的区别。目标：加载一个页面（</span><a href="http://named.cn/.mine" target="_blank" textvalue="那么，一起玩吧" style="text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">那么，一起玩吧</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">），并且获取其中所有的<strong>&lt;a&gt;</strong>标签。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:js;toolbar:false">//&nbsp;example.js
+var&nbsp;page&nbsp;=&nbsp;require(&#39;webpage&#39;).create();
+page.onAlert&nbsp;=&nbsp;function&nbsp;(message)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;console.log(message);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;true;
+};
+page.onCallback&nbsp;=&nbsp;function()&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;page.evaluate(function(){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;atags&nbsp;=&nbsp;document.getElementsByTagName(&quot;a&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for(var&nbsp;i=0;i&lt;atags.length;i++){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(atags[i].getAttribute(&quot;href&quot;)){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;alert(atags[i].getAttribute(&quot;href&quot;));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;})
+&nbsp;&nbsp;&nbsp;&nbsp;phantom.exit()
+};
+page.open(&quot;http://named.cn/.mine&quot;,&nbsp;&quot;get&quot;,&nbsp;&quot;&quot;,&nbsp;function&nbsp;(status)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;page.evaluateAsync(function(){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(typeof&nbsp;window.callPhantom&nbsp;===&nbsp;&#39;function&#39;)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;window.callPhantom();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;},&nbsp;10000)
+});</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">抓取结果如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">/.mine
+/cmd2/controls/signin
+/cmd2/controls/getcode
+/download.html
+/.blog
+/.mine
+/.at
+/~发现推荐.findbbs
+/help.html
+/江南水乡.bbs/7313348
+/摄情男女.bbs/7313242
+/欢乐一家亲.bbs/7313356
+/深夜食堂.bbs/7313168
+/家有熊孩子.bbs/7313321
+/乐淘亲子营.bbs/7313320
+.../*省略*/...
+/婚礼记.bbs/7277165
+/不知道的事情.bbs/7277164
+/不知道的事情.bbs/7277162
+/婚礼记.bbs/7277160
+/不知道的事情.bbs/7277016
+http://www.miitbeian.gov.cn/
+/cmd2/controls/mailpost/内容举报
+download.html</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">静态抓取的代码如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:python;toolbar:false">import&nbsp;requests
+import&nbsp;pyquery
+res&nbsp;=&nbsp;requests.get(&quot;http://named.cn/.mine&quot;)
+count&nbsp;=&nbsp;0
+pq&nbsp;=&nbsp;pyquery.PyQuery(res.content)
+for&nbsp;i&nbsp;in&nbsp;pq(&quot;a&quot;):
+&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[%d]:&nbsp;%s&quot;&nbsp;%&nbsp;(count,&nbsp;pq(i).attr(&quot;href&quot;))</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">抓取结果为空。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从上述的例子中，我们可以明显看出动态分析比静态分析抓取到了更多的结果。产生差别的原因，是页面中的数据加载来自于AJAX请求，所有的 <strong>&lt;a&gt;</strong> 标签都是动态更新到页面中的。静态分析对这种情况无能为力，而基于浏览器内核的动态分析，可以轻松的处理这些情况。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">但也可以明显看出动态分析的缺点：系统资源占用较多，且占用时间较长，还会有一些莫名其妙的坑，编写起来也更复杂更花时间（需要对前端编程有一定的了解）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当然除了 PhantomJS 还有一些其他的动态解析器，比如同样基于 Webkit 内核的 PyQt（PhantomJS的最新版本也是基于pyqt来实现）、基于 PhantomJS 封装的 CasperJS、基于的 Firefox Gecko 内核的SlimerJS等。由于并没有一个统一的标准，各个动态解析器的API实现程度也参差不齐，也会有各种各样的坑，并没有一个 “最佳” 的解决方案。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x03 触发事件及页面监听</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">上面的例子，介绍了爬虫中常见的一个场景：在页面加载完成后，通过AJAX加载数据。但现实中的场景，往往会更复杂，需要与用户进行交互后才会触发，比如在点击了某个按钮后跳转到某个页面、滚动到页面尾部后加载下一页的数据等。我们需要新的解决方案，去模拟正常用户的操作。那么，应该如何将用户交互抽象为代码？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">用户操作的本质，实际上是触发了绑定在DOM节点的事件。所以模拟用户操作的问题，可以简化为触发节点事件。事件执行的结果也是多种多样的，但对于爬虫来说，我们需要关注的结果只有两种：1. 是否添加了新的节点（<strong>&lt;a&gt;</strong>、<strong>&lt;iframe&gt;</strong>等等） 2. 是否发起了新的请求（包括AJAX请求、跳转等）。简化后，我们需要解决的问题有：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">1. 如何获取绑定事件？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">2. 如何触发事件？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">3. 如何获取事件触发的结果？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后我们的解决方案如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. 如何获取绑定事件？JavaScript中绑定事件，都会调用<strong>addEventListener</strong>函数。在页面里的代码执行前（</span><a href="http://phantomjs.org/api/webpage/handler/on-initialized.html" target="_blank" textvalue="onInitialized | PhantomJS" style="text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">onInitialized | PhantomJS</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">），hook addEventListener函数，就可以捕获到哪些DOM节点绑定了事件。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">_addEventListener&nbsp;=&nbsp;Element.prototype.addEventListener;
+Element.prototype.addEventListener&nbsp;=&nbsp;function(a,b,c)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;EVENT_LIST.push({&quot;event&quot;:&nbsp;event,&nbsp;&quot;element&quot;:&nbsp;this})
+&nbsp;&nbsp;&nbsp;&nbsp;_addEventListener.apply(this,&nbsp;arguments);
+};</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.&nbsp;如何触发事件？JavaScript中提供了<strong>dispatchEvent</strong>函数，可以触发指定DOM节点的指定事件，也就是上一个问题中，我们收集的<strong>EVENT_LIST</strong>。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:js;toolbar:false">for(var&nbsp;i&nbsp;in&nbsp;EVENT_LIST){
+&nbsp;&nbsp;&nbsp;&nbsp;var&nbsp;evt&nbsp;=&nbsp;document.createEvent(&#39;CustomEvent&#39;);
+&nbsp;&nbsp;&nbsp;&nbsp;evt.initCustomEvent(EVENT_LIST[i][&quot;event&quot;],&nbsp;true,&nbsp;true,&nbsp;null);
+&nbsp;&nbsp;&nbsp;&nbsp;EVENT_LIST[i][&quot;element&quot;].dispatchEvent(evt);
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">除了通过addEventListener绑定事件，还有一些inline-script，是无法通过hook addEventListener来获取的。比如：</span></p><pre class="brush:plain;toolbar:false">&lt;div&nbsp;id=&quot;test&quot;&nbsp;onclick=&quot;alert(&#39;hello&#39;)&quot;&gt;&lt;/div&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">解决方法是遍历节点，执行所有的onxxxx属性的值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:js;toolbar:false">function&nbsp;trigger_inline(){
+&nbsp;&nbsp;&nbsp;&nbsp;var&nbsp;nodes&nbsp;=&nbsp;document.all;
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;(var&nbsp;i&nbsp;=&nbsp;0;&nbsp;i&nbsp;&lt;&nbsp;nodes.length;&nbsp;i++)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;var&nbsp;attrs&nbsp;=&nbsp;nodes[i].attributes;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;(var&nbsp;j&nbsp;=&nbsp;0;&nbsp;j&nbsp;&lt;&nbsp;attrs.length;&nbsp;j++)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;attr_name&nbsp;=&nbsp;attrs[j].nodeName;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;attr_value&nbsp;=&nbsp;attrs[j].nodeValue;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(attr_name.substr(0,&nbsp;2)&nbsp;==&nbsp;&quot;on&quot;)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.log(attrs[j].nodeName&nbsp;+&nbsp;&#39;&nbsp;:&nbsp;&#39;&nbsp;+&nbsp;attr_value);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eval(attr_value);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(attr_name&nbsp;in&nbsp;{&quot;src&quot;:&nbsp;1,&nbsp;&quot;href&quot;:&nbsp;1}&nbsp;&amp;&amp;&nbsp;attrs[j].nodeValue.substr(0,&nbsp;11)&nbsp;==&nbsp;&quot;javascript:&quot;)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.log(attrs[j].nodeName&nbsp;+&nbsp;&#39;&nbsp;:&nbsp;&#39;&nbsp;+&nbsp;attr_value);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eval(attr_value.substr(11));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">3.&nbsp;如何获取事件触发的结果？HTML5中的<strong>MutationObserver</strong>方法，可以检查页面中的DOM是否发生变化。但是PhantomJS并不支持（摊手 </span><a href="https://github.com/ariya/phantomjs/issues/10715" target="_blank" textvalue="Support for Mutation Observers" style="text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0);">Support for Mutation Observers</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">），解决方案是监听了<strong>DOMNodeInserted</strong>事件。AJAX请求的捕获，解决方案有两种：</span><a href="http://phantomjs.org/api/webpage/handler/on-resource-requested.html" target="_blank" textvalue="onResourceRequested" style="text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0);">onResourceRequested</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"> 可以捕获非主框架的请求，但需要通过正则表达式匹配筛选出有效请求；hook <strong>XMLHttpRequest.open</strong> 和 <strong>XMLHttpRequest.send</strong> 可以准确的捕获请求内容。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:js;toolbar:false">document.addEventListener(&#39;DOMNodeInserted&#39;,&nbsp;function(e)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;var&nbsp;node&nbsp;=&nbsp;e.target;
+&nbsp;&nbsp;&nbsp;&nbsp;if(node.src&nbsp;||&nbsp;node.href){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LINKS_RESULT.push(node.src&nbsp;||&nbsp;node.href);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+},&nbsp;true);
+_open&nbsp;=&nbsp;XMLHttpRequest.prototype.open
+XMLHttpRequest.prototype.open&nbsp;=&nbsp;function&nbsp;(method,&nbsp;url)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!this._url)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;this._url&nbsp;=&nbsp;url;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;this._method&nbsp;=&nbsp;method;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;_open.apply(this,&nbsp;arguments);
+};
+_send&nbsp;=&nbsp;XMLHttpRequest.prototype.send
+XMLHttpRequest.prototype.send&nbsp;=&nbsp;function&nbsp;(data)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;window.$Result$.add_ajax(this._url,&nbsp;this._method,&nbsp;data);
+&nbsp;&nbsp;&nbsp;&nbsp;_send.apply(this,&nbsp;arguments);
+};</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">整理一下，在页面加载前，需要hook三个接口：<strong>addEventListener</strong>、<strong>XMLHttpRequest.open</strong>、<strong>XMLHttpRequest.send</strong>。页面加载完之后，需要获取所有的<strong>&lt;a&gt;</strong>、<strong>&lt;iframe&gt;</strong>、<strong>&lt;form&gt;</strong>标签，开启页面DOM节点监听，并且触发所有的事件。最后输出结果。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在实现了动态爬取的基本功能后，还有一些可以提升爬虫的稳定性和效率的小tips：自动填写表单（应对某些情况下参数为空导致表单无法提交）、禁止非必要资源的加载（jpg、png、css、mp4等）、页面加载完成后禁止跳转（防止因为触发事件导致的跳转）、hook会导致页面阻塞的函数（alert、prompt）、触发事件向下冒泡（解决一些不标准的前端代码绑定的DOM节点太宽泛导致的问题，但实测非常影响效率）等。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x04 去重</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">去重是爬虫中最核心，也是最影响爬虫效率和结果的部分。去重过于粗放，在遇到页面比较多的网站时爬不完。过于严格的话，爬取的结果太少，也会影响后续扫描的效果。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">去重一般分为两个部分：任务队列的去重、结果队列的去重。这两种去重的区别在于，在爬虫运行过程中，任务队列是一直变动的（增加 &amp; 减少），而结果队列是不断的增加的。对任务队列的去重，要在扫描过程中重复的进行的，即某个页面爬取完成后，获取的结果加入任务队列进行下一次爬虫任务之前，需要做一次去重（或者每完成一个深度的爬虫任务，进行一次去重），而结果队列是在所有的任务结束后进行去重，不影响爬虫运行效率，只影响最后的结果输出。这两种去重可以使用相同的去重策略，也可以使用不同的策略（对任务队列的去重，可以根据当前的任务量，进行去重力度的调整）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们将爬虫的功能和需求程度逐一列出来：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. 基础： 非抓取目标站点的URL&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. 基础： 完全重复的URL &amp; 参数打乱但实际上仍然重复的URL&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. 温饱： 分析参数，去除遍历型的，exp: <strong>page.php?id=1</strong>、<strong>page.php?id=2</strong> 等&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4. 温饱： 支持伪静态URL去重&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5. 小康： 奇形怪状URL的去重，exp: <strong>test.php?a=1?b=2?from=233</strong>、 <strong>test.php?a=1?b=3?from=test&nbsp;</strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6. 小康： 根据当前的任务量，动态调整去重力度</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前两个基础需求实现起来比较简单，将域名、参数列表提取出来进行对比就可以了，一次循环解决问题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第三个需求，需要匹配参数值，比如： int、hash、中文、URL编码等。需要注意的是，不可以直接用匹配的方式处理英文的参数值。如：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">http://test.com/index.php?m=home&amp;c=test&amp;a=view
+http://test.com/index.php?m=home&amp;c=test&amp;a=add</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">其中m、c、a参数分别代表了不同的module、controller、action，属于“ 功能型参数 ”，需要保留。功能性参数的值在大多数情况下是字母（有意义的单词），有些情况下也会是数字或者数字字母的混合。那么，应该如何做策略？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个问题目前的解决方案也比较粗暴，对全部是字母的参数值，不做处理，对数字字母混合的参数值，根据任务量的多少进行“ 弹力去重 ”（详见需求6）。举个实际的例子：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#&nbsp;去重处理前：
+http://test.com/index.php?m=home&amp;c=test&amp;id=3
+http://test.com/index.php?m=home&amp;c=test&amp;type=friday
+http://test.com/index.php?m=home&amp;c=test&amp;type=464730bbd7fb2016c880ffd597f2808f
+http://test.com/index.php?m=home&amp;c=test&amp;type=b59c67bf196a4758191e42f76670ceba
+#&nbsp;处理过程：
+{&quot;m&quot;:&nbsp;&quot;home&quot;,&nbsp;&quot;c&quot;:&nbsp;&quot;test&quot;,&nbsp;&quot;id&quot;:&quot;{{int}}&quot;}
+{&quot;m&quot;:&nbsp;&quot;home&quot;,&nbsp;&quot;c&quot;:&nbsp;&quot;test&quot;,&nbsp;&quot;id&quot;:&quot;{{int}}&quot;}
+{&quot;m&quot;:&nbsp;&quot;home&quot;,&nbsp;&quot;c&quot;:&nbsp;&quot;test&quot;,&nbsp;&quot;type&quot;:&quot;friday&quot;}
+{&quot;m&quot;:&nbsp;&quot;home&quot;,&nbsp;&quot;c&quot;:&nbsp;&quot;test&quot;,&nbsp;&quot;type&quot;:&quot;{{hash}}&quot;}
+{&quot;m&quot;:&nbsp;&quot;home&quot;,&nbsp;&quot;c&quot;:&nbsp;&quot;test&quot;,&nbsp;&quot;type&quot;:&quot;{{hash}}&quot;}
+#&nbsp;去重结果：
+http://test.com/index.php?m=home&amp;c=test&amp;id=2
+http://test.com/index.php?m=home&amp;c=test&amp;type=friday
+http://test.com/index.php?m=home&amp;c=test&amp;type=464730bbd7fb2016c880ffd597f2808f</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">第四个需求，支持伪静态去重。首先要定义对路径去重的策略，我们把路径用/分隔开，扔到处理参数值的函数中去处理（符合规则的替换为指定字符串、不符合规则的原样返回），然后再用替换过的URL做去重处理就可以了。当然还有一些伪静态长这样：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">htttp://xxx.com/?index_1_test_233
+htttp://xxx.com/?index_1_new_456</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">再按照上述的去重策略就过于粗略，应该怎么处理呢？继续往下看。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第五个需求，奇形怪状的URL。目前已有的去重策略都是通过分析替换参数值、路径名来实现的，但是这种奇奇怪怪的URL根本不按套路出牌，只能采用非常的方法：在参数、路径进行拆分处理前，替换掉一些干扰字符。举个实例：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#&nbsp;处理前
+http://test.com/test.php?id=12?from=te?user=233
+http://test.com/test.php?id=12?from=te?user=233_abc
+
+#&nbsp;替换后
+http://test.com/test.php?id={{int}}?from=te?user={{int}}
+http://test.com/test.php?id={{int}}?from=te?user={{mix_str}}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">第六个需求，根据当前的任务量，自动调整去重策略。在有些情况下，上述的各种去重套路都不好用，比如：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">http://test.com/user.php?name=test
+http://test.com/user.php?name=今天是阴天
+http://test.com/user.php?name=bbbbb
+...</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当用户名为自定义，且有成千上万个用户的时候，上述的去重策略就都失效了。问题出在哪里？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">需求三的解决方案似乎过于粗略了，直接把所有的纯英文字符串放过了，但是也没有更好的解决方案。只能针对这种特殊情况，再加一次循环，先找到出现次数过多的参数，再针对这些特定的参数进行强制去重。新的策略是这样的：第一次循环只进行预处理，分析当前的参数列表，并计数。第二遍，根据参数列表的计数值判断当前参数是否需要强制去重。举个实例：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">http://test.com/index.php?name=friday&amp;m=read
+http://test.com/index.php?name=test&amp;m=read
+http://test.com/index.php?name=2333&amp;m=read&nbsp;
+
+#&nbsp;第一轮遍历结果
+{
+&nbsp;&nbsp;&nbsp;&nbsp;md5(name+m):{count:3,&nbsp;&quot;name&quot;:[&quot;friday&quot;,&quot;test&quot;,&quot;{{int}}&quot;],&nbsp;&quot;m&quot;:&nbsp;[&quot;read&quot;]},
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当参数列表相同的URL数量大于某个特定值，且某个参数的值的个数大于某个特定值的时候，强制对该参数进行去重，即将全英文字符串替换为<strong>{{str}}</strong>。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上述方法实现起来稍微有点儿绕，还有个粗暴点儿的解决方案：不去检测具体参数，只判断当前任务队列里的任务数是否超过某个值，一旦超过，就启动强制去重（只要参数列表或根路径相同，直接去掉，可能会误杀很多伪静态）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在实现了上述的六个需求后，一个简洁有效的去重脚本就完成了，流程图如下：</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t0113fffa88222ffac2.png" title="t0136ab00aab85c4588.png" alt="http://p4.qhimg.com/t0136ab00aab85c4588.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x05 对比</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为了测试动态爬虫（以下简称KSpider）的基本功能和效率，选取了同样是基于动态分析的WVS扫描器的爬虫（以下简称WVSSpider）来对比。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先测试基本抓取功能。</span><a href="http://demo.aisec.cn/demo/aisec/" target="_blank" textvalue="AISec漏洞扫描器测试平台" style="text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">AISec漏洞扫描器测试平台</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">提供了几个demo，爬取结果如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#&nbsp;注：&nbsp;WVSSpider无法设置爬虫深度及线程数，针对path相同的url会进行聚合处理，生成SiteFile。
+WVSSpider&nbsp;#&nbsp;wvs_console.exe&nbsp;/Crawl&nbsp;http://demo.aisec.cn/demo/aisec/&nbsp;/SaveLogs&nbsp;/SaveFolder&nbsp;C:\Users\xxx\Desktop&nbsp;/ExportXML&nbsp;
+Request&nbsp;Count:&nbsp;31,&nbsp;SiteFile&nbsp;Count:&nbsp;11,&nbsp;Time&nbsp;Count:&nbsp;23
+KSpider&nbsp;#&nbsp;python&nbsp;crawler.py&nbsp;http://demo.aisec.cn/demo/aisec/&nbsp;{&quot;depth&quot;:&nbsp;5,&nbsp;&quot;thread_count&quot;:&nbsp;5}&nbsp;
+Request&nbsp;Count:&nbsp;23,&nbsp;Result&nbsp;Count:&nbsp;18,&nbsp;Time&nbsp;Cost:&nbsp;33
+KSpider&nbsp;Basic&nbsp;#&nbsp;python&nbsp;crawler.py&nbsp;http://demo.aisec.cn/demo/aisec/&nbsp;{&quot;depth&quot;:&nbsp;5,&nbsp;&quot;thread_count&quot;:&nbsp;5,&nbsp;&quot;type&quot;:&nbsp;&quot;basic&quot;}&nbsp;
+Request&nbsp;Count:&nbsp;11,&nbsp;&nbsp;Result&nbsp;Count:&nbsp;8,&nbsp;Time&nbsp;Cost:&nbsp;1</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">前两个扫描都抓取到了5个关键的请求，包括：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">基础&lt;a&gt;标签:&nbsp;http://demo.aisec.cn/demo/aisec/html_link.php?id=2
+JS自动解析:&nbsp;http://demo.aisec.cn/demo/aisec/js_link.php?id=2&amp;msg=abc
+JS自动解析&nbsp;+&nbsp;FORM表单:&nbsp;http://demo.aisec.cn/demo/aisec/post_link.php
+JS自动解析&nbsp;+&nbsp;AJAX请求:&nbsp;http://demo.aisec.cn/demo/aisec/ajax_link.php?id=1&amp;t=0.04278885293751955
+事件触发&nbsp;+&nbsp;DOM改变:&nbsp;http://demo.aisec.cn/demo/aisec/click_link.php?id=2</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">静态分析的扫描速度很快，但只扫出了上述5个请求中的第一个。通过表单分析抓取到了第三个POST请求，但是由于<strong>&lt;form&gt;</strong>表单中的<strong>&lt;input&gt;</strong>标签是由JavaScript动态生成（代码如下），所以没有抓取到请求的具体参数。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&lt;form&nbsp;method=&quot;post&quot;&nbsp;name=&quot;form1&quot;&nbsp;enctype=&quot;multipart/form-data&quot;&nbsp;action=&quot;post_link.php&quot;&gt;
+&lt;script&gt;
+document.write(&#39;&lt;input&nbsp;type=&quot;text&quot;&nbsp;name=&quot;i&#39;+&#39;d&quot;&nbsp;size=&quot;30&quot;&nbsp;value=1&gt;&lt;br&gt;&#39;);
+document.write(&#39;&lt;input&nbsp;type=&quot;text&quot;&nbsp;name=&quot;m&#39;+&#39;sg&quot;&nbsp;size=&quot;30&quot;&nbsp;value=&quot;abc&quot;&gt;&#39;);
+&lt;/script&gt;
+&lt;input&nbsp;type=&quot;submit&quot;&nbsp;value=&quot;提交&quot;&nbsp;name=&quot;B1&quot;&gt;
+&lt;/form&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来是爬虫的效率测试，抓取目标是 </span><a href="https://tieba.baidu.com/index.html" target="_blank" textvalue="百度贴吧" style="text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">百度贴吧</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。结果如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">WVSSpider&nbsp;#&nbsp;wvs_console.exe&nbsp;/Crawl&nbsp;https://tieba.baidu.com&nbsp;/SaveLogs&nbsp;/SaveFolder&nbsp;C:\Users\xxx\Desktop&nbsp;/ExportXML&nbsp;
+Request&nbsp;Count:&nbsp;201,&nbsp;SiteFile&nbsp;Count:&nbsp;101,&nbsp;Time&nbsp;Count:&nbsp;220
+KSpider&nbsp;#&nbsp;python&nbsp;crawler.py&nbsp;https://tieba.baidu.com&nbsp;{&quot;depth&quot;:&nbsp;5,&nbsp;&quot;thread_count&quot;:&nbsp;10}&nbsp;
+Request&nbsp;Count:&nbsp;410,&nbsp;Result_length:&nbsp;535,&nbsp;Time_Cost:&nbsp;339</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">可以看到，随着网站复杂度的上升，WVS爬虫的请求数增长相对平稳，而KSpider在线程数为10的情况下，在6分钟内也完成了爬取任务，表现正常。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在分析过程中，虽然 WVSSpider 速度很快，整体效率非常高，但也有一些缺点：爬取深度无法指定、无法跨平台工作、对于伪静态形式的URL去重效果较差（如下图所示的SiteFile共有43个，占比42%）、爬虫结果中有部分URL分割结果（如：<strong>https://tieba.baidu.com/home/main?un=111</strong> 会分割成两个SiteFile，<strong>/home</strong> 和 <strong>/home/main</strong>，所以实际扫描到的URL数量比结果要少）等。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01fa54cc9b08dbb7bb.png" title="t01970504b4fc3e8011.png" alt="http://p0.qhimg.com/t01970504b4fc3e8011.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于目标网站URL较多，覆盖率比较难测算，我们用脚本简单对比了 WVSSpider 和 KSpider 抓取的结果，除去静态资源，KSpider 覆盖了98%的 WVSSpider 抓取结果（即 WVSSpider 抓取结果里，有98%的结果同样被 KSpider 抓到），而 WVSSpider 仅覆盖了38%的 KSpider 抓取结果。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x06 总结</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">除了以上提到的去重和动态解析，还有一些小tips，如fuzz常见路径、从robots.txt中提取信息、爬取过程中进行敏感信息识别、生成网站信息画像等，对爬虫的覆盖率及后续的扫描任务会有帮助。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本文详细的介绍了在动态爬虫的实现过程中，可能会遇到的问题以及解决方案。优秀的代码不会一蹴而就，需要持续的优化调整，后期会考虑开源，欢迎沟通交流。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考资料</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><a href="http://blog.cooer.net/2014/%e8%ae%a9%e4%ba%ba%e6%ac%a2%e5%96%9c%e8%ae%a9%e6%88%91%e5%bf%a7%e7%9a%84phantomjs/" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0);">让人欢喜让我忧的phantomjs&nbsp;</span></a></p><p style="text-indent: 2em; text-align: left;"><a href="http://www.jianshu.com/p/9d408e21dc3a/comments/6037364" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">盘点selenium phantomJS使用的坑&nbsp;</span></a></p><p style="text-indent: 2em; text-align: left;"><a href="https://security.tencent.com/index.php/blog/msg/34" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">SuperSpider——打造功能强大的爬虫利器&nbsp;</span></a></p><p style="text-indent: 2em; text-align: left;"><a href="https://www.n0tr00t.com/2016/10/29/XSS_dynamic_detection_using_PhantomJs.html" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">XSS dynamic detection using PhantomJs</span></a></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3391.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】浅谈动态爬虫与去重 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3391" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/3x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11319" user-name="Viarus不是机器人" href="javascript:;">
+                Viarus不是机器人            </a>
+                        <span class="comment-time">2017-01-11 13:45:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11319">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11319" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">回复@吃瓜群众-Fr1day:文章内容和你之前有篇文章很像</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11318" user-name="吃瓜群众-Fr1day" href="javascript:;">
+                吃瓜群众-Fr1day            </a>
+                        <span class="comment-time">2017-01-11 13:45:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11318">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11318" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">回复@Viarus不是机器人:哈哈 ，动态分析这块和xss确实差不多</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/3x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11317" user-name="Viarus不是机器人" href="javascript:;">
+                Viarus不是机器人            </a>
+                        <span class="comment-time">2017-01-11 13:45:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11317">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11317" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">回复@吃瓜群众-Fr1day:是的，原理都一样</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11315" user-name="狐狸狐狸你快快发芽" href="javascript:;">
+                狐狸狐狸你快快发芽            </a>
+                        <span class="comment-time">2017-01-11 13:42:34</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11315">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11315" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">贝爷66哒 //@Viarus不是机器人:一看就是贝爷写的 //@PyNerd://@吃瓜群众-Fr1day:</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11313" user-name="吃瓜群众-Fr1day" href="javascript:;">
+                吃瓜群众-Fr1day            </a>
+                        <span class="comment-time">2017-01-11 11:24:55</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11313">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11313" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">怎么看出来的</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11312" user-name="安全客官方微博" href="javascript:;">
+                安全客官方微博            </a>
+                        <span class="comment-time">2017-01-11 11:04:38</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11312">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11312" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">收藏一波~</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11311" user-name="安全客官方微博" href="javascript:;">
+                安全客官方微博            </a>
+                        <span class="comment-time">2017-01-11 11:04:38</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11311">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11311" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">地铁拥挤保护好手机~</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11310" user-name="Bipabol" href="javascript:;">
+                Bipabol            </a>
+                        <span class="comment-time">2017-01-11 11:04:38</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11310">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11310" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">回复@安全客官方微博:谢谢提醒</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11283" user-name="AssKicking" href="javascript:;">
+                AssKicking            </a>
+                        <span class="comment-time">2017-01-11 11:02:17</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11283">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11283" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">mark//@real-肉肉: 内容很棒，感谢分享。收藏了//@阿德马: //@李劼杰: 感谢思路分享，爬虫是web扫描器的核心，各位白帽子自己开发的爬虫通常都不愿意开源的。   //@phithon别跟路人甲BB: 值得一看</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11282" user-name="风之誓言Daniel" href="javascript:;">
+                风之誓言Daniel            </a>
+                        <span class="comment-time">2017-01-11 11:02:17</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11282">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11282" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@real-肉肉:内容很棒，感谢分享。收藏了//@阿德马: //@李劼杰: 感谢思路分享，爬虫是web扫描器的核心，各位白帽子自己开发的爬虫通常都不愿意开源的。   //@phithon别跟路人甲BB: 值得一看</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3391" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

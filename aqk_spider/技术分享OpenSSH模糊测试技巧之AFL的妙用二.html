@@ -1,0 +1,641 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】OpenSSH模糊测试技巧之AFL的妙用（二） - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="OpenSSH漏洞,American Fuzzy Lop,AFL,模糊测试"/>
+    
+        <meta name="description" content="​American Fuzzy Lop（AFL）是一个很不错的模糊测试工具。在这篇文章中，我将详细介绍开始使用OpenSSH守护进程（sshd）的一些步骤，并给出一些模糊测试技巧，以帮助你更快地获得测试结果。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】OpenSSH模糊测试技巧之AFL的妙用（二）</h2>
+                <div class="article-msg">
+                    <span class="time">2017-04-11 11:40:19</span>
+                    
+                                        <span class="read">阅读：9694次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3713"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3713" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://vegardno.blogspot.fr/2017/03/fuzzing-openssh-daemon-using-afl.html"
+                             target="_blank">来源： vegardno.blogspot.fr</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2826612711" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2826612711" style="color:#848e99;">阿诺斯基</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration-line: underline;"><a href="http://mailto:http://lcamtuf.coredump.cx/afl/" target="_self"></a></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 0em; white-space: normal; background-color: rgb(255, 255, 255); text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: 900;"><a href="http://p4.qhimg.com/t015350c1dacc216f25.jpg" target="_blank" style="text-decoration-line: none; color: rgb(51, 51, 51); line-height: 28px;"><img src="http://p9.qhimg.com/t01793b3bf98c2aa980.jpg" title="t0118e016685fc438ed.jpg" alt="http://p6.qhimg.com/t0118e016685fc438ed.jpg" style="border: 0px; visibility: visible; max-width: 600px;"/></a></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background-color: rgb(255, 255, 255); text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2826612711" target="_blank" textvalue="阿诺斯基" style="text-decoration-line: none; color: rgb(51, 51, 51); line-height: 28px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192); font-weight: 900;">阿诺斯基</span></a></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192);"><strong>传送门</strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><a href="http://bobao.360.cn/learning/detail/3682.html" target="_self" style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); text-decoration: underline;"><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192);"><strong>【技术分享】OpenSSH模糊测试技巧之AFL的妙用（一）&nbsp;</strong></span></a></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration-line: underline;"><a href="http://mailto:http://lcamtuf.coredump.cx/afl/" target="_self">American Fuzzy Lop</a></span><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（AFL）是一个很不错的模糊测试工具。如果你想进阶它的高级用法，你需要做一些额外的设置和调整，但是在大多情况下它的功能只是开箱即用的。</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这篇文章中，我将详细介绍开始使用OpenSSH守护进程（sshd）的一些步骤，并给出一些模糊测试技巧，以帮助你更快地获得测试结果。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">AFL的主页中已经在其“奖杯案例”页面中显示了4个OpenSSH的Bug;这些都是由HannoBöck发现的，他在模糊测试过程中使用了类似于由Jonathan Foote提出的如何使用AFL模糊测试服务器的方法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我采取了一个稍微不同的方法，而且我认为这种方法更为简单：不需要拦截系统调用来伪造网络活动，我们只需要将OpenSSH的守护进程运行在“inetd模式”。 inet守护进程在现代Linux发行版上不再被使用，此进程会设置监听的网络套接字，并启动一个新进程来处理每个新传入的网络连接。 之后，inetd会将网络套接字数据作为stdin/stdout传递给目标程序。因此，当sshd以inet模式启动时，它通过stdin/stdout与单个客户端进行通信，这正是我们使用AFL进行模糊测试所需要的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">加快模糊测试速度</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">afl-clang-fast 或 LLVM的“延迟forkserver模式”</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我上面提到，使用afl-clang-fast（即AFL的LLVM延迟forkserver模式）允许我们移动“fork point”来跳过一些sshd初始化的步骤，这对于我们抛出的每个单一测试用例都是相同的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了长久的进行模糊测试，我们需要在程序的正确的位置中调用__AFL_INIT()函数，将那些不依赖于特定输入的东西放到这个函数之前，并将测试用例特定的处理过程放在这个函数之后。我使用了下面这个补丁：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">diff&nbsp;--git&nbsp;a/sshd.c&nbsp;b/sshd.c
+---&nbsp;a/sshd.c
++++&nbsp;b/sshd.c
+@@&nbsp;-1840,6&nbsp;+1840,8&nbsp;@@&nbsp;main(int&nbsp;ac,&nbsp;char&nbsp;**av)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;ignore&nbsp;SIGPIPE&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;signal(SIGPIPE,&nbsp;SIG_IGN);
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;__AFL_INIT();
++
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Get&nbsp;a&nbsp;connection,&nbsp;either&nbsp;from&nbsp;inetd&nbsp;or&nbsp;a&nbsp;listening&nbsp;TCP&nbsp;socket&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(inetd_flag)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;server_accept_inetd(&amp;sock_in,&nbsp;&amp;sock_out);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">AFL应该能够自动检测到你不再希望每次都从main()函数的顶部开始执行程序。然而，只做了上面的那个补丁后，我得到下面这个可怕的错误消息：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">嗯，看起来在我们可以与注入的代码完成握手之前，要处理的二进制程序就终止掉了。也许模糊器还有一个比较可怕的bug需要处理。 Poke &lt;lcamtuf@coredump.cx&gt;用于故障排除提示。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">所以，显然在这里有一些AFL魔术代码使fuzzer和被模糊测试的程序进行通信。在afl-fuzz.c中查看了一下后，我发现了FORKSRV_FD，它是一个文件描述符，用于指向此目标的管道。其值为198（管道的另一端为199）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了试图弄清楚出了什么问题，我在strace下运行了afl-fuzz，它显示文件描述符198和199被sshd关闭了。在挖掘了更多的信息后，我发现了closefrom（）函数的调用，这是一个关闭开始时给定的数字的所有继承（和假设未使用过的）的文件描述符的函数。不过，这种代码处在程序的起始位置的原因可能是为了减少攻击面，以防止攻击者能够控制进程。但无论如何，保护这些特殊的文件描述符的解决方案应该是使用如下这样的补丁：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">diff&nbsp;--git&nbsp;openbsd-compat/bsd-closefrom.c&nbsp;openbsd-compat/bsd-closefrom.c
+---&nbsp;openbsd-compat/bsd-closefrom.c
++++&nbsp;openbsd-compat/bsd-closefrom.c
+@@&nbsp;-81,7&nbsp;+81,7&nbsp;@@&nbsp;closefrom(int&nbsp;lowfd)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;((dent&nbsp;=&nbsp;readdir(dirp))&nbsp;!=&nbsp;NULL)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fd&nbsp;=&nbsp;strtol(dent-&gt;d_name,&nbsp;&amp;endp,&nbsp;10);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(dent-&gt;d_name&nbsp;!=&nbsp;endp&nbsp;&amp;&amp;&nbsp;*endp&nbsp;==&nbsp;&#39;\0&#39;&nbsp;&amp;&amp;
+-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fd&nbsp;&gt;=&nbsp;0&nbsp;&amp;&amp;&nbsp;fd&nbsp;&lt;&nbsp;INT_MAX&nbsp;&amp;&amp;&nbsp;fd&nbsp;&gt;=&nbsp;lowfd&nbsp;&amp;&amp;&nbsp;fd&nbsp;!=&nbsp;dirfd(dirp))
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fd&nbsp;&gt;=&nbsp;0&nbsp;&amp;&amp;&nbsp;fd&nbsp;&lt;&nbsp;INT_MAX&nbsp;&amp;&amp;&nbsp;fd&nbsp;&gt;=&nbsp;lowfd&nbsp;&amp;&amp;&nbsp;fd&nbsp;!=&nbsp;dirfd(dirp)&nbsp;&amp;&amp;&nbsp;fd&nbsp;!=&nbsp;198&nbsp;&amp;&amp;&nbsp;fd&nbsp;!=&nbsp;199)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(void)&nbsp;close((int)&nbsp;fd);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(void)&nbsp;closedir(dirp);</pre><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">跳过高大上的DH /曲线计算和密钥导出操作</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这一点上来说，我仍然不满意fuzzer的执行速度：有些测试程序低至10 exec /秒，确实很慢。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我试图使用 -pg（gprof）编译sshd并尝试找出耗时的原因，但是要让它正确的工作会遇到很多麻烦：首先，sshd通过cleanup_exit()函数使用_exit(255)退出。这不是一个“正常”的退出，所以gmon.out文件（包含配置文件数据）根本就没有写如数据。可以应用一个源补丁来修复它，但是sshd会抛给你一个“拒绝访问”的错误，因为它试图打开该文件进行写入。现在的问题是sshd有一个chdir(&quot;/&quot;)，这意味着它试图将配置文件数据写入无法访问的目录。解决方案很简单，只需在调用exit()之前将另一个chdir()添加到可写的位置。即使这样，这个配置文件对我来说也完全是空的。也许这是另一个特权分离的事情。在任何情况下，我决定只使用valgrind及其“cachegrind”工具来获取配置文件。使用这种方式更容易一些，拿到我所需要的数据，而无需遇到重新配置，修补和重新编译的麻烦。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">该配置文件显示了一个非常特殊的热点，来自两个不同的位置：椭圆曲线点乘法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我真的不太了解椭圆曲线加密，但显然，这种计算看起来相当“高大上”。但是，我们真的不需要处理它;我们可以假设服务器和客户端之间的密钥交换成功。类似于我们如何通过跳过消息CRC检查和用伪密码替换加密来增加覆盖面，我们可以简单地跳过“高大上”的操作并假设它们总是成功的。这是一个折衷的方案;我们不再模糊测试所有的验证步骤，但允许模糊测试器更专注于协议解析本身。我应用了如下这个补丁：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">diff&nbsp;--git&nbsp;kexc25519.c&nbsp;kexc25519.c
+---&nbsp;kexc25519.c
++++&nbsp;kexc25519.c
+@@&nbsp;-68,10&nbsp;+68,13&nbsp;@@&nbsp;kexc25519_shared_key(const&nbsp;u_char&nbsp;key[CURVE25519_SIZE],
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Check&nbsp;for&nbsp;all-zero&nbsp;public&nbsp;key&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;explicit_bzero(shared_key,&nbsp;CURVE25519_SIZE);
++#if&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(timingsafe_bcmp(pub,&nbsp;shared_key,&nbsp;CURVE25519_SIZE)&nbsp;==&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;SSH_ERR_KEY_INVALID_EC_VALUE;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;crypto_scalarmult_curve25519(shared_key,&nbsp;key,&nbsp;pub);
++#endif
++
+&nbsp;#ifdef&nbsp;DEBUG_KEXECDH
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dump_digest(&quot;shared&nbsp;secret&quot;,&nbsp;shared_key,&nbsp;CURVE25519_SIZE);
+&nbsp;#endif
+diff&nbsp;--git&nbsp;kexc25519s.c&nbsp;kexc25519s.c
+---&nbsp;kexc25519s.c
++++&nbsp;kexc25519s.c
+@@&nbsp;-67,7&nbsp;+67,12&nbsp;@@&nbsp;input_kex_c25519_init(int&nbsp;type,&nbsp;u_int32_t&nbsp;seq,&nbsp;void&nbsp;*ctxt)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;r;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;generate&nbsp;private&nbsp;key&nbsp;*/
++#if&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kexc25519_keygen(server_key,&nbsp;server_pubkey);
++#else
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;explicit_bzero(server_key,&nbsp;sizeof(server_key));
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;explicit_bzero(server_pubkey,&nbsp;sizeof(server_pubkey));
++#endif
+&nbsp;#ifdef&nbsp;DEBUG_KEXECDH
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dump_digest(&quot;server&nbsp;private&nbsp;key:&quot;,&nbsp;server_key,&nbsp;sizeof(server_key));
+&nbsp;#endif</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">有了这个补丁，每秒的执行速度可以达到每个核心2,000，这是一个来进行模糊测试非常好的运行速度。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（编辑于2017-03-25：事实证明，这个补丁并不是很好，因为它导致稍后的密钥有效性检查失败（在input_kex_dh_init()中的dh_pub_is_valid()）。 我们可能让dh_pub_is_valid()函数总是返回了true，但是问题来了，反过来返回false又会使别的事情失败。）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">创建第一个输入测试用例</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在我们开始模糊测试之前，我们必须创建几个输入测试用例。 实际上，一个测试用例的就足以开始工作了，但如果你知道如何在服务器上用不同的代码路径创建不同的测试用例，这可能有助于启动模糊测试进程。 我可以想到以下几种可能：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">ssh -A用于ssh代理转发</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">ssh -R启用任意端口转发</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">ssh -Y启用X11转发</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">scp传输文件</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">使用密码对比.pubkey的身份验证</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我创建第一个测试用例的方式是使用strace记录从客户端到服务器的流量。 启动不带-i参数的服务器：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">./sshd&nbsp;-d&nbsp;-e&nbsp;-p&nbsp;2200&nbsp;-r&nbsp;-f&nbsp;sshd_config
+[...]
+Server&nbsp;listening&nbsp;on&nbsp;::&nbsp;port&nbsp;2200.</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后在strace下启动一个客户端（使用刚刚编译的ssh二进制文件）：</span></p><pre class="brush:plain;toolbar:false">$&nbsp;strace&nbsp;-e&nbsp;trace=write&nbsp;-o&nbsp;strace.log&nbsp;-f&nbsp;-s&nbsp;8192&nbsp;./ssh&nbsp;-c&nbsp;none&nbsp;-p&nbsp;2200&nbsp;localhost</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">执行后，应该会提示你进行登录（如果没有，你可能必须使用用户，密钥和密码，直到你成功登录到你刚刚启动的服务器）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">strace日志的前几行应该看起来像这样：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">2945&nbsp;&nbsp;write(3,&nbsp;&quot;SSH-2.0-OpenSSH_7.4\r\n&quot;,&nbsp;21)&nbsp;=&nbsp;21
+2945&nbsp;&nbsp;write(3,&nbsp;&quot;\0\0\4|\5\24\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0010curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,ext-info-c\0\0\1\&quot;ecdsa-sha2-nistp256-cert-v01@openssh.com,ecdsa-sha2-nistp384-cert-v01@openssh.com,ecdsa-sha2-nistp521-cert-v01@openssh.com,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,ssh-ed25519-cert-v01@openssh.com,ssh-rsa-cert-v01@openssh.com,ssh-ed25519,rsa-sha2-512,rsa-sha2-256,ssh-rsa\0\0\0\4none\0\0\0\4none\0\0\0\325umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1\0\0\0\325umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1\0\0\0\32none,zlib@openssh.com,zlib\0\0\0\32none,zlib@openssh.com,zlib\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0&quot;,&nbsp;1152)&nbsp;=&nbsp;1152</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们在这里看到客户端正通过文件描述符3进行通信。你将必须删除在其他文件描述符上发生的所有写入操作。然后将这些字符串粘贴到Python脚本中，如：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">import&nbsp;sys
+for&nbsp;x&nbsp;in&nbsp;[
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;SSH-2.0-OpenSSH_7.4\r\n&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;\0\0\4...&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;...
+]:
+sys.stdout.write(x)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当你运行这个脚本后，它会完美的打印出客户端发送到stdout的每一个字节。 只需将它重定向到一个文件。 该文件将是你的第一个输入测试用例。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你可以通过将相同的数据再次传递到服务器来执行测试运行（不使用AFL）（这次使用-i）：</span></p><pre class="brush:plain;toolbar:false">./sshd&nbsp;-d&nbsp;-e&nbsp;-p&nbsp;2200&nbsp;-r&nbsp;-f&nbsp;sshd_config&nbsp;-i&nbsp;&lt;&nbsp;testcase&nbsp;2&gt;&amp;1&nbsp;&gt;&nbsp;/dev/null</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">希望它将显示你的测试用例重放能够成功的进行登录。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在启动模糊测试器之前，你还可以使用afl-analyze来仔细检查sshd是否正常工作：</span></p><pre class="brush:plain;toolbar:false">~/afl-2.39b/afl-analyze&nbsp;-i&nbsp;testcase&nbsp;--&nbsp;./sshd&nbsp;-d&nbsp;-e&nbsp;-p&nbsp;2200&nbsp;-r&nbsp;-f&nbsp;sshd_config&nbsp;–i</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">运行此命令可能需要几秒钟的时间，但最终应该会显示一个文件的映射和每个字节的意思。 如果有太多的红色，那么者意味着你不能禁用校验和/加密（也许你必须要clean和重建一次？）。 你可能还会看到其他错误，包括AFL没有检测到任何工具（你是否使用afl-clang-fast编译了sshd？）。 这是一般性的AFL故障排除，所以我建议你检查AFL的文档。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">创建OpenSSH字典</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我为OpenSSH创建了一个AFL“字典”，它基本上只是一个字符串列表，对程序进行模糊测测试处理有特殊的意义。 我只是通过运行ssh -Q密码找到了这些字符串，允许模糊测试器使用这些字符串，而不必一次就找到它们（这是不可能发生的机会）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">s0=&quot;3des-cbc&quot;
+s1=&quot;aes128-cbc&quot;
+s2=&quot;aes128-ctr&quot;
+s3=&quot;aes128-gcm@openssh.com&quot;
+s4=&quot;aes192-cbc&quot;
+s5=&quot;aes192-ctr&quot;
+s6=&quot;aes256-cbc&quot;
+s7=&quot;aes256-ctr&quot;
+s8=&quot;aes256-gcm@openssh.com&quot;
+s9=&quot;arcfour&quot;
+s10=&quot;arcfour128&quot;
+s11=&quot;arcfour256&quot;
+s12=&quot;blowfish-cbc&quot;
+s13=&quot;cast128-cbc&quot;
+s14=&quot;chacha20-poly1305@openssh.com&quot;
+s15=&quot;curve25519-sha256@libssh.org&quot;
+s16=&quot;diffie-hellman-group14-sha1&quot;
+s17=&quot;diffie-hellman-group1-sha1&quot;
+s18=&quot;diffie-hellman-group-exchange-sha1&quot;
+s19=&quot;diffie-hellman-group-exchange-sha256&quot;
+s20=&quot;ecdh-sha2-nistp256&quot;
+s21=&quot;ecdh-sha2-nistp384&quot;
+s22=&quot;ecdh-sha2-nistp521&quot;
+s23=&quot;ecdsa-sha2-nistp256&quot;
+s24=&quot;ecdsa-sha2-nistp256-cert-v01@openssh.com&quot;
+s25=&quot;ecdsa-sha2-nistp384&quot;
+s26=&quot;ecdsa-sha2-nistp384-cert-v01@openssh.com&quot;
+s27=&quot;ecdsa-sha2-nistp521&quot;
+s28=&quot;ecdsa-sha2-nistp521-cert-v01@openssh.com&quot;
+s29=&quot;hmac-md5&quot;
+s30=&quot;hmac-md5-96&quot;
+s31=&quot;hmac-md5-96-etm@openssh.com&quot;
+s32=&quot;hmac-md5-etm@openssh.com&quot;
+s33=&quot;hmac-ripemd160&quot;
+s34=&quot;hmac-ripemd160-etm@openssh.com&quot;
+s35=&quot;hmac-ripemd160@openssh.com&quot;
+s36=&quot;hmac-sha1&quot;
+s37=&quot;hmac-sha1-96&quot;
+s38=&quot;hmac-sha1-96-etm@openssh.com&quot;
+s39=&quot;hmac-sha1-etm@openssh.com&quot;
+s40=&quot;hmac-sha2-256&quot;
+s41=&quot;hmac-sha2-256-etm@openssh.com&quot;
+s42=&quot;hmac-sha2-512&quot;
+s43=&quot;hmac-sha2-512-etm@openssh.com&quot;
+s44=&quot;rijndael-cbc@lysator.liu.se&quot;
+s45=&quot;ssh-dss&quot;
+s46=&quot;ssh-dss-cert-v01@openssh.com&quot;
+s47=&quot;ssh-ed25519&quot;
+s48=&quot;ssh-ed25519-cert-v01@openssh.com&quot;
+s49=&quot;ssh-rsa&quot;
+s50=&quot;ssh-rsa-cert-v01@openssh.com&quot;
+s51=&quot;umac-128-etm@openssh.com&quot;
+s52=&quot;umac-128@openssh.com&quot;
+s53=&quot;umac-64-etm@openssh.com&quot;
+s54=&quot;umac-64@openssh.com&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将这些字符串保存为openssh.dict; 并使用-x选项将文件名传递给afl-fuzz。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">运行AFL</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">哇，终于是开始进行模糊测试的时候了！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，创建两个目录，输入和输出。 将初始测试用例放在输入目录中。 然后，对于输出目录，我们将使用一些加快模糊测试过程，并保持AFL持续输出的技巧：在输出文件夹中挂载一个tmpfs RAM磁盘：</span></p><pre class="brush:plain;toolbar:false">sudo&nbsp;mount&nbsp;-t&nbsp;tmpfs&nbsp;none&nbsp;output/</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当然，如果你关机（或系统崩溃）而你没有将数据复制出这个目录，那它会消失，所以你应该每隔一段时间就做一次备份。 我个人只是使用一个bash单线程脚本每隔几个小时就把数据复制到真正的磁盘文件系统。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">要启动单个fuzzer，你可以使用下面的命令：</span></p><pre class="brush:plain;toolbar:false">~/afl-2.39b/afl-fuzz&nbsp;-x&nbsp;sshd.dict&nbsp;-i&nbsp;input&nbsp;-o&nbsp;output&nbsp;-M&nbsp;0&nbsp;--&nbsp;./sshd&nbsp;-d&nbsp;-e&nbsp;-p&nbsp;2100&nbsp;-r&nbsp;-f&nbsp;sshd_config&nbsp;-i</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">再次提醒，请参阅AFL的文档查看如何做并行的fuzzing。 这里我只是有一个简单的bash脚本，在不同的终端窗口中启动了而已（-M或-S选项的值不同）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">希望你执行后应该看到如下的内容：</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01cbf482e937f8e2f7.png" title="t01940d913dd9a8280f.png" alt="http://p3.qhimg.com/t01940d913dd9a8280f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">发现崩溃</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在大约一天的模糊测试（即使在禁用加密之前）中，我在密钥交换期间发现了两个NULL指针间接引用。幸运的是，这些崩溃在实践中没有害处，因为OpenSSH有特权分离代码，所以我们最多会崩溃一个没有特权的子进程，并在系统日志中留下一个可怕的segfault消息。在CVS中的修复的方法在这：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://cvsweb.openbsd.org/cgi-bin/cvsweb/src/usr.bin/ssh/kex.c?rev=1.131&content-type=text/x-cvsweb-markup" _src="http://cvsweb.openbsd.org/cgi-bin/cvsweb/src/usr.bin/ssh/kex.c?rev=1.131&content-type=text/x-cvsweb-markup">http://cvsweb.openbsd.org/cgi-bin/cvsweb/src/usr.bin/ssh/kex.c?rev=1.131&amp;content-type=text/x-cvsweb-markup</a>&nbsp; 。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">结论</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">除了两个无害的NULL指针间接引用外，还没有发现别的问题，这似乎表明OpenSSH是相当鲁棒的（这很好！）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我希望我在本文里所使用的一些技术和补丁能帮助更多的人一起进行OpenSSH的模糊测试。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里做的其他事情包括使用ASAN或通过valgrind运行语料库做一些模糊测试，一旦你已经有一个大小不错的语料库，可能不使用这两个工具会更容易一些，因为ASAN和valgrind在性能上略差。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">看看./configure选项也是非常有用的，配置的构建更像一个典型的发行版的构建;我没有做任何事情，除非让它在最小的环境中构建。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">关于如何扩大覆盖面或使OpenSSH的模糊测试跑，如果你有其他想法的更快可以在评论区告诉我！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">致谢</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我想感谢Oracle（我的雇主）提供了硬件让我并行运行大量的AFL实例:-)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192);"><strong>传送门</strong></span></p><hr style="white-space: normal;"/><p style="white-space: normal; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3682.html" target="_self" style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192);"><strong>【技术分享】OpenSSH模糊测试技巧之AFL的妙用（一）&nbsp;</strong></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span><br/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://vegardno.blogspot.fr/2017/03/fuzzing-openssh-daemon-using-afl.html" target="_blank">原文链接：http://vegardno.blogspot.fr/2017/03/fuzzing-openssh-daemon-using-afl.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】OpenSSH模糊测试技巧之AFL的妙用（二） - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3713" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

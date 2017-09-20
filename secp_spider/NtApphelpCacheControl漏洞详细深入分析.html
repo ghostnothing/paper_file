@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8" />	
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="renderer" content="webkit">
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<title>NtApphelpCacheControl漏洞详细深入分析 - SecPulse.COM | 安全脉搏</title>
+<meta name="description" content="起因：" />
+<meta name="keywords" content="ahcache.sys,AhcValidateAndGetParameters,Apphelp,APPHELP_CACHE_ENTRY,APPHELP_CACHE_FORWARD,APPHELP_CACHE_QUERY,APPHELP_COMMANDDATA,AppHelpCacheDump,AppHelpCacheFlush,AppHelpCahceLookup,AppHelpCahceRemove,AppHelpCahceUpdate,APPHELPCOMMAND,Application Compatibility Database,CommandBuffer,Google Project Zero,James Forshaw,MSRC,NtApphelpCacheControl" />
+
+<link rel='stylesheet' id='style-css'  href='https://www.secpulse.com/wp-content/themes/sec/style.css?ver=2014.9.21' type='text/css' media='all' />
+<link rel='stylesheet' id='jquery.fancybox-css'  href='https://www.secpulse.com/wp-content/themes/sec/css/jquery.fancybox.css?ver=1.0' type='text/css' media='all' />
+<link rel='stylesheet' id='font-awesome-css'  href='https://www.secpulse.com/wp-content/themes/sec/css/font-awesome.min.css?ver=1.0' type='text/css' media='all' />
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/jquery.min.js?ver=2.15'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/jquery.fancybox.js?ver=2.15'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/helpers/jquery.fancybox-buttons.js?ver=2.15'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/jquery.mousewheel-3.0.6.pack.js?ver=1.0'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/owl.carousel.min.js?ver=1.0'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/custom.js?ver=1.0'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/comments-ajax.js?ver=1.3'></script>
+<link rel='canonical' href='https://www.secpulse.com/archives/3894.html' />
+<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+<!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+<!--[if lt IE 9]>
+<script src="http://cdn.bootcss.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+<script src="http://cdn.bootcss.com/respond.js/1.4.2/respond.min.js"></script>
+<![endif]-->
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "//hm.baidu.com/hm.js?7f4cc5524dcb1aec487b4266c18bae48";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+
+</head>
+<body class="single single-post postid-3894 single-format-standard">
+	<header id="header" class="header clr">
+		<div class="header-top inner clr">
+	<hgroup class="logo-main"><h1 class="logo"><a href="https://www.secpulse.com/" rel="home" title="安全脉搏">安全脉搏</a></h1><h4 class="xs-hidden">分享技术，悦享品质 
+	</h4>
+	</hgroup>
+
+<div class="login xs-hidden">
+				<div class="logindiv">
+					<div class="img">
+<img src="https://www.secpulse.com/wp-content/uploads/2017/05/rabbit.jpeg" width="36" height="36" alt="" class="avatar avatar-36 wp-user-avatar wp-user-avatar-36 photo avatar-default" /></div><span href="javascript:void(0);" title="用户" class="yh">用户</span><i
+						class="fa fa-caret-down fa-2"></i>
+					<ul class="login-links">
+						<li class="log"><a
+							href="https://www.secpulse.com/wp-login.php"
+							target="_blank"><i class="fa fa-arrow-right"></i><span>登陆</span></a></li>
+						<li class="exit"><a
+							href="https://www.secpulse.com/wp-login.php?action=register"><i
+								class="fa fa-user-times"></i><span>注册</span></a></li>
+					</ul>
+	
+  </div>
+			</div>
+			<div class="top-search xs-hidden">
+  <form id="search" method="get" action="https://www.secpulse.com" >
+	<input type="text" name="s" id="s" autocomplete="off"  placeholder="输入搜索内容">
+	<button class="btn-search"> <i class="fa fa-search"></i></button>
+</form></div>
+			<div class="menu-button">
+				<i class="fa fa-bars fa-3x"></i>
+			</div>
+		</div>
+
+
+		<div class="main-nav  xs-hidden">
+			<div class="inner clr"><nav class="left-nav clr"><ul id="menu-%e5%af%bc%e8%88%aa" class="header-menu-nav"><li id="menu-item-15" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-home menu-item-15"><a href="https://www.secpulse.com/">首页</a></li>
+<li id="menu-item-17" class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor menu-item-has-children menu-item-17"><a href="https://www.secpulse.com/archives/category/articles">文章</a>
+<ul class="sub-menu">
+	<li id="menu-item-34048" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34048"><a href="https://www.secpulse.com/archives/category/articles/intranet-penetration">内网渗透</a></li>
+	<li id="menu-item-34047" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34047"><a href="https://www.secpulse.com/archives/category/articles/code-audit">代码审计</a></li>
+	<li id="menu-item-34046" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34046"><a href="https://www.secpulse.com/archives/category/articles/web">Web安全</a></li>
+	<li id="menu-item-34565" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34565"><a href="https://www.secpulse.com/archives/category/articles/sec-doc">安全文献</a></li>
+	<li id="menu-item-34568" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34568"><a href="https://www.secpulse.com/archives/category/articles/social-engineering">社会工程</a></li>
+	<li id="menu-item-35948" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35948"><a href="https://www.secpulse.com/archives/category/articles/wireless">无线安全</a></li>
+	<li id="menu-item-35949" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35949"><a href="https://www.secpulse.com/archives/category/articles/mobile-security">移动安全</a></li>
+	<li id="menu-item-35950" class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor menu-item-has-children menu-item-35950"><a href="https://www.secpulse.com/archives/category/articles/system">系统安全</a>
+	<ul class="sub-menu">
+		<li id="menu-item-35951" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35951"><a href="https://www.secpulse.com/archives/category/articles/system/linux">Linux</a></li>
+		<li id="menu-item-35952" class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor current-menu-parent current-post-parent menu-item-35952"><a href="https://www.secpulse.com/archives/category/articles/system/windows">Windows</a></li>
+	</ul>
+</li>
+	<li id="menu-item-35953" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35953"><a href="https://www.secpulse.com/archives/category/articles/reverse-break">逆向破解</a></li>
+</ul>
+</li>
+<li id="menu-item-18" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-18"><a href="https://www.secpulse.com/archives/category/news">资讯</a>
+<ul class="sub-menu">
+	<li id="menu-item-35956" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35956"><a href="https://www.secpulse.com/archives/category/news/china-news">国内资讯</a></li>
+	<li id="menu-item-35957" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35957"><a href="https://www.secpulse.com/archives/category/news/world-news">国外资讯</a></li>
+</ul>
+</li>
+<li id="menu-item-379" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-379"><a href="https://www.secpulse.com/archives/category/construction">安全建设</a>
+<ul class="sub-menu">
+	<li id="menu-item-51480" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51480"><a href="https://www.secpulse.com/archives/category/construction/securityissue">安全管理</a></li>
+	<li id="menu-item-54332" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54332"><a href="https://www.secpulse.com/archives/category/construction/%e4%b8%9a%e5%8a%a1%e5%ae%89%e5%85%a8">业务安全</a></li>
+	<li id="menu-item-35955" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35955"><a href="https://www.secpulse.com/archives/category/construction/bigdata">数据分析</a></li>
+	<li id="menu-item-54333" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54333"><a href="https://www.secpulse.com/archives/category/construction/security-reports">安全报告</a></li>
+</ul>
+</li>
+<li id="menu-item-368" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-368"><a href="https://www.secpulse.com/archives/category/exclusive">独家</a>
+<ul class="sub-menu">
+	<li id="menu-item-35947" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35947"><a href="https://www.secpulse.com/archives/category/articles/industrial-safety">工控安全</a></li>
+	<li id="menu-item-35954" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35954"><a href="https://www.secpulse.com/archives/category/exclusive/ctf-writeup">CTF</a></li>
+	<li id="menu-item-50217" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-50217"><a href="https://www.secpulse.com/archives/category/exclusive/duoyinsu">多因素令牌</a></li>
+	<li id="menu-item-51479" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51479"><a href="https://www.secpulse.com/archives/category/exclusive/dataleakage">数据泄露</a></li>
+</ul>
+</li>
+<li id="menu-item-16" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-16"><a href="https://www.secpulse.com/archives/category/tools">工具</a></li>
+<li id="menu-item-52" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-52"><a href="https://www.secpulse.com/archives/category/hiring">招聘</a></li>
+<li id="menu-item-50" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-50"><a href="https://www.secpulse.com/newsend">投稿</a></li>
+<li id="menu-item-6645" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-6645"><a href="https://www.secpulse.com/archives/category/vul">漏洞</a></li>
+</ul></nav>  <nav class="right-nav clr "><ul id="menu-%e5%af%bc%e8%88%aa%e4%ba%8c" class="header-menu-nav"><li id="menu-item-33967" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-33967"><a title="付费渗透测试" href="http://service.secpulse.com">安全服务</a></li>
+<li id="menu-item-52043" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-52043"><a title="安全从业者最实用的安全导航" href="http://nav.secpulse.com">安全导航</a></li>
+<li id="menu-item-33966" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-33966"><a title="安识科技" href="https://www.duoyinsu.com">多因素</a></li>
+</ul></nav></div>
+		</div>
+		<div class="nav-bg"></div>
+   <nav class="mini-nav visible-xs"><ul id="menu-%e5%af%bc%e8%88%aa-1" class="menu-mini-nav"><li class="menu-item menu-item-type-custom menu-item-object-custom menu-item-home menu-item-15"><a href="https://www.secpulse.com/">首页</a></li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor menu-item-has-children menu-item-17"><a href="https://www.secpulse.com/archives/category/articles">文章</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34048"><a href="https://www.secpulse.com/archives/category/articles/intranet-penetration">内网渗透</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34047"><a href="https://www.secpulse.com/archives/category/articles/code-audit">代码审计</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34046"><a href="https://www.secpulse.com/archives/category/articles/web">Web安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34565"><a href="https://www.secpulse.com/archives/category/articles/sec-doc">安全文献</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34568"><a href="https://www.secpulse.com/archives/category/articles/social-engineering">社会工程</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35948"><a href="https://www.secpulse.com/archives/category/articles/wireless">无线安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35949"><a href="https://www.secpulse.com/archives/category/articles/mobile-security">移动安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor menu-item-has-children menu-item-35950"><a href="https://www.secpulse.com/archives/category/articles/system">系统安全</a>
+	<ul class="sub-menu">
+		<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35951"><a href="https://www.secpulse.com/archives/category/articles/system/linux">Linux</a></li>
+		<li class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor current-menu-parent current-post-parent menu-item-35952"><a href="https://www.secpulse.com/archives/category/articles/system/windows">Windows</a></li>
+	</ul>
+</li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35953"><a href="https://www.secpulse.com/archives/category/articles/reverse-break">逆向破解</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-18"><a href="https://www.secpulse.com/archives/category/news">资讯</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35956"><a href="https://www.secpulse.com/archives/category/news/china-news">国内资讯</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35957"><a href="https://www.secpulse.com/archives/category/news/world-news">国外资讯</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-379"><a href="https://www.secpulse.com/archives/category/construction">安全建设</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51480"><a href="https://www.secpulse.com/archives/category/construction/securityissue">安全管理</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54332"><a href="https://www.secpulse.com/archives/category/construction/%e4%b8%9a%e5%8a%a1%e5%ae%89%e5%85%a8">业务安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35955"><a href="https://www.secpulse.com/archives/category/construction/bigdata">数据分析</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54333"><a href="https://www.secpulse.com/archives/category/construction/security-reports">安全报告</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-368"><a href="https://www.secpulse.com/archives/category/exclusive">独家</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35947"><a href="https://www.secpulse.com/archives/category/articles/industrial-safety">工控安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35954"><a href="https://www.secpulse.com/archives/category/exclusive/ctf-writeup">CTF</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-50217"><a href="https://www.secpulse.com/archives/category/exclusive/duoyinsu">多因素令牌</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51479"><a href="https://www.secpulse.com/archives/category/exclusive/dataleakage">数据泄露</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-16"><a href="https://www.secpulse.com/archives/category/tools">工具</a></li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-52"><a href="https://www.secpulse.com/archives/category/hiring">招聘</a></li>
+<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-50"><a href="https://www.secpulse.com/newsend">投稿</a></li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-6645"><a href="https://www.secpulse.com/archives/category/vul">漏洞</a></li>
+</ul></nav>     </header><section class="xs-main index-main clr">
+<div class="inner">
+<div class="xs-left">
+<nav class="crumbs">现在位置： <a title="返回首页" href="https://www.secpulse.com">首页</a> &gt; <a href="https://www.secpulse.com/archives/category/articles">文章</a> &gt; <a href="https://www.secpulse.com/archives/category/articles/system">系统安全</a> &gt; <a href="https://www.secpulse.com/archives/category/articles/system/windows" rel="category tag">Windows</a> &gt;  正文 </nav><article id="post-3894" class="post-3894 post type-post status-publish format-standard hentry category-windows tag-ahcache-sys tag-ahcvalidateandgetparameters tag-apphelp tag-apphelp_cache_entry tag-apphelp_cache_forward tag-apphelp_cache_query tag-apphelp_commanddata tag-apphelpcachedump tag-apphelpcacheflush tag-apphelpcahcelookup tag-apphelpcahceremove tag-apphelpcahceupdate tag-apphelpcommand tag-application-compatibility-database tag-commandbuffer tag-google-project-zero tag-james-forshaw tag-msrc tag-ntapphelpcachecontrol">
+	<header class="single-header">
+		<h1>NtApphelpCacheControl漏洞详细深入分析</h1>
+			<div class="single-meta">
+				
+		    <div class="time"><i></i> <a href="javascript:void(0);">2015 /1/7 22:26</a></div>
+			<div class="eye xs-hidden"><i class="fa fa-eye fa-1"></i><a href="javascript:void(0);">3,019</a> </div>			<div class="comments xs-hidden"><i class="fa fa-comments fa-1"></i><a href="https://www.secpulse.com/archives/3894.html#respond">沙发</a></div>
+			
+			
+		</div>
+		<!-- .entry-meta -->
+	</header>
+	<!-- .single-header -->
+
+	<div class="single-main">
+		<h2>起因：</h2>
+<p>Google Project Zero团队的新晋成员James Forshaw在9月30日向微软提交了名为“Windows: Elevation of Privilege in ahcache.sys/NtApphelpCacheControl”的安全问题，并且在Google的漏洞公开期限（90天）后，也就是2014年12月29日（北京时间的12月30日）公开了此问题的细节。</p>
+<p>在这里可以看到他针对该问题的一个简单描述和攻击验证代码：<a title="https://code.google.com/p/google-security-research/issues/detail?id=118" href="https://code.google.com/p/google-security-research/issues/detail?id=118" target="_blank">https://code.google.com/p/google-security-research/issues/detail?id=118</a></p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2015/01/win8.1_2.jpg"><img class="alignnone size-full wp-image-3849" src="http://www.secpulse.com/wp-content/uploads/2015/01/win8.1_2.jpg" alt="win8.1_2" width="725" height="445" /></a></p>
+<p>针对这个漏洞的争论很多，很多观众在争论微软和Google对待安全漏洞的做法，90天公开策略是否合情合理等等，也有很多技术人员在争论这个安全问题是否是严格意义上的权限提升漏洞。后者的一个主要原因是James Forshaw在演示这个漏洞时，是通过此漏洞来劫持UAC默认级别下自动提权的ComputerDefaults程序，从而实现在默认UAC设置下静默从中完整性级别启动高完整性级别的程序。</p>
+<p>通常来说，微软安全响应中心（MSRC）不认为UAC默认级别下中完整性级别到高完整性级别的提示绕过属于安全漏洞的（参考MSRC的”如何定义安全漏洞“ <a title="http://technet.microsoft.com/library/cc751383.aspx" href="http://technet.microsoft.com/library/cc751383.aspx" target="_blank">http://technet.microsoft.com/library/cc751383.aspx</a>）。</p>
+<p>但是，最近MSRC也将一些可以穿透Internet Explorer保护模式（PM）或增强保护模式（EPM）沙箱的安全问题（实际上是从低完整性级别穿透至中完整性级别的问题）作为安全漏洞来修补（例如CVE-2014-6349)。，所以我们先搁置是否安全漏洞的这个争议，深入分析下这个漏洞涉及的原理和问题。</p>
+<p>&nbsp;</p>
+<h2>漏洞分析、成因与利用</h2>
+<p>这个漏洞的基本原因，Google的这篇简单说明里已经讲得比较准确了，简单来说，<span style="color: #ff6600;">就是NtApphelpCacheControl这个系统调用，在调用者模拟System权限时，没有正确识别调用者的Token，导致其本来仅提供给管理员和系统程序调用的接口，可以被低权限程序误用，并借助该调用的相关机制，劫持高权限程序，实现权限提升。</span></p>
+<p>&nbsp;</p>
+<p>看完这个原因后，你可能会有疑问，这个系统调用是做什么的？什么是Apphelp？Token的判断具体哪里有问题？Apphelp的哪项机制如何能被利用、以及是如何劫持高权限进程的？接下来笔者就将深入地介绍这些内容，详细地解答这些问题。</p>
+<p>&nbsp;</p>
+<h2>1. Apphelp与NtApphelpCacheControl</h2>
+<p>在Windows 8.1 系统上，NtApphelpCacheControl这个系统调用，顾名思义，可以控制系统中Apphelp规则的快速缓存数据。</p>
+<p><span style="color: #008000;">Apphelp是微软从WindowsXP操作系统开始引入的一项兼容性解决方案，官方的名字是<strong>”Application Compatibility Database”</strong>（应用程序兼容性数据库）</span>。这套解决方案的目的是减少操作系统的向下兼容成本，不是在操作系统层面，而是通过这套兼容数据库引擎提供包括Shim(Hook)在内的大量控制功能，来做到实时地识别和修改特定存在兼容性问题的流行软件程序，使其能够兼容新的操作系统。</p>
+<p>&nbsp;</p>
+<p>关于这套机制，微软官方从Windows7开始， 有一些功能性的介绍文档（<a title="http://technet.microsoft.com/en-us/library/ee461265(v=ws.10).aspx" href="http://technet.microsoft.com/en-us/library/ee461265(v=ws.10).aspx" target="_blank">http://technet.microsoft.com/en-us/library/ee461265(v=ws.10).aspx</a>)，也可以通过官方的”Microsoft Application Compatibility Toolkit”(ACT)，在Windows7以上的操作系统上方便里查看、修改和添加本地的兼容性数据库。在此之前，Alex ionescu和一些其他的国内外研究者也深入地研究过兼容性数据库和Shim机制（<a title="http://www.alex-ionescu.com/?p=39" href="http://www.alex-ionescu.com/?p=39" target="_blank">http://www.alex-ionescu.com/?p=39</a>） 。</p>
+<p>&nbsp;</p>
+<p>微软操作系统的各个版本积累了针对应用程序的大量兼容性修改的方法和基础数据，使这些应用程序可以流畅地运行在新的操作系统中，这为微软的操作系统在世界范围内的复杂环境中广泛运行和推广起到了重要的作用。在Windows Vista发布后，它带来的海量革新的同时，也导致大量应用程序出现兼容性问题，成为该系统被人诟病的原因之一。为此，在其后的Windows7操作系统开发过程中，微软加大了对应用程序兼容性修复方面的重视和投入，不仅更广泛地收集和编制应用程序兼容性修复规则，也对这套兼容性机制做了升级换代。</p>
+<p>&nbsp;</p>
+<p>本次出现问题的NtApphelpCacheControl也是支持这套机制的一个新的接口。这已经不是该函数第一次出现安全漏洞， 在j00ru Syscan2013上的关于Bochspwn的议题上，就公开了一个涉及NtApphelpCacheControl处理缓存代码中存在的竞争条件漏洞（CVE-2013-1278）。阅读下面的内容的同时，建议读者能看一看这个slides中NtApphelpCacheControl相关的内容（75~94页）（<a title="http://vexillium.org/dl.php?syscan_slides.pdf" href="http://vexillium.org/dl.php?syscan_slides.pdf" target="_blank">http://vexillium.org/dl.php?syscan_slides.pdf</a>） 以及James的POC源码。</p>
+<p>&nbsp;</p>
+<p>为什么Apphelp需要这个接口呢？这还需要从XP系统说起，应用程序兼容性的主数据库实际存储是在Windows安装目录下的AppPatch\sysmain.sdb文件中的，但是每次进程启动、模块加载时都去检查这个数据文件显然开销太大。为了能快速处理针对这些可执行程序的兼容性规则，就需要在内存中缓存这个数据库的机制。在Windows XP时代， Apphelp使用一块名为ShimSharedMemory的全局共享Section来在不同进程之间共享识别、修改可执行程序的兼容性数据内存。</p>
+<p>从Windows 2003开始，NtApphelpCacheControl函数被引入系统调用中，作为apphelp的内核入口，在内核中提供了整套新的应用程序兼容性数据库检索、缓存的功能，使得应用程序可以跨Session、跨隔离，并且快速查询、应用兼容性数据库中的规则和处理方案，其缓存功能也实现了在尽量减少性能消耗的同时，快速地针对系统内已知的存在兼容问题的程序进行更快速地修复。</p>
+<p>&nbsp;</p>
+<p>在Windows2003，Windows Vista，Windows7和Windows8操作系统上，NtApphelpCacheControl是实现在系统内核ntoskrnl内部的，从Windows8.1操作系统开始，为了能够减少升级成本，内核将该系统调用的绝大部分最终实现在了一个新的内核模式驱动程序ahcache.sys内部，系统内核通过发送设备控制命令给该驱动来实现该接口的绝大部分功能，在Windows10技术预览版上，我们看到这个驱动又进行了一次比较大的更新。</p>
+<p>&nbsp;</p>
+<p>NtApphelpCacheControl的原型为：</p>
+<p><span style="color: #008000;"><strong>NTSTATUS NtApphelpCacheControl(APPHELPCOMMAND Command , PVOID CommandData);</strong></span></p>
+<p><strong> </strong></p>
+<p>这个Command提供了针对应用程序兼容性数据库缓存的查看、添加、删除等等一系列功能。其中Command的枚举功能和CommandData的数据结构，J00ru的议题和James的源码中都提供了一些，但都不全面也有不少错误，通过IDA查看实现代码很容易就可以看清楚，这里我将这些功能的Command id、对应的控制码（适用于 Windows8.1）和对应实现的功能整理汇总后列出：</p>
+<p>&nbsp;</p>
+<pre class="lang:c decode:true">enum APPHELPCOMMAND
+{
+AppHelpCahceLookup,                //  IoControlCode: 0x220003*
+
+AppHelpCahceRemove,                //  IoControlCode:  0x220007*
+
+AppHelpCahceUpdate,                //  IoControlCode:  0x22000B*
+
+AppHelpCacheFlush                  //  IoControlCode: 0x22000F* 
+
+AppHelpCacheDump,                  //  IoControlCode: 0x220013 
+
+AppHelpCacheNotifyStart ,          //  IoControlCode: 0x220017 
+
+AppHelpCacheNotifyStop,            //  IoControlCode: 0x22001B
+
+AppHelpCahceForward,               //  IoControlCode:  0x22001F
+
+AppHelpCacheQuery,                 //  IoControlCode: 0x220023
+
+AppHelpQueryModule,                //  IoControlCode: 0x220027
+
+AppHelpRefresh,                    //  IoControlCode: 0x22002B
+
+AppHelpCheckForChange,             //  IoControlCode: 0x22002F
+
+AppHelpQueryHwId,                  
+};
+</pre>
+<p>&nbsp;</p>
+<p>*:James的POC源码中，对这四个控制码少了一个0</p>
+<p><strong>AppHelpCacheLookup</strong>： 在Apphelp cache中寻找匹配的、需要处理的记录。</p>
+<p>&nbsp;</p>
+<p><strong>AppHelpCacheRemove</strong>:   删除匹配的Apphelp Cache记录</p>
+<p>&nbsp;</p>
+<p><strong>AppHelpCahceUpdate</strong>： 插入记录到Apphelp Cache</p>
+<p>&nbsp;</p>
+<p><strong>AppHelpCacheFlush</strong>：Flush AppHelp cache，将AppHelpCache的缓存数据清空（根据Flush的标志不同，不一定真的删除内存中的数据，只是去掉某些标记），并刷新到磁盘（注册表）上。</p>
+<p>&nbsp;</p>
+<p>James源码中认为这个命令是没用处的AppHelpEnum。这是错误的 ，apphelp!ShimFlushAppcompatCache-&gt;kernelbase!BaseFlushAppcompatCache-&gt;kernel32!BaseFlushAppcompatCacheWorker  还在使用这个来清空shim的兼容数据数据。他应该是将AppHelCacheFlush看漏了，源码里对于NotifyStart\Enum等后面的几个都差了一个数。</p>
+<p>&nbsp;</p>
+<p><strong>AppHelpCacheDump：</strong>这才是一个“没用”的功能， AppHelp会枚举缓存中的数据，针对枚举的项目并不做操作。笔者猜测这个命令之所以叫“Dump”，可能是一个调试功能。于是笔者从WDK中找了个checked build的内核来看了下。果然在checked build内核中，会枚举缓存中的元素，并逐个打印出记录要去匹配的文件名记录。在Free build中，对应的代码被去掉了，所以成了一个看似无用的命令，实际在checked build，微软的开发人员可能是有对应的工具去通过这个接口方便地观察缓存中都有那些记录。</p>
+<p>&nbsp;</p>
+<p><strong>AppHelpCacheNotifyStart/AppHelpCacheNotifyStop</strong>:这两个命令主要用于同AppHelp的服务通讯，AppHelp内核会通过\AhcPort这个ALPC Port同Application Experience服务通讯。这两个命令用于重连/停止 同服务的LPC通讯。</p>
+<p>&nbsp;</p>
+<p><strong>AppHelpCacheForward</strong>: 用于将缓存可执行程序的信息排队，然后转发给Application Experience服务处理</p>
+<p>&nbsp;</p>
+<p><strong>AppHelpCacheQuery</strong>:  用于获取Shim Cache中的数据内容、ShimCache的相关统计和队列。</p>
+<p>&nbsp;</p>
+<p><strong>AppHelpQueryModule/AppHelpCacheRefresh/AppHelpCheckForChange/AppHelpQueryHwId</strong>：这些是Windows8.1新增的命令，和这里就不详细介绍了。</p>
+<p>&nbsp;</p>
+<p>下面介绍这个调用中重要的数据CommandBuffer的结构，<span style="color: #ff6600;"><strong>这个结构的数据驱动了Lookup/Remove/Update/Forward等大部分基本命令。</strong></span></p>
+<p>&nbsp;</p>
+<p>James在源码中定义了相关结构，不过看上去对这个结构的了解也不是很深入。</p>
+<p>这个CommandBuffer的结构（我这里称为APPHELP_COMMANDDATA），是由三个结构体组成的：</p>
+<p>其中第一个结构体用于存储整个shim缓存和统计内容，被AppHelpCacheQuery命令使用；</p>
+<p>第二个结构体用于在AppHelpCacheLookup/AppHelpCacheRemove/AppHelpCacheUpdate这三个命令时来告诉接口检索、删除和添加的项目内容；</p>
+<p>第三部分则用于AppHelpCacheForward命令，提供forward，用于提供转发给服务的相关数据。</p>
+<p>无论是哪个命令，CommandBuffer都同时包含着三个结构体，这也是为什么J00ru的议题和James的源码里都提到提交的缓存结构前面有大量无用的0数据的原因。</p>
+<p>&nbsp;</p>
+<p>下面给出这个结构的定义：</p>
+<pre class="lang:c decode:true ">typedef struct APPHELP_COMMANDDATA{
+
+APPHELP_CACHE_QUERY QueryData;                  //Query full data
+
+APPHELP_CACHE_ENTRY EntryData ;                 //Lookup/Remove/Update entry
+
+APPHELP_CACHE_FORWARD ForwardData;             //Data for forward
+
+} APPHELP_COMMANDDATA, *PAPPHELP_COMMANDDATA;
+</pre>
+<p>&nbsp;</p>
+<p>其中APPHELP_CACHE_QUERY/APPHELP_CACHE_FORWARD的结构和本次漏洞无关，就留给感兴趣的读者去研究了。</p>
+<p>&nbsp;</p>
+<p>需要注意的是，QueryData的数据长度会影响后面的EntryData（这个长度在Win7\Win8上不相同），Win7上是0x90，Win8.1上James已经提供了是0x98（这也是为什么Win7上这个POC无法工作的原因之一）。这点看一看ApphelpCacheControlValidateParameters或AhcValidateAndGetParameters就可以了解了。</p>
+<p>&nbsp;</p>
+<p>这里提供一下APPHELP_CACHE_ENTRY的数据结构：</p>
+<p>&nbsp;</p>
+<pre class="lang:c decode:true">typedef struct APPHELP_CACHE_ENTRY{
+
+DWORD Flags ;
+
+ULONG CacheReturnFlags ;
+
+HANDLE FileHandle;
+
+HANDLE ProcessHandle ; //Only in Win8/Win8.1
+
+
+UNICODE_STRING FileName;
+
+UNICODE_STRING PackageFullName;    //only in Win8/Win8.1
+
+DWORD  DataBufferSize;
+
+PVOID DataBuffer;
+
+} APPHELP_CACHE_ENTRY, *PAPPHELP_CACHE_ENTRY;
+</pre>
+<p>&nbsp;</p>
+<p>其中 Flags/CacheReturnFlags分别指明了这条Cache的功能和作用，尤其是对于DataBufferSize/DataBuffer是否有效的控制，是否在关机时保存到注册表中等。</p>
+<p>FileHandle/FileName是对应要进行处理的可执行程序（包括模块）的对应句柄和文件名，之所以要提供文件句柄，是因为内核使用一个AVL Table来存储Entry数据，使用文件句柄的FileTime来做其中平衡树的索引。</p>
+<p>DataBufferSize和DataBuffer描述了Entry相关的规则数据的内容。</p>
+<p>ProcessHandle和PackageFullName仅在Windows8及以后的操作系统上使用。</p>
+<p>&nbsp;</p>
+<p>DataBuffer可以保存由RING3存储的数据结构，一般来说由APPHELP_CACHEUPDATE更新到内核缓存中，APPHELP_CACHELOOKUP获取后使用，Shim引擎使用的数据结构，我称为APPHELP_LOOKUP_RESULT（即James源码中的APPHELP_QUERY结构），如下：</p>
+<p>&nbsp;</p>
+<pre class="lang:c decode:true">#define MAX_EXE_TAGS 16
+
+#define MAX_LAYER_TAGS 8
+
+typedef struct APPHELP_LOOKUP_RESULT
+
+{
+
+DWORD ExeTags[MAX_EXE_TAGS];
+
+DWORD ExeFlags[MAX_EXE_TAGS];
+
+DWORD LayerTags[MAX_LAYER_TAGS];
+
+DWORD LayerFlags;
+
+DWORD AppHelpTag;
+
+DWORD ExeTagsCount ;
+
+DWORD LayerTagsCount;
+
+GUID ExeGuid;
+
+DWORD Flags2;
+
+DWORD Unknown;
+
+DWORD Unknown2;
+
+GUID Guid2[16];
+
+};
+</pre>
+<p>&nbsp;</p>
+<p>如James源码中所使用的，  其中ExeTags指明了在sdb数据中的修复方案的tag id，ExeTagsCount是tag的数量，最多16个， LayerTags是Layer规则的数据。</p>
+<p>&nbsp;</p>
+<p>通过这些命令和数据结构，我们大概了解了NtAppHelpCacheControl提供的能力，那么RING3是如何使用它的呢？</p>
+<p>&nbsp;</p>
+<p>简单地说，Ring3的Module Loader等模块在模块加载、进程启动等事件触发时，会调用apphelp.dll中的相关接口， apphelp.dll再调用kernel32/kernelbase内BasepShim*相关的API，通过NtAppHelpCacheControl中的CacheLookup功能查询模块的可执行文件是否在缓存的数据中，如果存在就按照规则数据库中对应的规则处理，相关的数据通过CacheForward发送到服务进程后，会调用CacheUpdate功能缓存被使用的数据，加快二次查询的速度。</p>
+<p>&nbsp;</p>
+<h2>2.Token相关的问题</h2>
+<p>&nbsp;</p>
+<p>了解了AppHelpCache的接口和基本工作原理后，我们很容易可以明白，如果可以低权限的程序可以调用AppHelpCacheUpdate命令添加缓存，那么可以劫持任意高权限程序，利用shim规则对其进行修改，实现权限提升。</p>
+<p>&nbsp;</p>
+<p>那么我们回来看看这个漏洞的成因，如James在说明里提到的，这个漏洞的原因是因为用于验证AppHelpCacheUpdate是否运行被调用的AhcVerifyAdminContext函数，验证Token存在问题，这个函数很简单，我们使用Hex-rays decomplier得到伪代码：</p>
+<p>&nbsp;</p>
+<pre class="lang:c decode:true ">NTSTATUS AhcVerifyAdminContext()
+{
+  retstatus = STATUS_ACCESS_DENIED;
+  CurrentThread = KeGetCurrentThread();
+  CurrentProcess = PsGetCurrentProcess();
+  TokenType = 0;
+  TokenObj = PsReferenceImpersonationToken(CurrentThread, &amp;CopyOnOpen, &amp;EffectiveOnly, &amp;ImpersonationLevel);
+  if ( TokenObj || (TokenObj = PsReferencePrimaryToken(CurrentProcess), TokenType = 1, TokenObj) )
+  {
+    if ( SeQueryInformationToken(TokenObj, 1, &amp;TokenUserInformation) &gt;= 0 )
+    {
+      if ( RtlEqualSid(_SeExports-&gt;SeLocalSystemSid, TokenUserInformation-&gt;User.Sid) || SeTokenIsAdmin(TokenObj) )
+      {
+        retstatus = STATUS_SUCCESS;
+      }
+      ExFreePoolWithTag(TokenUserInformation, 0);
+    }
+    else
+    {
+      AhcTracePrintf(0, "AhcVerifyAdminContext", 937, "Failed to query token information.\n", v5);
+
+    }
+    if ( TokenObj )
+    {
+      if ( TokenType == 1 )
+      {
+        PsDereferencePrimaryToken(TokenObj);
+      
+      }
+      else
+      {
+        PsDereferenceImpersonationToken(TokenObj);
+      }
+    }
+  }
+  else
+  {
+    AhcTracePrintf(0, "AhcVerifyAdminContext", 929, "Failed to get effective token", v5);
+
+  }
+  return retstatus;
+}
+</pre>
+<p>&nbsp;</p>
+<p>函数的功能很简单，首先试图获取线程模拟的token，如果线程的模拟token不存在，就获取当前进程的主token对象，获取token对象后， 通过SeQueryInformationToken(TokenUser）获得Token的用户信息。</p>
+<p>&nbsp;</p>
+<p>接着，对比如果下面token对象符合下面两种情况的任一种，就返回STATUS_SUCCESS允许AppHelpCacheUpdate操作，否则就返回STATUS_ACCESS_DEIND拒绝操作：</p>
+<p><span style="color: #ff6600;"><strong>1. Token的用户SID匹配LocalSystem的SID</strong></span></p>
+<p><span style="color: #ff6600;"><strong>2.Token通过SeTokenIsAdmin的验证，也就是token用户组内有启用的Adminsitrator组。</strong></span></p>
+<p>&nbsp;</p>
+<p>那么这个对比就是James所说的验证Token有问题的部分，有问题的原因就如James所说， 是因为没有去判断ImpersonationLevel。</p>
+<p>&nbsp;</p>
+<p>这是因为被模拟的Token的SID并不能决定Token就真的拥有对应SID的权利，可以参考微软关于SECURITY_IMPERSONATION_LEVEL的MSDN解释（<a title="http://msdn.microsoft.com/en-us/library/windows/hardware/ff556631(v=vs.85).aspx" href="http://msdn.microsoft.com/en-us/library/windows/hardware/ff556631(v=vs.85).aspx" target="_blank">http://msdn.microsoft.com/en-us/library/windows/hardware/ff556631(v=vs.85).aspx</a> ）。</p>
+<p>&nbsp;</p>
+<p>低于SecurityImpersonation的模拟token其实并不是以被模拟的Client的安全上下文运行的，所以仅仅通过SID来判断调用者是否具备LocalSystem的权限是不够，类似的问题其实是Windows的内核、内核模式驱动程序中还有不少地方存在，感兴趣的读者可以再进行一些挖掘。</p>
+<p>&nbsp;</p>
+<p>以James源码的方法为例，通过Bits服务的BackgroundCopyManager接口创建一个下载任务后，代码将自己的Notify对象设置为任务的通知接口。</p>
+<p>&nbsp;</p>
+<p>此时服务在下载通知时会调用对应的对象，接着combase通过LPC回调试图调用对象的接口函数，而在调用前，就会使用RpcImpersonateClient-&gt;NtAlpcImpersonateClientOfPort，由AlpcpImpersonateMessage来为执行回调接口准备Alpc port指定的安全上下文。</p>
+<p>&nbsp;</p>
+<p>由于Bits的OLE Port指定的允许的SecurityQos-&gt;ImpersonationLevel级别的模拟，模拟完成后调用到James的处理代码，他的代码打开并保存了线程的token句柄，由此获得了一个SecurityIdentification级别的Token句柄 ，Token是来自Bits服务的安全上下文，因此Token的SID自然也就是NT AUTHORITY\SYSTEM（LocalSystem）</p>
+<p>&nbsp;</p>
+<p>这里Bits服务本身是没有安全问题的，因为ALPC获得和模拟的token只是SecurityIdentification级别，即使模拟这个token（就如James的代码后面所做的），也无法以System权限上下文工作，在访问对象ACL时，会被拒绝访问（可以参考SeAccessCheck中的实现和判断），也不会被识别为admin/system（可以参考SeTokenIsAdmin在Windows7以上操作系统的实现），<span style="color: #008000;"><strong>但是NtAppHelpCacheControl这里只判断Token SID的方式，就导致了安全检查被绕过，也是这个漏洞的根本原因。</strong></span></p>
+<p>&nbsp;</p>
+<h2>3.漏洞的利用</h2>
+<p>&nbsp;</p>
+<p>James提供的POC针对这个漏洞利用的方法是劫持一个UAC默认级别下会不区分命令行，无提示自动提权的程序ComputerDefaults.exe，找到regsv32修复的的sdb tag（通过替换模块镜像为regsvr32来进行兼容修复），并将其设置到apphelp缓存中，这样，在启动ComputerDefaults.exe的时候，实际启动的可执行程序的镜像就被Apphelp替换成了regsvr32.exe ，而启动的时候命令行上加上想要注入高权限进程的dll文件，就会使得regsvr32.exe在高完整性级别上加载我们想要加载的DLL，James的DLL代码里实现的是启动一个计算器程序。</p>
+<p>&nbsp;</p>
+<p>这个利用方法引来了一些争议，很多人认为这样只证明可以绕过UAC默认级别下中完整性级别到高完整性级别的弹框，通常来说不能说是安全漏洞，而且实际之前也有很多公开的技巧可以绕过UAC提示。</p>
+<p>&nbsp;</p>
+<p>但就如James自己说的，UAC的绕过仅仅只是个方便的演示方式，想一想测一测就能发现，这个漏洞还有更多的利用方式。</p>
+<p>以IE11 的沙箱（PM）为例，这个漏洞需要的相关功能（包括BITS Token的获取、NtAppHelpCacheControl的调用、sdb Tag的获取等等）都是可以在IE11沙箱的低完整性级别下执行的，那么恶意代码一旦进入沙箱，就可以利用这个漏洞劫持一个常用的中完整性级别程序（甚至系统中经常被启动的高完整性、系统完整性级别程序），就可能通过这个漏洞穿透沙箱，在沙箱外执行恶意代码。使用icacls.exe /setintegritylevel 给测试程序设置Low完整性级别后，可以很容易证实这点。</p>
+<p>&nbsp;</p>
+<p>即使是在通过Users用户组的账户登录的情况下，如果同时或之后有管理员账户登录，由于这个AppHelp Cache是全局跨Session的，因此管理员运行的程序也会可能受到劫持的影响，发生权限提升。</p>
+<p>这些都是通过James的测试程序就能完成的攻击，但是这个攻击的一个缺点是必须要有高权限的程序去启动， 那么还有更好的利用方式么？</p>
+<p>肯定是有的，大家看到刚才我们介绍的AppHelpCacheFlush功能了吧，这个接口的调用者验证也存在和 AppHelpCacheUpdate同样的问题，那么通过这个接口就可以直接将内存中已经添加的AppHelpCache刷入注册表中（HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\AppCompatCache下AppCompatCache)，这样下次开机时就会加载并应用添加的规则，这样重新启动后就可以更方便的劫持想要劫持的程序。</p>
+<p>同时，通过调用低完整性级别/低权限账户或AppContainer完整性级别下允许调用的某些服务LPC/COM接口，也可以使其启动特定的高权限程序，并可能进行劫持。</p>
+<p>这些技术含量不高，已经提供了这么多Tips，再具体的方式就需要大家发挥想象力了，最后再提点细节：AppHelp规则不仅能应用于EXE进程创建，也可以应用在指定的任意模块加载时。</p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<h2>4.Windows7的问题</h2>
+<p>&nbsp;</p>
+<p>James在说明里提到了Windows7的问题，在Windows7上， AppHelpCacheUpdate这条指令专门被一个特别的ApphelpCacheVerifyContext检查所保护（对于其他被保护接口使用的是ApphelpCacheVerifyAdminContext，和Windows8/8.1一样存在这个安全漏洞），这个检查更严格，仅在主TOKEN具备TCB特权时才可以通过，代码如下：</p>
+<pre class="lang:c decode:true ">NTSTATUS ApphelpCacheVerifyContext()
+{
+
+  status = STATUS_SUCCESS;
+  if ( PsGetCurrentThreadPreviousMode() &amp;&amp; SeSinglePrivilegeCheck(SeTcbPrivilege, UserMode)  == FALSE)
+    status = STATUS_ACCESS_DENIED;
+  return status;
+}
+</pre>
+<p>&nbsp;</p>
+<p>看上去这个检查函数是无法绕过了，James同时提到，这个检查是在CommandBuffer中的某些Flags匹配时，才会进行，也许可以绕过，那么实际如何呢？</p>
+<p>&nbsp;</p>
+<p>我们逆向NtAppHelpCacheControl在Win7上的相关实现可以得知，在CommandBuffer-&gt;Flags的Bit 2，3为1时，是不进行这个检查的，这样的Entry是可以通过AppHelpCacheUpdate的检查，加入缓存中的。</p>
+<p>但是，我们再来看AppHelpCacheLookup的相关实现就不难发现，<span style="color: #008000;"> <strong>仅当entry-&gt;Flags的bit 0为1时，Lookup才为调用者返回CommandBuffer-&gt;DataBuffer和DataBufferSize</strong>，</span>而就像在第一节里提到的，这两个域描述了APPHELP_LOOKUP_RESULT数据结构，<strong><span style="color: #008000;">没有这个数据我们无法指定要应用的规则</span>。</strong></p>
+<p>所以至少通过目前的分析来看，通过修改Flags的方法，是无法将达成我们的劫持数据加入缓存并生效的目的的，暂时可以认为这个漏洞难以在Windows7上实现利用。</p>
+<p>&nbsp;</p>
+<p>相关文章</p>
+<p><a href="http://www.secpulse.com/archives/3673.html" target="_blank">《谷歌安全团队公开Windows 8.1权限提升漏洞POC》</a></p>
+<p><a href="http://www.secpulse.com/archives/3846.html" target="_blank">《Elevation of Privilege in ahcache.sys/NtApphelpCacheControl 提权漏洞分析》</a></p>
+<p>&nbsp;</p>
+<p>【本文来源：<a href="http://blogs.360.cn/blog/ntapphelpcachecontrol_vulnerability_anaysis/" target="_blank">NtApphelpCacheControl漏洞分析</a> 作者：<a href="http://blogs.360.cn/blog/author/mj0011/" target="_blank">mj0011</a> 】</p>
+		<div class="pageShenming">
+【安全脉搏：分享技术、悦享品质。文章仅代表作者看法，如有不同观点，欢迎添加安全脉搏微信号：SecPulse，进行交流。】</div>
+<div class="post-tags"><span>Tags: </span><a href="https://www.secpulse.com/archives/tag/ahcache-sys" rel="tag">ahcache.sys</a><a href="https://www.secpulse.com/archives/tag/ahcvalidateandgetparameters" rel="tag">AhcValidateAndGetParameters</a><a href="https://www.secpulse.com/archives/tag/apphelp" rel="tag">Apphelp</a><a href="https://www.secpulse.com/archives/tag/apphelp_cache_entry" rel="tag">APPHELP_CACHE_ENTRY</a><a href="https://www.secpulse.com/archives/tag/apphelp_cache_forward" rel="tag">APPHELP_CACHE_FORWARD</a><a href="https://www.secpulse.com/archives/tag/apphelp_cache_query" rel="tag">APPHELP_CACHE_QUERY</a><a href="https://www.secpulse.com/archives/tag/apphelp_commanddata" rel="tag">APPHELP_COMMANDDATA</a><a href="https://www.secpulse.com/archives/tag/apphelpcachedump" rel="tag">AppHelpCacheDump</a><a href="https://www.secpulse.com/archives/tag/apphelpcacheflush" rel="tag">AppHelpCacheFlush</a><a href="https://www.secpulse.com/archives/tag/apphelpcahcelookup" rel="tag">AppHelpCahceLookup</a><a href="https://www.secpulse.com/archives/tag/apphelpcahceremove" rel="tag">AppHelpCahceRemove</a><a href="https://www.secpulse.com/archives/tag/apphelpcahceupdate" rel="tag">AppHelpCahceUpdate</a><a href="https://www.secpulse.com/archives/tag/apphelpcommand" rel="tag">APPHELPCOMMAND</a><a href="https://www.secpulse.com/archives/tag/application-compatibility-database" rel="tag">Application Compatibility Database</a><a href="https://www.secpulse.com/archives/tag/commandbuffer" rel="tag">CommandBuffer</a><a href="https://www.secpulse.com/archives/tag/google-project-zero" rel="tag">Google Project Zero</a><a href="https://www.secpulse.com/archives/tag/james-forshaw" rel="tag">James Forshaw</a><a href="https://www.secpulse.com/archives/tag/msrc" rel="tag">MSRC</a><a href="https://www.secpulse.com/archives/tag/ntapphelpcachecontrol" rel="tag">NtApphelpCacheControl</a></div>
+		</div>
+	<!-- .single-content -->
+		<div class="pageActive">
+	<div class="mark-like-btn">
+							</div>
+	<!-- Baidu Button BEGIN -->
+	<div class="bdshare">
+		<div class="bdsharebuttonbox">
+			<a href="#" class="bds_more" data-cmd="more"></a><a href="#"
+				class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a><a href="#"
+				class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a><a href="#"
+				class="bds_weixin" data-cmd="weixin" title="分享到微信"></a>
+		</div>
+		<script>
+		window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":false,"bdPic":"","bdStyle":"0","bdSize":"32"},"share":{}};
+		with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];
+		</script>
+
+	</div>
+</div>    <section id="text-6" class="widget-container widget_text hidden-xs">			<div class="textwidget"><center><a href="https://www.duoyinsu.com" target="_blank" title="安识科技 专业安全服务商"><img src="https://www.secpulse.com/wp-includes/images/secweixin.png" style="width:785px;height:315px"></a><center></div>
+		</section><section id="related_post-2" class="widget-container widget_related_post hidden-xs"><h3 class="widget-title">相关文章</h3>
+
+	<ul class="related_post">
+				<li><a href="https://www.secpulse.com/archives/38006.html" title="详细阅读 Windows10 Mount Point Mitigation &#038; MS15-090绕过">
+		 <img src="https://www.secpulse.com/wp-content/themes/sec/timthumb.php?src=http://www.secpulse.com/wp-content/uploads/2015/09/win10.jpg&h=150&w=249&zc=1" alt="Windows10 Mount Point Mitigation &#038; MS15-090绕过" class="xg-img"/>
+		<p>Windows10 Mount Poin&hellip;</P></a></li>
+				<li><a href="https://www.secpulse.com/archives/5503.html" title="详细阅读 Pwn2Own黑客大赛到底谁最牛？">
+		 <img src="https://www.secpulse.com/wp-content/themes/sec/timthumb.php?src=http://www.secpulse.com/wp-content/uploads/2015/03/d8f9d72a6059252dd1f1621f369b033b5ab5b9c2.jpg&h=150&w=249&zc=1" alt="Pwn2Own黑客大赛到底谁最牛？" class="xg-img"/>
+		<p>Pwn2Own黑客大赛到底谁最牛？</P></a></li>
+				<li><a href="https://www.secpulse.com/archives/3673.html" title="详细阅读 谷歌安全团队公开Windows 8.1权限提升漏洞POC">
+		 <img src="https://www.secpulse.com/wp-content/themes/sec/timthumb.php?src=http://www.secpulse.com/wp-content/uploads/2015/01/win8.1.png&h=150&w=249&zc=1" alt="谷歌安全团队公开Windows 8.1权限提升漏洞POC" class="xg-img"/>
+		<p>谷歌安全团队公开Windows 8.1权&hellip;</P></a></li>
+			</ul>
+
+
+</section></article>
+
+
+<!-- 引用 -->
+<div id="comments" class="comments-area">
+	<h2 class="comments-title">
+		抢沙发
+	</h2>
+			<div id="respond" class="comment-respond row">
+		
+
+
+			<form action="https://www.secpulse.com/wp-comments-post.php" method="post" id="commentform">
+		
+				
+						
+			<div id="comboxinfo">
+					<div class="cominfodiv cominfodiv-author ">
+					<p for="author" class="nicheng">
+     <input type="text" name="author" id="author" class="texty" value="" tabindex="1" /> <span class="required">昵称*</span>
+      </p>
+</div>
+					<div class="cominfodiv cominfodiv-email">
+					<p for="email">	<input type="text" name="email" id="email" class="texty" value="" tabindex="2" /> <span class="required">邮箱*</span>
+						</p>
+					</div>
+					<div class="cominfodiv cominfodiv-url">
+					 	<p for="url"><input type="text" name="url" id="url" class="texty" value="" tabindex="3" /><span>网址 </span>
+						</p>
+					</div>
+					
+			
+				
+</div>		       <div class=" cominfodiv-nr">  
+<textarea class="texty" name="w" id="comment" rows="10" tabindex="4" placeholder="输入评论内容..."></textarea><textarea name="comment" cols="100%" rows="4" style="display:none"></textarea>
+							<div class="submitcom">
+							
+					<input id="submit" name="submit" type="submit" tabindex="5" value="提&nbsp;交"/>
+					<input type='hidden' name='comment_post_ID' value='3894' id='comment_post_ID' />
+<input type='hidden' name='comment_parent' id='comment_parent' value='0' />
+<p style="display: none;"><input type="hidden" id="akismet_comment_nonce" name="akismet_comment_nonce" value="4038c39c39" /></p><p style="display: none;"><input type="hidden" id="ak_js" name="ak_js" value="186"/></p>				</div>
+				<div id="cancel_comment_reply"><a rel="nofollow" id="cancel-comment-reply-link" href="/archives/3894.html#respond" style="display:none;">取消回复</a></div>
+			
+</div>
+			
+				
+			</form>
+			
+			
+			<script type="text/javascript">
+				document.getElementById("comment").onkeydown = function (moz_ev){
+				var ev = null;
+				if (window.event){
+				ev = window.event;
+				}else{
+				ev = moz_ev;
+				}
+				if (ev != null && ev.ctrlKey && ev.keyCode == 13){
+				document.getElementById("submit").click();}
+				}
+			</script></div>
+	 		
+</div>
+<!-- #comments --></div>
+		
+<div class="xs-right sidebar xs-hidden xss-hidden">
+	<div class="authorbox">
+	<div class="author-top">
+<div id="author-img">
+<img src="https://www.secpulse.com/wp-content/uploads/2014/12/b_4216_20111222020023739433835-150x150.jpg" width="96" height="96" alt="SP胖编" class="avatar avatar-96 wp-user-avatar wp-user-avatar-96 alignnone photo" />
+</div>
+<div class="au-name">
+<a href="https://www.secpulse.com/archives/author/sp_panbian" title="由SP胖编发布" rel="author">SP胖编</a><br>
+ <span class="au-title">总共60篇文章</span>
+</div> </div>
+	<div class="author-word"><span class="quotes q1"></span>
+神器 神器 神器	<span class="quotes q2"></span></div>
+	</div>
+	
+				<aside id="recent-posts-2" class="widget-container widget_recent_entries">		<div class="si-title"><h2>最新脉搏</h2></div>		<ul>
+					<li>
+				<a href="https://www.secpulse.com/archives/60653.html">《安天365安全研究》第5期</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60630.html">供应链攻击：CCleaner 5.33官方下载被植入恶意代码（附技术详解）</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60605.html">2017先知创新大会：有ZHI而来</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60576.html">甲方工作杂谈</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60394.html">Catfish—缓存漏洞&#038;&#038;配合CSRF到Getshell</a>
+						</li>
+				</ul>
+		</aside><aside id="hot_comment-3" class="widget-container widget_hot_comment"><div class="si-title"><h2>脉搏热评</h2></div>
+	<ul class="hot_comment_widget">
+		
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59497.html" rel="bookmark" title="XSS挑战之旅学习总结 (7条评论)" >XSS挑战之旅学习总结</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59065.html" rel="bookmark" title="web安全之如何全面发现系统后台 (6条评论)" >web安全之如何全面发现系统后台</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59770.html" rel="bookmark" title="电商的支付风控怎么玩？ (3条评论)" >电商的支付风控怎么玩？</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59466.html" rel="bookmark" title="安天移动安全联合猎豹揭秘无形之贼Dosoft免杀病毒 (2条评论)" >安天移动安全联合猎豹揭秘无形之贼Doso&hellip;</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59262.html" rel="bookmark" title="跟着DVWA学Web安全开发 (2条评论)" >跟着DVWA学Web安全开发</a></li>			</ul>
+
+</aside><aside id="random_post-2" class="widget-container widget_random_post"><div class="si-title"><h2>随机脉搏</h2></div>
+
+	<ul class="random_post">
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/18554.html" rel="bookmark" title="详细阅读 搜狐原产小说网update型SQL注入">搜狐原产小说网update型SQL注入</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/18714.html" rel="bookmark" title="详细阅读 山东省农业厅流媒体后台管理密码泄露(dbo权限、后台可查找、明文密码 目测可入侵)">山东省农业厅流媒体后台管理密码泄露(dbo权限、后台可查找、明文密码 目测可入侵)</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/16243.html" rel="bookmark" title="详细阅读 再次XSS盲打太平洋电脑网某后台">再次XSS盲打太平洋电脑网某后台</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/17051.html" rel="bookmark" title="详细阅读 汽车之家论坛存储型xss漏洞危害较大">汽车之家论坛存储型xss漏洞危害较大</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/37247.html" rel="bookmark" title="详细阅读 点到按摩多处配置不当（敏感信息泄漏）">点到按摩多处配置不当（敏感信息泄漏）</a></li>
+					</ul>
+
+
+</aside><aside id="text-11" class="widget-container widget_text"><div class="si-title"><h2>脉搏官方微信公众号</h2></div>			<div class="textwidget"><img src="https://www.secpulse.com/wp-includes/images/SecPulse.png" width="280px" height="364px" /></div>
+		</aside>				</div>
+	</div>
+
+	</section>
+
+  <div class="inner row visible-lg-block">
+
+	<div class="friends">
+		<h3>友情链接</h3>
+		<ul>
+			<li><a href="https://xianzhi.aliyun.com/forum/?secpulse" target="_blank">先知安全社区</a><span>|</span></li>
+			<li><a href="https://threathunter.org/" target="_blank">ThreatHunter社区</a><span>|</span></li>
+			<li><a href="http://www.ijiandao.com/" target="_blank">网络尖刀</a><span>|</span></li>
+			<li><a href="http://navisec.it/" target="_blank">NaviSec导航</a><span>|</span></li>
+		    <li><a href="https://www.easyaq.com/" target="_blank">E安全</a><span>|</span></li>
+			<li><a href="http://www.sec-wiki.com/" target="_blank">Sec-Wiki</a><span>|</span></li>
+			<li><a href="http://www.waitalone.cn/" target="_blank">独自等待</a><span>|</span></li>
+			<li><a href="http://www.shellsec.com/" target="_blank">神刀网</a><span>|</span></li>
+			<li><a href="http://www.ineice.com/" target="_blank">爱内测</a><span>|</span></li>
+			<li><a href="http://www.itet.cn/" target="_blank">北京ITET培训中心</a><span>|</span></li>
+			<li><a href="http://www.ihonker.org/" target="_blank">中国红客联盟</a><span>|</span></li>
+			<li><a href="http://www.bigniu.com/" target="_blank">比戈大牛</a><span>|</span></li>
+			<li><a href="http://www.tiejiang.org/" target="_blank">铁匠运维网</a><span>|</span></li>
+			<li><a href="http://www.nagain.com" target="_blank">娜迦信息</a><span>|</span></li>
+			<li><a href="https://www.secsilo.com/" target="_blank">SecSilo</a><span>|</span></li>
+			<li><a href="https://team.armyzer0.com" target="_blank">armyzer0</a><span>|</span></li>
+			<li><a href="http://www.nosafe.org" target="_blank">NoSafe</a></li>
+		</ul>
+	</div>
+
+	<div class="friends">
+		<h3>合作伙伴</h3>
+		<ul>
+			<a href="https://www.duoyinsu.com" class="external" target="_blank">
+				<img src="https://www.secpulse.com/wp-content/uploads/anshi-logo.png"
+				alt="安识科技" width="150px" height="45px">
+			</a>
+			<a href="http://aq.163.com/module/partner.html" class="external"
+				target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/netease.jpg"
+				alt="网易安全中心" width="150px" height="45px">
+			</a>
+			<a href="https://security.alibaba.com/" class="external"
+				target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/asrc.jpg"
+				alt="阿里安全中心" width="150px" height="45px">
+			</a>
+			
+			<a href="http://yaq.qq.com/" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/yaqnew.png" alt="腾讯御安全"
+				width="140px" height="45px">
+			</a>
+			
+			<a href="http://www.4hou.com" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/4hou.png"
+				alt="嘶吼RoarTalk" width="150px" height="45px">
+			</a>
+			
+			<a href="http://www.ichunqiu.com/?from=secpulse" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/ichunqiu.png" alt="i春秋学院"
+				width="140px" height="45px">
+			</a>
+
+			<a href="#" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/bigsec.png" alt="bigsec岂安科技"
+				width="140px" height="45px">
+			</a>
+		
+			<a href="http://www.milw0rm.cn/" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/milw0rm.png"
+				alt="Milw0rm Team" width="120px" height="40px">
+			</a>
+
+
+			<a href="#" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/cloversec.png"
+				alt="四叶草安全" width="130px" height="45px">
+			</a>
+			<a href="https://www.aqdog.com" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/aqdog.png"
+				alt="安犬云平台" width="140px" height="45px">
+			</a>
+			
+			<a href="http://www.e365.org/" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/e365.png"
+				alt="易安在线" width="130px" height="45px">
+			</a>
+			
+			
+			
+
+		</ul>
+	</div>
+</div>
+<footer class="footer clr" id="footer">
+	<div class="inner inner-footer">
+		<div class="footer-secpulse">
+			<h3>SecPulse</h3>
+			<ul>
+				<li><a href="/about">关于SecPulse</a></li>
+				<!--<li><a href="http://test.secpulse.com">SecPulse专测</a> <sup>NEW!</sup></li>-->
+				<li><a href="/hire">加入我们</a></li>
+				<li><a href="/report">寻求报道</a></li>
+				<li><a href="/contact-us">联系我们</a></li>
+			</ul>
+		</div>
+		<div class="footer-subscribe xs-hidden">
+			<h3>订阅</h3>
+			<ul>
+				<li><a href="/feed">RSS订阅</a></li>
+				<li><a href="/feed">邮箱订阅</a></li>
+				<li><a href="/feed">线下活动订阅</a></li>
+				<li></li>
+				<li><a href="http://weibo.com/311057789">官方微博</a></li>
+				<!-- <li><a href="https://twitter.com/secpulse">Twitter</a></li> -->
+			</ul>
+		</div>
+		<div class="footer-partner">
+			<h3>全力驱动</h3>
+			<ul class="cf">
+				<li><a href="https://www.secpulse.com" class="external"
+					target="_blank"><img
+						src="https://www.secpulse.com/wp-content/uploads/seclogo.png"
+						alt="安全脉搏" width="200px"></a></li>
+			</ul>
+		</div>
+		<div class="footer-copyright xs-hidden">
+			<p>本站由SecPulse安全脉搏团队全力维护。</p>
+			<p>
+				Powered By <a title="安全脉搏" href="https://www.secpulse.com">SecPulse</a>
+			</p>
+			<p>©2013-2017 安全脉搏</p>
+			<p>沪ICP备16016474号</p>
+			<img src="https://www.secpulse.com/wp-includes/images/qrcode.jpg"
+				alt="Qrcode" height="150px" width="150px">
+
+		</div>
+	</div>
+</footer>
+<div id="shangxia">
+	<div id="shang" title="↑ 返回顶部"></div>
+              <div id="comt" title="查看评论"></div>
+              <div id="xia" title="↓ 移至底部"></div>
+</div>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/plugins/akismet/_inc/form.js?ver=3.1.2'></script>
+</body>
+
+</html>

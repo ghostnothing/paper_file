@@ -1,0 +1,704 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】在ie8中利用ROP与Heap Spray利用反弹shell - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="ie8,ROP,Heap Spray,反弹 shell"/>
+    
+        <meta name="description" content="这个漏洞利用程序是针对Windows 7平台上的IE8浏览器开发的。我们关注的焦点是一个使用了Java网络启动协议（JNLP）的插件，这个插件存在有溢出漏洞。为了实现利用，我会使用Heaplib来构造ROP链以实现绕过DEP，并获取对目标机器的控制。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】在ie8中利用ROP与Heap Spray利用反弹shell</h2>
+                <div class="article-msg">
+                    <span class="time">2016-12-13 10:37:12</span>
+                    
+                                        <span class="read">阅读：12540次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3282"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3282" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://woumn.wordpress.com/2016/12/07/rop-heap-spray-for-a-reverse-shell-in-ie8/"
+                             target="_blank">来源： woumn.wordpress.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2676915949" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01ae2ab9a52b1881a6.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2676915949" style="color:#848e99;">Ox9A82</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></p><p style="text-align:center"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: 900;"><img src="http://p4.qhimg.com/t0110d5357a9ec3d6c1.png" title="t0110d5357a9ec3d6c1.png" alt="http://p4.qhimg.com/t0110d5357a9ec3d6c1.png"/></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="text-indent: 2em; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2676915949" target="_blank" style="text-indent: 2em; text-decoration: none;"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: 900;">Ox9A82</span></a><br/></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-size: 18px;"><span style="font-weight: 900;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：260RMB（不服你也来投稿啊！）</span></span></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-size: 18px;"><span style="font-weight: 900;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></span></span><span style="color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至<a href="mailto:linwei@360.cn" target="_self" style="text-decoration: none; color: rgb(51, 51, 51); line-height: 28px;"><span style="color: rgb(0, 112, 192);">linwei#360.cn</span></a>，或登陆<a href="http://bobao.360.cn/contribute/index" target="_blank" style="text-decoration: none; color: rgb(0, 112, 192); line-height: 28px;">网页版</a>在线投稿</span></span></p><p style="text-align: left; text-indent: 2em;"><br/></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">简介</span></strong></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个漏洞利用程序是针对Windows 7平台上的IE8浏览器开发的。我们关注的焦点是一个使用了Java网络启动协议（JNLP）的插件，这个插件存在有溢出漏洞。为了实现利用，我会使用Heaplib来构造ROP链以实现绕过DEP，并获取对目标机器的控制。</span><br/></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><br/></span></strong></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">Did it Work?</span></strong></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我的exploit目前不能正常工作，我讨厌这个leave指令（如下图）</span><br/></p><p style="text-align:center"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p7.qhimg.com/t01b13b1d53cffb9679.png" title="t0160c7451fa211a31e.png" alt="http://p5.qhimg.com/t0160c7451fa211a31e.png"/></span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我进一步确认了一下反汇编。这个错误看起来是我没有访问此DLL的权限，或者是违反了页面的读、写、执行权限。我进一步的研究了一下，并在运行了“!vprot 7c3411a4”命令之后确认了答案，这个命令可以显示我感兴趣的内存权限。</span></p><p style="text-align:center"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p3.qhimg.com/t01b86f3bd65149521f.png" title="t01b192da5d8aa6e6f1.png" alt="http://p5.qhimg.com/t01b192da5d8aa6e6f1.png"/></span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">开发exploit</span></strong></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">构造恶意输入</span></strong></span><br/></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Java网络启动协议（JNLP）使应用程序能够在远程服务器上的客户端桌面上启动。事实上JNLP存在一个缓冲区溢出漏洞，发送的请求的结构对于我们来说不是很重要，我们只需关心传递给JNLP导致溢出的docbase参数。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">此外，我们将通过Javascript来触发这个利用是基于以下几个原因。首先，我们可以通过Javascript直接控制DOM。DOM是文档对象模型，它可以美化屏幕上显示的页面。它可以呈现HTML、CSS和Javascript，并且还可以访问浏览器的“Syscalls”，比如QuickTime，Flash等。这使得在浏览器中实现这个exploit变得很方便。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个exploit使用了很多我们已经见到过的利用技术，所以我不会进行详细介绍。但是需要知道，当我们拥有一个溢出漏洞时，就意味着我们可以控制EIP和ESP处的内存。但是，我们还存在着DEP的问题 - 栈不可以执行。由于存在DEP保护，我们被迫使用ROP来解决。我们之前在其他的漏洞利用中使用过ROP技术，即我们去寻找jump 4或其他东西的地址。我们找到有执行权限的地方，然后直接调用这个地址的我们需要的OPCODE。这里的挑战是我们需要的指令可能不止是一、两条。一般来说ROP链会非常大，而且我们还要插入shellcode。令我担心的是，栈可能没有足够的空间来放置我们的全部载荷，我的方法是通过堆，但是这带来了一些额外的挑战。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">堆上的第一个挑战是如何定位我们布置的数据。幸运的是，这个问题可以通过Heaplib.js的帮助来解决，它进行堆喷射并且保证地址对齐。堆喷射指的是将我们需要的内存数据放入堆中，以便我们有机会跳入我们需要的数据中。它看起来像这样：</span></p><p style="text-align:center"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p7.qhimg.com/t015e86c222e6980208.png" title="t01586fbdc23666fac9.png" alt="http://p7.qhimg.com/t01586fbdc23666fac9.png"/></span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（译注：这张图有误，DEP环境下不再需要NOP sled）</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">事实证明，Heaplib.js库可以提供非常精确的堆喷射，并且shellcode（译注：作者似乎分不清payload和shellcode的区别，之后也有几处混用。）存在于每间隔2000个字节的地址上，比如0020，2020，4020等（译注：Heaplib是一个用来进行精准堆喷射的库，作者首次提出并使用了Heap Fengshui技术。但因为存在Nozzle，自IE9之后就不能使用了。）</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们面临的第二个问题是怎么把堆转换成栈。这个听起来有点违反常识，但是相信我，马上你就会明白我们为什么要这样做。很多人将这种做法称为“Stack Pivot”（栈翻转），为了说明堆是怎么转化成栈的，我们只需要改变ESP寄存器的值指向我们堆的地址（由堆喷射得来的，存有payload）。这通常通过调用指令</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">```
+XCHNG&nbsp;EAX，ESP;
+RET
+```</pre><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">交换EAX的值来实现，这两条指令本身就是一个ROP gadgets。然而，在这里我们不能控制到EAX寄存器，但是我们可以控制EBP寄存器，那么也能够用</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">```
+LEAVE;
+RET
+```</pre><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">指令做栈翻转（译注：因为leave等于mov esp，ebp;pop ebp）。我观察了一下有哪些寄存器会被覆盖，发现只有EIP和EBP这两个。我们费这些麻烦的主要原因是因为RET指令会返回到ESP指向的地址，所以我们需要让ESP指向我们在堆上的数据。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下一个要解决的问题是如何执行我们放在堆中的shellcode。请记住，在执行了栈翻转之后，堆现在成了“栈”，至少它看上去是这么一个东西。那我们如何执行shellcode呢？不幸的是现在的Windows使用了DEP保护（译注：准确的说是自IE8开始才启用，是IE版本的问题与Windows版本无关），这就是说某些地方的内存要么是可读、可写的，要么只是可执行的（互斥）。这是为了阻止我们想要做的事——执行存储在栈上的这些指令。事实上有一个方法可以绕过它。在Windows上，Kernel32.dll中的有一个名为VirtualProtect的函数用于更改内存的保护属性。这对我们来说是很有用的，因为如果我们可以对我们shellcode的内存空间调用这个函数，那么就可以将保护从可读写改为可执行，然后执行shellcode。事实上Kernel32.dll是开启了ASLR的，但我们会在“确定使用的参数”部分中处理这个问题。只需要意识到我们有一种改变内存权限的方法 - 当然这需要通过一个ROP链实现。</span></p><p><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">确定使用的参数</span></strong></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我需要做的第一件事是弄清楚我们将传递给VirtualProtect函数的参数。Alex直接提供给了我们参数，我们可以结合堆喷射的特性直接使用它。</span><br/></p><p style="text-align:center"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p9.qhimg.com/t01208b5eb7a4654e1f.png" title="t017c0dd7700f847fbf.png" alt="http://p2.qhimg.com/t017c0dd7700f847fbf.png"/></span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些值将是我们放置在栈中以传递给VirtualProtect函数调用的参数。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来，我得去寻找VirtualProtect的地址。为此，我使用Windbg来查看不支持ASLR保护的MSVCR71.DLL模块。通过运行命令：`dh msvcr71` 来dump出模块的头，这提供给我们一个VirtualProtect函数的地址表。接下来，我们执行：`dps msvcr71 + 3a000`，它在VirtualProtect之前的表中给出（可能需要多次执行dps）。最后，这给我们提供了一个地址，我们用u poi（7c37a140）确认是我们想要的地址。顺便说一下，这个地址已经在网上列出来了。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来我们关心的是确保栈翻转按计划实施。我提到过这取决于你能在这个过程中访问到哪个寄存器的值。只需使用Windbg附加IE进程，然后传递足够多的A来溢出缓冲区（在我们的情况下为200），并观察哪个寄存器会被溢出数据控制。我这样做之后，发现EIP和EBP都被A溢出，EAX保持不变。这意味着我们需要使用`LEAVE;RET`gadgets。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">还有很重要的一点就是，所有的ROP gadgets都是在MSVCR71.dll上搜素的，因为它不仅不受ASLR的保护，而且Alex也特意告诉我使用这个。</span></p><p><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">构造恶意输入</span></strong></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这一节，我将参考下面的图表来寻找那些特定的ROP gadgets：</span><br/></p><p style="text-align:center"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p7.qhimg.com/t01963d5db6a5c0052e.png" title="t016f858ad679d37221.png" alt="http://p4.qhimg.com/t016f858ad679d37221.png"/></span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">简单来说，ROP gadget只是一些共享内存模块（在我们的例子中是MSVCR71.DLL）中的一个内存地址，我们可以引用它来做一些操作，然后返回。有许多不同的工具可以用于搜索这些地址，Alex推荐了两种不同的选择：第一个叫做Skyrack，第二个叫做msfpescan带有正则表达式。这两种工具对于我想做的事来说都不大好用。于是我用Google找到了一个名为Ropper的开源工具。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">所以，我使用了ropper。它很好安装，也很容易搜索复合指令，它会返回所有匹配的实例，而不是只返回一个。要使用的命令是：</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">```
+ropper&nbsp;--file〜/&nbsp;path&nbsp;/&nbsp;to&nbsp;/&nbsp;msvcr71.dll&nbsp;--search“INSTRUCTION;ret”
+```</pre><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">其中INSTRUCTION是你要搜索的指令。这里是我们需要的指令列表：</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">```
+1.POP&nbsp;EAX，RET;
+2.MOV&nbsp;EAX，DWORD&nbsp;PTR&nbsp;[EAX];&nbsp;RET;
+3.CALL&nbsp;EAX;&nbsp;RET;
+4.POP&nbsp;EAX;&nbsp;POP&nbsp;EDI&nbsp;POP&nbsp;ESI;&nbsp;POP&nbsp;EBX;&nbsp;POP&nbsp;EBP;&nbsp;RET;
+```</pre><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">前三个可以很容易的通过Ropper找到。最后的指令有点困难。对于这一点，我发现了一个名为Fuzzysecurity的源，它使用了IE8的ROP链执行类似的漏洞利用。我试着跟随他的例子，但是我发现他使用了一个知名的通用ROP链，不过我决定不使用这个。但是，我注意到他找到了POP‘s并且列出了一些gadgets。唯一值得注意的是，他使用的gadgets包含五个POP指令，但我们调用的VirtualProtect只有四个参数。但这没有问题，因为我可以在最后添加一个虚拟的值，之后它会被弹出来。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来，将ROP gadgets留给栈翻转。如上所述，我们不能访问EAX - 我们知道在检查WINDBG溢出缓冲区时，发现只有EIP和EBP被覆盖。当我们控制EBP时只需要通过`LEAVE; RET`gadgets来翻转栈。我实际上能够使用Skyrack查找这个，因为如果只是搜索一个单独的LEAVE指令，就有很大的可能性它紧接着一个RET。 我使用WINDBG对地址进行反汇编来验证结果。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们之所以要有POP（x5）; RET，是因为ROP链本身的性质（译注：就是要弹出参数）。考虑以下这张图：</span></p><p style="text-align:center"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p0.qhimg.com/t019f894d370794523d.png" title="t012debdaaffd864d78.png" alt="http://p1.qhimg.com/t012debdaaffd864d78.png"/></span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当我们从调用VirtualProtect返回时，我们伪造了一个栈帧。这意味着我们需要将VirtualProtect的所有参数POP出来，然后在这些POP之后，我们返回到栈中下一个地址。就是说当我们从VirtualProtect返回时，首先返回到`POP（x5）; RET;`它负责删除参数，然后再返回到shellcode。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最初，我打算使用我自己手工生成的ROP链来演示，但是它没有工作。所以我决定采取Chandan的建议，使用Mona.py自动生成的ROP链。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这里，我还想发出一些推荐给我的“幻影”地址。在课堂上，Alex给我们一些关于我们漏洞利用的结构的“提示”。首先，他说我们的缓冲区溢出应该包含栈翻转。接下来，我们得到一个模糊的提示，在我们的ROP链之前应该有一个地址：1）字节对齐或2）它可能是别的东西 - 我决定只使用Heaplib.js承诺的shellcode地址，因为为什么不呢？我不知道还应该放置什么在那里！最后的提示是，在我们的ROP链和shellcode之后，我们应该包括我们shellcode的“硬编码”地址。这对我没有意义，因为如果它正在执行ROP链，我们应该能够正确地击中shellcode，在我们调用VirtualProtect完成后，我们可以立即开始执行shell。所以基本上，每次我需要的“shellcode地址”使用的是0x0a0a2020。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后我使用Metasploit来生成我的shellcode。 命令是：generate -t js_be，它提供了可以粘贴到Javscript函数中的shellcode。 一个重要的注意是确保shellcode可以被4整除，以便它可以正确排列。 我的是324字节长，可以被4整除，所以没有什么我需要做的。</span></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><br/></span></strong></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">未解决的问题</span></strong></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">关于这个任务，我还有几个问题没能够弄清楚。下面，我将详细说明我的关注和我的结论，试图说服那些读者，其中至少有一些想法会被纳入这个领域。</span><br/></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. 我不完全确定在缓冲区溢出时用什么去覆盖EIP的地址。我知道在幻灯片中，讨论了堆上对齐的地址，因为我们要么会命中NOP要么会命中我们的shellcode。但是，我不知道这是如何工作的，因为这个漏洞的整个点是获取和执行我们在堆上的代码。这意味着，如果我们命中的是NOPs或shellcode的开始（基本上除了pivot的一切）我们就会被卡住，因为我们没有移动ESP到我们的位置或改变保护。在与Alex讨论之后，他说用我们的堆栈枢轴覆盖EIP，这就是我所做的。（译注：不知道作者为啥会提出这个问题，估计是没能理解到精准堆喷射的意义所在。）</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. 我认为pivot的地址是我们最初溢出到EIP的地址，但这对我来说没有意义，因为发生在堆栈枢轴（LEAVE; RET）的操作代码只是移动ESP到EBP（译注：move the ESP into EBP？？？），但是如果我们仍然在栈上，我们就不会将其替换为堆上的地址。（译注：在ret返回之前就已经控制了ebp，可以直接更改成堆地址，为什么非要把EIP覆盖成pivot，实在看不懂作者咋想的。）所以我最终解决了这个问题，用shellcode和pivot的地址溢出初始缓冲区，因为我知道EIP会指向pivot。这以后通过WINDBG确认。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. Alex基本上告诉我们在我们的ROP链之前插入一个地址，然后立即跟踪它。但是这是不明确的，它的目的是什么 - 我到现在仍然不知道。我获取的信息并没有表明这是必须要去做的。也许只是为了对齐？（译注：插入地址可以对齐？？？）ROP链后面的第二个地址应该是我们shellcode的“硬编码”地址。再次，我不明白为什么必须要这么做，而不是紧接着放置shellcode（译注：不放地址，你直接把指令ret了能执行吗？），但在这一点上，我盲目地采取了亚历克斯的建议。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4. 为什么我无法执行LEAVE;指令？我的主要想法是EBP有问题或有些东西指向无效的内存。我不是很确定到底是发生了什么，也没有能够解决它。</span></p><p><br style="text-align: left;"/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://woumn.wordpress.com/2016/12/07/rop-heap-spray-for-a-reverse-shell-in-ie8/" target="_blank">原文链接：https://woumn.wordpress.com/2016/12/07/rop-heap-spray-for-a-reverse-shell-in-ie8/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】在ie8中利用ROP与Heap Spray利用反弹shell - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3282" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/6x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="7052" user-name="evan的家" href="javascript:;">
+                evan的家            </a>
+                        <span class="comment-time">2016-12-14 00:41:10</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="7052">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_7052" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@HappyQQ:转给二进制黑客……</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/12x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="7050" user-name="苏生不惑" href="javascript:;">
+                苏生不惑            </a>
+                        <span class="comment-time">2016-12-13 23:52:00</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="7050">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_7050" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">厉害了//@HappyQQ:转给二进制黑客……</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/12x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="7049" user-name="黑色萌呆兔" href="javascript:;">
+                黑色萌呆兔            </a>
+                        <span class="comment-time">2016-12-13 23:52:00</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="7049">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_7049" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@苏生不惑:厉害了//@HappyQQ:转给二进制黑客……</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="6994" user-name="HappyQQ" href="javascript:;">
+                HappyQQ            </a>
+                        <span class="comment-time">2016-12-13 10:51:59</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="6994">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_6994" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">转给二进制黑客……</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="6993" user-name="HappyQQ" href="javascript:;">
+                HappyQQ            </a>
+                        <span class="comment-time">2016-12-13 10:51:09</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="6993">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_6993" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">转给二进制黑客……</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2783212025" class="response" data-bind-id="2783212025" data-target="6992" user-name="越南邻国宰相" href="javascript:;">
+                越南邻国宰相            </a>
+                        <span class="comment-time">2016-12-13 10:38:53</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2783212025" data-target="6992">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_6992" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">翻译的好认真，严谨 赞一个</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3282" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

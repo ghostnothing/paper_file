@@ -1,0 +1,909 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <title>使用 Linux tracepoints, perf以及eBPF跟踪网络数据包的流程 - 嘶吼 RoarTalk &#8211; 回归最本质的信息安全,互联网安全新媒体,4hou.com</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="renderer" content="webkit">
+    <meta property="wb:webmaster" content="4517e8fe39b18975" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,Chrome=1" />
+    <meta name="description" content="我寻找一个低级Linux网络调试工具已经有一段时间了， Linux允许使用虚拟接口和网络命名空间的组合在主机上直接运行复杂网络。当出现问题时，排除故障相当耗时。如果这是L3路由器的问题，可以使用mtr命令进行路由分…" />
+    <meta name="keywords" content="" />
+        <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon.ico" rel="shortcut icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_114.png" rel="apple-touch-icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_76.png" sizes="76x76" rel="apple-touch-icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_120.png" sizes="120x120" rel="apple-touch-icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_152.png" sizes="152x152" rel="apple-touch-icon">
+
+    <!-- 引入 lib -->
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/jquery.min.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/swiper.jquery.min.js"></script>
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/lib/swiper.min.css">
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/lib/allmin.css">
+    <!--[if lt IE 11]>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/html5shiv.min.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/respond.js"></script>
+    <![endif]-->
+    <!-- 引入 css js -->
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/css/style.css">
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/lib/allmin.css">
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/js/public.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/js/main.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/js/index-more.js"></script>
+    </head>
+<body>
+<style type="text/css">
+.memberlistanimate{width: 122px}
+.memberlistanimateleave{width: 122px}
+.nameheader{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width: 78px;display: block;}
+</style>
+
+<header class="header">
+            <article class="header_center">
+                <div class="logowrap">
+            <a href="http://www.4hou.com"><div class="logo icons"></div></a>
+            <h1>回归最本质的信息安全</h1>
+        </div>
+        <div class="login">
+            <form action="/" class="navbar-form inSearch " name="searchform" onsubmit="return checksubmit()">
+                <div class="br">
+                    <span class="in-btn icons"></span>
+                    <input type="text" name="s" id="search" class="animated">
+                    <div class="clear icons"></div>
+                </div>
+                <div id="submitBtnplace" class="icons animated" value=""></div>
+                <!--<input type="submit" id="submitBtn" class="icons animated" value="">-->
+            </form>
+                            <!--登录注册按钮-->
+                 <div id="register">
+                     <a href="http://www.4hou.com/register" data-event-category="Referral to Signup" data-event-action="click" data-event-label="Signup Menu button / Header">注册</a>
+                 </div>
+                 <div id="sing">
+                      <a href="http://www.4hou.com/login" class="pzh_login">登录</a>
+                 </div>
+
+                 <div class="burger2 menu" id="burger">
+                  <div class="icon"></div>
+                 </div>
+
+            
+           <!-- <div id="register">注册</div>
+            <div id="sing">登录</div>
+            <div class="burger2 menu" id="burger">
+                <div class="icon"></div>
+            </div>-->
+        </div>
+    </article>
+</header>
+<nav class="navbox animated">
+    <section class="navbox_cen">
+        <article class="navboxleft">
+            <ul class="nav navbar-nav index-nav" id="inNav">
+					<li>
+							<li class="cat-item cat-item-18"><a href="http://www.4hou.com/category/info" >资讯</a>
+</li>
+	<li class="cat-item cat-item-19"><a href="http://www.4hou.com/category/technology" >技术</a>
+</li>
+	<li class="cat-item cat-item-20"><a href="http://www.4hou.com/category/xactivity" >活动</a>
+</li>
+	<li class="cat-item cat-item-29"><a href="http://www.4hou.com/category/vulnerable" >漏洞</a>
+</li>
+					</li>
+                    <li class="cat-item cat-item-29"><a href="http://www.4hou.com/piao" >嘶票</a>
+                    </li>
+            </ul>
+        </article>
+        <article class="navboxright">
+            <div class="contrib"> <a href="http://www.4hou.com/contribute" class="tougao" data-event-category="Referral to Signup" data-event-action="click" data-event-label="Signup Menu button / Header">投稿</a></div>
+        </article>
+    </section>
+</nav>
+<div id="modelbg"></div>
+    <style>
+
+
+    ::selection {
+    background:#fea283;
+    color:#fff;
+}
+::-moz-selection {
+    background:#fea283;
+    color:#fff;
+}
+::-webkit-selection {
+    background:#fea283;
+    color:#fff;
+}
+
+
+        .article_cen p img{height: auto !important;}
+        .commentlist .children{width: 90%; padding-right: 15px; border-color: transparent ;}
+        .commentname,.commenteml{width: 60%; margin-left:5% ;margin-bottom: 30px;border-bottom: 1px solid #dbdbdb;}
+        .article_cen ol li{list-style-type: decimal;}
+         .article_cen ol li p{overflow: inherit;}
+        .commentname label{font-size: 16px;color: #666; margin-right: 10px;line-height: 32px;}
+        .commentname input{width: 50%;border: none; outline: none;}
+        .commenteml label{font-size: 16px;color: #666; margin-right: 10px;line-height: 32px;}
+        .commenteml input{width: 50%;border: none; outline: none;}
+        #zooming{display: none;width: 100%;height: 100%; position: fixed;z-index: 999;left: 0px; top: 0px; background-color: rgba(0,0,0,.6);}
+        .zoomaniatae{display: block !important;}
+        .imgcon{}
+        #imgcon{position: absolute;left: 50%; top: 20%;max-width: 80%}
+        .article_cen img{cursor: pointer;}
+        #zooming{cursor: pointer;}
+        .imgconadimate{animation:imgcon 0.5s 1 forwards;
+        -webkit-animation:imgcon 0.5s 1 forwards;}
+        .article_authorbox{    width: 222px;min-height: 214px;
+        padding-bottom: 20px;
+        float: right;
+        position: relative;}
+        .interested{position: relative;}
+        .interested>h1{font-size: 18px; font-weight: 900; position: absolute; top: -36px;color: #5e5e5e}
+       .user-comment span{font-size: 13px; position: relative; top: 2px;}
+        .article_authoradd{position: fixed;}
+        .stratend{background:url(http://www.4hou.com/wp-content/themes/4houv2/img/starend.png); !important;background-size: contain !important;}
+        .wpfp-span{opacity: 0;width:100%; height: 100%;display: block; left: 0px; top: 0px; }
+        .wpfp-link{width:100%; height: 100%;display: block; left: 0px; top: 0px; }
+        .wpfp-span img{display: none;}
+        .interested{width: 222px;padding-bottom: 20px;background-color: #fff;margin-top: 70px; padding-bottom: 10px; padding-top: 10px;border: 1px solid #f5c2b1}
+        .interested li{width: 100%;position: relative;padding-top: 8px; padding-bottom: 8px;  line-height: 24px; padding-left: 20px;padding-right: 14px}
+        .interested li i{width: 6px;height: 6px;border-radius: 50%; background-color: #f63;position: absolute; left: 8px; top: 18px;}
+        .interested li a{color: #666;font-size: 14px; line-height: 18px;}
+        .interested li:hover{background-color: #f9e7e3;-moz-transition: all 0.4s ease-in-out;
+        .footer{position: relative;z-index: 99}   
+        .article_authorbox_top{position: relative;} 
+        
+
+        -o-transition: all 0.4s ease-in-out; -webkit-transition: all 0.4s ease-in-out; transition: all 0.4s ease-in-out;}
+    
+        @-webkit-keyframes imgcon{
+            0%{ opacity:0; -webkit-transform:scale3d(.3, .3, .3); transform:scale3d(.3, .3, .3) }
+            50%{ opacity:1 }
+        }
+        @keyframes imgcon{
+            0%{ opacity:0; -webkit-transform:scale3d(.3, .3, .3); transform:scale3d(.3, .3, .3) }
+            50%{ opacity:1 }
+        }
+        .asideanimate{animation:asideanimate 1s 1 forwards;
+        -webkit-animation:asideanimate 1s 1 forwards; position: fixed;}
+        @-webkit-keyframes asideanimate{
+            0%{ opacity:0; -webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+            50%{ opacity:1 }
+        }
+        @keyframes asideanimate{
+            0%{ opacity:0; -webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+            50%{ opacity:1 }
+        }
+        .asideanimateleave{animation:asideanimateleave 1s 1 forwards;
+        -webkit-animation:asideanimateleave 1s 1 forwards;}
+        @-webkit-keyframes asideanimateleave{
+            0%{ opacity:1; -webkit-transform:translate3d(0,0, 0); transform:translate3d(0, 0, 0) }
+            50%{ opacity:0;-webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+        }
+        @keyframes asideanimateleave{
+            0%{ opacity:1; -webkit-transform:translate3d(0,0, 0); transform:translate3d(0, 0, 0) }
+            50%{ opacity:0;-webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+        }
+        @media screen and (max-width:650px) {
+            .member_list{right: -30px !important;top: 34px !important;}
+            .article_authorbox{display: none;}
+            .nameheader{display: none;}
+            .shang_box{width: 90%; margin-left:-45% }
+            #imgcon{width: 90% !important; margin-left: -45% !important;max-width: inherit !important}
+            .dy{padding: 12px 15px!important;font-size: 14px !important; line-height: 22px !important;}
+        }
+        .article_author{float:none !important;padding-top: 1px;}
+        .article_cen pre{color: #666 !important; line-height: 26px; background-color: #f1f1f1}
+        .articlecontent blockquote>p{ color: #666; font-size: 16px; }
+    </style>
+    <section class="articlewrap">
+        <article class="articlecontent">
+            <div class="article_top">
+                <h1 class="art_title">使用 Linux tracepoints, perf以及eBPF跟踪网络数据包的流程</h1>
+                <p class="art_time">2017年8月8日发布</p>
+                <div class="art_nav">
+                    <!--<a href="">翻译文章</a>
+                    <span>／</span>
+                    <a href="">新闻</a>
+                    <span>／</span>
+                    <a href="">原创</a>-->
+                                        <a href="http://www.4hou.com">首页 </a></a>
+                    <span>／</span>
+                    <a href="http://www.4hou.com/category/technology">技术</a>
+                    <span>／</span>
+                    <a href="">正文</a>
+
+                    </ul>
+                </div>
+                <div class="art_type">
+                    <div class="newtype">
+                        <div class="read ">
+                            <i class="icons"></i>
+                            <span>10,051</span>
+                        </div>
+                        <div class="comment ">
+                            <i class="icons"></i>
+                            <span>0</span>
+                        </div>
+                        <div class="Praise">
+                            <i class="icons"></i>
+                            <span>5</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+             <p class="dy" style="padding: 24px 60px;font-size: 16px;line-height: 30px;color: #808080;background-color: #f6f6f6;"><span style="font-weight: bold;">导语：</span>我寻找一个低级Linux网络调试工具已经有一段时间了， Linux允许使用虚拟接口和网络命名空间的组合在主机上直接运行复杂网络。</p>
+
+            <div class="article_cen">
+                <!--文章摘要-->
+               
+                <p><p style="text-align: left">我寻找一个低级Linux网络调试工具已经有一段时间了， Linux允许使用虚拟接口和网络命名空间的组合在主机上直接运行复杂网络。当出现问题时，排除故障相当耗时。如果这是L3路由器的问题，可以使用mtr命令进行路由分析。但是，如果这是一个较低级别的问题，我通常会手动检查每个接口、桥接、网络命名空间以及防火墙，并启动几个tcpdump，以便了解发生了什么。这个过程是如此复杂，以至于我想要找到一个可以直接发现数据包的工具。</p>
+<p>基本上，我需要的是L2的mtr。在本文最后，我将有一个简单易 用的低级数据包跟踪，如果你ping一个本地的Docker容器，它会显示如下：</p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170803/1501747752336045.jpg" title="1501747752336045.jpg" alt="1.jpg" /><noscript><img src="/uploads/20170803/1501747752336045.jpg" title="1501747752336045.jpg" alt="1.jpg" /></noscript></p>
+<p>在这篇文章中，我将重点介绍2个跟踪工具——perf和eBPF。</p>
+<p>Perf 是用来进行软件性能分析的工具，通过它，应用程序可以利用 PMU，tracepoint 和内核中的特殊计数器来进行性能统计。它不但可以分析指定应用程序的性能问题 (per thread)，也可以用来分析内核的性能问题，当然也可以同时分析应用代码和内核，从而全面理解应用程序中的性能瓶颈。最初的时候，它叫做 Performance counter。</p>
+<p>eBPF是Linux内核最近的一个补充，顾名思义，这是一个名为“Berkeley Packet Filter”的BPF字节码的扩展版本，用于过滤BSD的数据包。eBPF一共有3大类指令：跳转、运算、加载与存储。除此之外，它还可以用于在活动内核中安全运行独立于平台的代码，例如，存储器访问在程序可以运行之前被验证，并且必须能够证明该程序将在有限的时间内结束。如果内核不能证明它，即使它是安全的并也将被拒绝。eBPF不但是程序，还可以访问外部的数据，重要的是这个外部的数据可以在用户空间管理。</p>
+<p>这样的程序可以用作QOS的网络分类器，作为eXpress数据平面（XDP）的一部分的非常低级别的网络和过滤，用于跟踪代理。跟踪探测器可以附加到/ proc / kallsyms或任何跟踪点中导出其符号的任何函数。不过，在这篇文章中，我将只分析对跟踪点的跟踪代理。</p>
+<p><span style="font-size: 20px"><strong>实验所需的配置</strong></span></p>
+<p>在本文所进行的试验中，我需要使用一些工具来与perf和eBPF共同协调合作，比如bcc。bcc是一个强大而灵活的工具，是一个开源的 Linux 动态跟踪工具，允许你将内核探测器作为受限制的C语言编写，并使用Python将其设置在用户界面中。</p>
+<p>我将在本文重现Ubuntu 17.04（Zesty）的安装说明，注意，将eBPF附加到跟踪点至少需要Linux内核的版本要高于 4.7。</p>
+<p>安装perf的示意图：</p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170803/1501747758395964.jpg" title="1501747758395964.jpg" alt="2.jpg" /><noscript><img src="/uploads/20170803/1501747758395964.jpg" title="1501747758395964.jpg" alt="2.jpg" /></noscript></p>
+<p>如果你看到一条错误消息，可能意味着你的内核最近已更新，但你尚未重新启动。</p>
+<p>安装bcc的示意图：</p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170803/1501747766411183.jpg" title="1501747766411183.jpg" alt="1501747766411183.jpg" width="700" height="112" border="0" vspace="0" style="width: 700px;height: 112px" /><noscript><img src="/uploads/20170803/1501747766411183.jpg" title="1501747766411183.jpg" alt="1501747766411183.jpg" width="700" height="112" border="0" vspace="0" style="width: 700px;height: 112px" /></noscript></p>
+<p>找到好的跟踪点，也称为用perf手动跟踪数据包，目标是追踪数据包所采用的路径。根据交叉界面的不同，交叉的跟踪点也可能不同。</p>
+<p>为了找到合适的跟踪点，我在perf trace下使用了2个内部和2个外部目标的ping：</p>
+<pre class="brush:html;toolbar:false">1.本地主机IP为127.0.0.1
+2.一个Docker容器，IP&nbsp;172.17.0.2
+3.我的手机通过USB网络共享IP&nbsp;192.168.42.129
+4.我的手机通过WiFi与IP&nbsp;192.168.43.1</pre>
+<p>perf trace是perf的子命令，它默认产生类似于strace的输出。我可以很容易地调整它来隐藏系统调用，例如，将ping到具有IP 172.17.0.2的Docker容器，如下所示：</p>
+<pre class="brush:html;toolbar:false">sudo&nbsp;perf&nbsp;trace&nbsp;--no-syscalls&nbsp;--event&nbsp;&#039;net:*&#039;&nbsp;ping&nbsp;172.17.0.2&nbsp;-c1&nbsp;&gt;&nbsp;/dev/null
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.000&nbsp;net:net_dev_queue:dev=docker0&nbsp;skbaddr=0xffff96d481988700&nbsp;len=98)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.008&nbsp;net:net_dev_start_xmit:dev=docker0&nbsp;queue_mapping=0&nbsp;skbaddr=0xffff96d481988700&nbsp;vlan_tagged=0&nbsp;vlan_proto=0x0000&nbsp;vlan_tci=0x0000&nbsp;protocol=0x0800&nbsp;ip_summed=0&nbsp;len=98&nbsp;data_len=0&nbsp;network_offset=14&nbsp;transport_offset_valid=1&nbsp;transport_offset=34&nbsp;tx_flags=0&nbsp;gso_size=0&nbsp;gso_segs=0&nbsp;gso_type=0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.014&nbsp;net:net_dev_queue:dev=veth79215ff&nbsp;skbaddr=0xffff96d481988700&nbsp;len=98)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.016&nbsp;net:net_dev_start_xmit:dev=veth79215ff&nbsp;queue_mapping=0&nbsp;skbaddr=0xffff96d481988700&nbsp;vlan_tagged=0&nbsp;vlan_proto=0x0000&nbsp;vlan_tci=0x0000&nbsp;protocol=0x0800&nbsp;ip_summed=0&nbsp;len=98&nbsp;data_len=0&nbsp;network_offset=14&nbsp;transport_offset_valid=1&nbsp;transport_offset=34&nbsp;tx_flags=0&nbsp;gso_size=0&nbsp;gso_segs=0&nbsp;gso_type=0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.020&nbsp;net:netif_rx:dev=eth0&nbsp;skbaddr=0xffff96d481988700&nbsp;len=84)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.022&nbsp;net:net_dev_xmit:dev=veth79215ff&nbsp;skbaddr=0xffff96d481988700&nbsp;len=98&nbsp;rc=0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.024&nbsp;net:net_dev_xmit:dev=docker0&nbsp;skbaddr=0xffff96d481988700&nbsp;len=98&nbsp;rc=0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.027&nbsp;net:netif_receive_skb:dev=eth0&nbsp;skbaddr=0xffff96d481988700&nbsp;len=84)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.044&nbsp;net:net_dev_queue:dev=eth0&nbsp;skbaddr=0xffff96d481988b00&nbsp;len=98)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.046&nbsp;net:net_dev_start_xmit:dev=eth0&nbsp;queue_mapping=0&nbsp;skbaddr=0xffff96d481988b00&nbsp;vlan_tagged=0&nbsp;vlan_proto=0x0000&nbsp;vlan_tci=0x0000&nbsp;protocol=0x0800&nbsp;ip_summed=0&nbsp;len=98&nbsp;data_len=0&nbsp;network_offset=14&nbsp;transport_offset_valid=1&nbsp;transport_offset=34&nbsp;tx_flags=0&nbsp;gso_size=0&nbsp;gso_segs=0&nbsp;gso_type=0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.048&nbsp;net:netif_rx:dev=veth79215ff&nbsp;skbaddr=0xffff96d481988b00&nbsp;len=84)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.050&nbsp;net:net_dev_xmit:dev=eth0&nbsp;skbaddr=0xffff96d481988b00&nbsp;len=98&nbsp;rc=0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.053&nbsp;net:netif_receive_skb:dev=veth79215ff&nbsp;skbaddr=0xffff96d481988b00&nbsp;len=84)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.060&nbsp;net:netif_receive_skb_entry:dev=docker0&nbsp;napi_id=0x3&nbsp;queue_mapping=0&nbsp;skbaddr=0xffff96d481988b00&nbsp;vlan_tagged=0&nbsp;vlan_proto=0x0000&nbsp;vlan_tci=0x0000&nbsp;protocol=0x0800&nbsp;ip_summed=2&nbsp;hash=0x00000000&nbsp;l4_hash=0&nbsp;len=84&nbsp;data_len=0&nbsp;truesize=768&nbsp;mac_header_valid=1&nbsp;mac_header=-14&nbsp;nr_frags=0&nbsp;gso_size=0&nbsp;gso_type=0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.061&nbsp;net:netif_receive_skb:dev=docker0&nbsp;skbaddr=0xffff96d481988b00&nbsp;len=84)</pre>
+<p>只保留事件名称和skbaddr，这看起来更可读。</p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170803/1501747778681014.jpg" title="1501747778681014.jpg" alt="5.jpg" /><noscript><img src="/uploads/20170803/1501747778681014.jpg" title="1501747778681014.jpg" alt="5.jpg" /></noscript></p>
+<p>我清楚地看到，通过docker0桥接的数据包，然后是veth的主机端，veth79215ff在本文的情况下，最后是veth的容器端，并伪装成eth0。不过，我还没有看到网络命名空间。</p>
+<p>最后，在eth0上看到数据包之后，我会以相反的顺序命中跟踪点。</p>
+<p>通过在4个目标场景中重复类似的过程，我可以选择最适合的跟踪点来跟踪数据包。我选了4个跟踪点：</p>
+<pre class="brush:html;toolbar:false">net_dev_queue
+netif_receive_skb_entry
+netif_rx
+napi_gro_receive_entry</pre>
+<p>我们可以轻松地仔细检查以下选项：</p>
+<pre class="brush:html;toolbar:false">sudo&nbsp;perf&nbsp;trace&nbsp;--no-syscalls&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;--event&nbsp;&#039;net:net_dev_queue&#039;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;--event&nbsp;&#039;net:netif_receive_skb_entry&#039;&nbsp;
+&nbsp;&nbsp;--event&nbsp;&#039;net:netif_rx&#039;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;--event&nbsp;&#039;net:napi_gro_receive_entry&#039;&nbsp;&nbsp;
+&nbsp;&nbsp;ping&nbsp;172.17.0.2&nbsp;-c1&nbsp;&gt;&nbsp;/dev/null
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.000&nbsp;net:net_dev_queue:dev=docker0&nbsp;skbaddr=0xffff8e847720a900&nbsp;len=98)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.010&nbsp;net:net_dev_queue:dev=veth7781d5c&nbsp;skbaddr=0xffff8e847720a900&nbsp;len=98)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.014&nbsp;net:netif_rx:dev=eth0&nbsp;skbaddr=0xffff8e847720a900&nbsp;len=84)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.034&nbsp;net:net_dev_queue:dev=eth0&nbsp;skbaddr=0xffff8e849cb8cd00&nbsp;len=98)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.036&nbsp;net:netif_rx:dev=veth7781d5c&nbsp;skbaddr=0xffff8e849cb8cd00&nbsp;len=84)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.045&nbsp;net:netif_receive_skb_entry:dev=docker0&nbsp;napi_id=0x1&nbsp;queue_mapping=0&nbsp;skbaddr=0xffff8e849cb8cd00&nbsp;vlan_tagged=0&nbsp;vlan_proto=0x0000&nbsp;vlan_tci=0x0000&nbsp;protocol=0x0800&nbsp;ip_summed=2&nbsp;hash=0x00000000&nbsp;l4_hash=0&nbsp;len=84&nbsp;data_len=0&nbsp;truesize=768</pre>
+<p>mac_header_valid=1 mac_header=-14 nr_frags=0 gso_size=0 gso_type=0)</p>
+<p>如果你想进一步浏览可用的网络跟踪点列表，你可以使用用户列表：</p>
+<pre class="brush:html;toolbar:false">sudo&nbsp;perf&nbsp;list&nbsp;&#039;net:*&#039;</pre>
+<p>这应该会返回一个跟踪点名称列表，如net：netif_rx。冒号之前的部分（&#039;：&#039;）是事件类别（&#039;net&#039;）。</p>
+<p><span style="font-size: 20px"><strong>用eBPF/bcc编写自定义跟踪器</strong></span></p>
+<p>如果你正在阅读这篇文章，那么读到这里，你就知道了如何在Linux虚拟机上追踪数据包。</p>
+<p>从Linux Kernel 4.7开始，eBPF程序可以附加到内核跟踪点。在此之前，构建跟踪器的唯一替代方法是将探测器附加到导出的内核符号。虽然这可以起作用，但它有一些缺点：</p>
+<p>1.内核内部API不稳定。</p>
+<p>2.出于性能原因，大多数网络内部函数是内联或静态的，这两个都不能被探测。</p>
+<p>3.找到这个函数的所有潜在的呼叫站点是非常耗时的，而且并不是所有需要的数据都可用。</p>
+<p>让我从一个简单的hello world开始，每当我之前选择的4个跟踪点中的一个（net_dev_queue，netif_receive_skb_entry，netif_rx和napi_gro_receive_entry）被触发，我都将构建一个事件。为了保持运行的简单，我将发送comm程序，即基本上是程序名的16个字符串。</p>
+<pre class="brush:html;toolbar:false">#include&nbsp;&lt;bcc/proto.h&gt;
+#include&nbsp;&lt;linux/sched.h&gt;
+//&nbsp;Event&nbsp;structure
+struct&nbsp;route_evt_t&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;comm[TASK_COMM_LEN];
+};
+BPF_PERF_OUTPUT(route_evt);
+static&nbsp;inline&nbsp;int&nbsp;do_trace(void*&nbsp;ctx,&nbsp;struct&nbsp;sk_buff*&nbsp;skb)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Built&nbsp;event&nbsp;for&nbsp;userland
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;route_evt_t&nbsp;evt&nbsp;=&nbsp;{};
+&nbsp;&nbsp;&nbsp;&nbsp;bpf_get_current_comm(evt.comm,&nbsp;TASK_COMM_LEN);
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Send&nbsp;event&nbsp;to&nbsp;userland
+&nbsp;&nbsp;&nbsp;&nbsp;route_evt.perf_submit(ctx,&nbsp;&amp;evt,&nbsp;sizeof(evt));
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}
+/**
+&nbsp;&nbsp;*&nbsp;Attach&nbsp;to&nbsp;Kernel&nbsp;Tracepoints
+&nbsp;&nbsp;*/
+TRACEPOINT_PROBE(net,&nbsp;netif_rx)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;do_trace(args,&nbsp;(struct&nbsp;sk_buff*)args-&gt;skbaddr);
+}
+TRACEPOINT_PROBE(net,&nbsp;net_dev_queue)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;do_trace(args,&nbsp;(struct&nbsp;sk_buff*)args-&gt;skbaddr);
+}
+TRACEPOINT_PROBE(net,&nbsp;napi_gro_receive_entry)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;do_trace(args,&nbsp;(struct&nbsp;sk_buff*)args-&gt;skbaddr);
+}
+TRACEPOINT_PROBE(net,&nbsp;netif_receive_skb_entry)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;do_trace(args,&nbsp;(struct&nbsp;sk_buff*)args-&gt;skbaddr);
+}</pre>
+<p>将此片段附加到“net”类别的4个跟踪点，加载skbaddr字段并将其传递给仅加载程序名称的公共部分。如果你想知道这个args-&gt; skbaddr来自哪里，那么当你用TRACEPOINT_PROBE定义跟踪点时，通过bcc生成args结构。由于它是在运行中生成的，所以没有简单的方法可以看到它的定义，但是有一个更好的方法，就是直接从内核查看数据源。幸运的是，每个跟踪点都有一个/ sys / kernel / debug / tracing / events条目。例如，对于net：netif_rx，可以只输出“cat”/ sys / kernel / debug / tracing / events / net / netif_rx / format。</p>
+<pre class="brush:html;toolbar:false">name:&nbsp;netif_rx
+ID:&nbsp;1183
+format:
+field:unsigned&nbsp;short&nbsp;common_type;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;offset:0;&nbsp;size:2;&nbsp;signed:0;
+field:unsigned&nbsp;char&nbsp;common_flags;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;offset:2;&nbsp;size:1;&nbsp;signed:0;
+field:unsigned&nbsp;char&nbsp;common_preempt_count;&nbsp;offset:3;&nbsp;size:1;&nbsp;signed:0;
+field:int&nbsp;common_pid;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;offset:4;&nbsp;size:4;&nbsp;signed:1;
+field:void&nbsp;*&nbsp;skbaddr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;offset:8;&nbsp;&nbsp;size:8;&nbsp;signed:0;
+field:unsigned&nbsp;int&nbsp;len;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;offset:16;&nbsp;size:4;&nbsp;signed:0;
+field:__data_loc&nbsp;char[]&nbsp;name;&nbsp;offset:20;&nbsp;size:4;&nbsp;signed:1;
+print&nbsp;fmt:&nbsp;&quot;dev=%s&nbsp;skbaddr=%p&nbsp;len=%u&quot;,&nbsp;__get_str(name),&nbsp;REC-&gt;skbaddr,&nbsp;REC-&gt;len</pre>
+<p>你可能会注意到记录末尾的print fmt行，这正是perf trace用来生成其输出的。</p>
+<p>使用低级别的通道并且很好理解，我可以将其包装在Python脚本中，以便为探针的eBPF发送的每个事件显示一行：</p>
+<pre class="brush:html;toolbar:false">#!/usr/bin/env&nbsp;python
+#&nbsp;coding:&nbsp;utf-8
+from&nbsp;socket&nbsp;import&nbsp;inet_ntop
+from&nbsp;bcc&nbsp;import&nbsp;BPF
+import&nbsp;ctypes&nbsp;as&nbsp;ct
+bpf_text&nbsp;=&nbsp;&#039;&#039;&#039;&lt;SEE&nbsp;CODE&nbsp;SNIPPET&nbsp;ABOVE&gt;&#039;&#039;&#039;
+TASK_COMM_LEN&nbsp;=&nbsp;16&nbsp;#&nbsp;linux/sched.h
+class&nbsp;RouteEvt(ct.Structure):
+&nbsp;&nbsp;&nbsp;&nbsp;_fields_&nbsp;=&nbsp;[
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(&quot;comm&quot;,&nbsp;&nbsp;&nbsp;&nbsp;ct.c_char&nbsp;*&nbsp;TASK_COMM_LEN),
+&nbsp;&nbsp;&nbsp;&nbsp;]
+def&nbsp;event_printer(cpu,&nbsp;data,&nbsp;size):
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Decode&nbsp;event
+&nbsp;&nbsp;&nbsp;&nbsp;event&nbsp;=&nbsp;ct.cast(data,&nbsp;ct.POINTER(RouteEvt)).contents
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Print&nbsp;event
+&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;Just&nbsp;got&nbsp;a&nbsp;packet&nbsp;from&nbsp;%s&quot;&nbsp;%&nbsp;(event.comm)
+if&nbsp;__name__&nbsp;==&nbsp;&quot;__main__&quot;:
+&nbsp;&nbsp;&nbsp;&nbsp;b&nbsp;=&nbsp;BPF(text=bpf_text)
+&nbsp;&nbsp;&nbsp;&nbsp;b[&quot;route_evt&quot;].open_perf_buffer(event_printer)
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;True:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;b.kprobe_poll()</pre>
+<p>注意，在这个阶段没有过滤。</p>
+<pre class="brush:html;toolbar:false">$&gt;&nbsp;sudo&nbsp;python&nbsp;./tracepkt.py
+...
+Just&nbsp;got&nbsp;a&nbsp;packet&nbsp;from&nbsp;ping6
+Just&nbsp;got&nbsp;a&nbsp;packet&nbsp;from&nbsp;ping6
+Just&nbsp;got&nbsp;a&nbsp;packet&nbsp;from&nbsp;ping
+Just&nbsp;got&nbsp;a&nbsp;packet&nbsp;from&nbsp;irq/46-iwlwifi
+...</pre>
+<p>在这种情况下，你可以看到我正在使用ping和ping6，而WiFi驱动程序也会收到一些数据包。于是，我开始添加一些有用的数据或过滤器。这将更好地展示eBPF的功能和局限性。</p>
+<p><span style="font-size: 20px"><strong>添加网络接口信息</strong></span></p>
+<p>首先，你可以安全地删除“comm”字段，加载和sched.h标头。</p>
+<p>其次，你可以包括net / inet_sock.h，以便有必要的声明，并事件结构中添加char ifname [IFNAMSIZ]。</p>
+<p>现在，我将从设备结构加载设备名称。这是有趣的，因为这是一个在实践中非常有用的信息，它能展示加载任何数据的技术：</p>
+<pre class="brush:html;toolbar:false">//&nbsp;Get&nbsp;device&nbsp;pointer,&nbsp;we&#039;ll&nbsp;need&nbsp;it&nbsp;to&nbsp;get&nbsp;the&nbsp;name&nbsp;and&nbsp;network&nbsp;namespace
+struct&nbsp;net_device&nbsp;*dev;
+bpf_probe_read(&amp;dev,&nbsp;sizeof(skb-&gt;dev),&nbsp;((char*)skb)&nbsp;+&nbsp;offsetof(typeof(*skb),&nbsp;dev));
+//&nbsp;Load&nbsp;interface&nbsp;name
+bpf_probe_read(&amp;evt.ifname,&nbsp;IFNAMSIZ,&nbsp;dev-&gt;name);</pre>
+<p>在知道它的工作原理后，我就要加载接口名称了，这就需要知道接口设备结构。我将从最后一个语句开始，因为它是最容易理解的。它使用bpf_probe_read从dev-&gt; name读取长度为IFNAMSIZ的数据，并将其复制到evt.ifname。</p>
+<p>不过要注意的是，eBPF的目标是允许安全地编写内核。这意味着禁止随机存储器访问，必须验证所有内存访问。除非你在堆栈中访问的内存，否则需要使用bpf_probe_read读取访问器。这使代码读写变得相当麻烦，但也非常的安全。 bpf_probe_read是某种安全的memcpy版本，它在内核中的bpf_trace.c中定义。有趣的是如果发生错误，bpf_probe_read将返回一个初始化为0的缓冲区并返回一个错误，它不会崩溃或停止程序。</p>
+<p>接下来，我将使用以下宏来帮助保持可读性：</p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170803/1501747799917148.jpg" title="1501747799917148.jpg" alt="13.jpg" /><noscript><img src="/uploads/20170803/1501747799917148.jpg" title="1501747799917148.jpg" alt="13.jpg" /></noscript></p>
+<p>这允许我写入：</p>
+<pre class="brush:html;toolbar:false">member_read(&amp;dev,&nbsp;skb,&nbsp;dev);</pre>
+<p><span style="font-size: 20px"><strong>添加网络命名空间ID</strong></span></p>
+<p>命名空间标识符可以从2个位置加载：</p>
+<p>1.套接字&#039;sk&#039;结构</p>
+<p>2.设备&#039;dev&#039;结构</p>
+<p>我最初使用的是socket结构，因为这是我在编写solisten.py时使用的。不幸的是，我不知道为什么一旦数据包跨越命名空间边界，命名空间标识符就不再可读了。读出的字段全为0，这是无效内存访问的清晰标识。</p>
+<p>幸运的是，方法仍然有效。通过调整不同的接口，来查找它所属的命名空间的接口。</p>
+<pre class="brush:html;toolbar:false">struct&nbsp;net*&nbsp;net;
+//&nbsp;Get&nbsp;netns&nbsp;id.&nbsp;Equivalent&nbsp;to:&nbsp;evt.netns&nbsp;=&nbsp;dev-&gt;nd_net.net-&gt;ns.inum
+possible_net_t&nbsp;*skc_net&nbsp;=&nbsp;&amp;dev-&gt;nd_net;
+member_read(&amp;net,&nbsp;skc_net,&nbsp;net);
+struct&nbsp;ns_common*&nbsp;ns&nbsp;=&nbsp;member_address(net,&nbsp;ns);
+member_read(&amp;evt.netns,&nbsp;ns,&nbsp;inum);</pre>
+<p>其中使用以下附加宏来提高可读性：</p>
+<pre class="brush:html;toolbar:false">#define&nbsp;member_address(source_struct,&nbsp;source_member)&nbsp;
+({&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;void*&nbsp;__ret;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;__ret&nbsp;=&nbsp;(void*)&nbsp;(((char*)source_struct)&nbsp;+&nbsp;offsetof(typeof(*source_struct),&nbsp;source_member));&nbsp;
+&nbsp;&nbsp;__ret;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+})</pre>
+<p>作为附带作用，它允许简化member_read宏：</p>
+<pre class="brush:html;toolbar:false">$&gt;&nbsp;sudo&nbsp;python&nbsp;./tracepkt.py
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;docker0
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vetha373ab6
+[&nbsp;&nbsp;4026532258]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eth0
+[&nbsp;&nbsp;4026532258]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eth0
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vetha373ab6
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;docker0</pre>
+<p>上图就是你发送ping到Docker容器时应该看到的，数据包通过本地docker0网桥，然后移动到veth pair，跨越网络命名空间边界。</p>
+<p><span style="font-size: 20px"><strong>跟踪请求回复和返回的数据包</strong></span></p>
+<p>为了继续从数据包中加载IP，我必须读取IP报头。我会在坚持用IPv4，但是同样的逻辑也适用于IPv6。这个过程很复杂，由于我正在网络路径中处理内核，所以某些数据包尚未打开。这意味着某些报头偏移量仍未初始化，我必须把它们都计算所出来，从MAC头到IP头，最后到ICMP头。</p>
+<p>可以通过加载MAC头地址轻轻地启动，并推断IP头地址。我们不会加载MAC头本身，而是假定它是14个字节长。</p>
+<pre class="brush:html;toolbar:false">//&nbsp;Compute&nbsp;MAC&nbsp;header&nbsp;address
+char*&nbsp;head;
+u16&nbsp;mac_header;
+member_read(&amp;head,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;skb,&nbsp;head);
+member_read(&amp;mac_header,&nbsp;skb,&nbsp;mac_header);
+//&nbsp;Compute&nbsp;IP&nbsp;Header&nbsp;address
+#define&nbsp;MAC_HEADER_SIZE&nbsp;14;
+char*&nbsp;ip_header_address&nbsp;=&nbsp;head&nbsp;+&nbsp;mac_header&nbsp;+&nbsp;MAC_HEADER_SIZE;</pre>
+<p>这基本上意味着IP头从skb-&gt; head + skb-&gt; mac_header + MAC_HEADER_SIZE 。</p>
+<p>我现在可以在IP头的前4位，即第一个字节的前半部分中解码IP版本，并确保它是IPv4：</p>
+<pre class="brush:html;toolbar:false">//&nbsp;Load&nbsp;IP&nbsp;protocol&nbsp;version
+u8&nbsp;ip_version;
+bpf_probe_read(&amp;ip_version,&nbsp;sizeof(u8),&nbsp;ip_header_address);
+ip_version&nbsp;=&nbsp;ip_version&nbsp;&gt;&gt;&nbsp;4&nbsp;&amp;&nbsp;0xf;
+//&nbsp;Filter&nbsp;IPv4&nbsp;packets
+if&nbsp;(ip_version&nbsp;!=&nbsp;4)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}</pre>
+<p>现在加载完整的IP头，得到IP，使Python信息更加有用，确保下一个头是ICMP并导出ICMP头部偏移量。</p>
+<pre class="brush:html;toolbar:false">//&nbsp;Load&nbsp;IP&nbsp;Header
+struct&nbsp;iphdr&nbsp;iphdr;
+bpf_probe_read(&amp;iphdr,&nbsp;sizeof(iphdr),&nbsp;ip_header_address);
+//&nbsp;Load&nbsp;protocol&nbsp;and&nbsp;address
+u8&nbsp;icmp_offset_from_ip_header&nbsp;=&nbsp;iphdr.ihl&nbsp;*&nbsp;4;
+evt.saddr[0]&nbsp;=&nbsp;iphdr.saddr;
+evt.daddr[0]&nbsp;=&nbsp;iphdr.daddr;
+//&nbsp;Filter&nbsp;ICMP&nbsp;packets
+if&nbsp;(iphdr.protocol&nbsp;!=&nbsp;IPPROTO_ICMP)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}</pre>
+<p>最后，我可以加载ICMP头本身，确保这是一个回应请求，并从中加载id和seq：</p>
+<pre class="brush:html;toolbar:false">//&nbsp;Compute&nbsp;ICMP&nbsp;header&nbsp;address&nbsp;and&nbsp;load&nbsp;ICMP&nbsp;header
+char*&nbsp;icmp_header_address&nbsp;=&nbsp;ip_header_address&nbsp;+&nbsp;icmp_offset_from_ip_header;
+struct&nbsp;icmphdr&nbsp;icmphdr;
+bpf_probe_read(&amp;icmphdr,&nbsp;sizeof(icmphdr),&nbsp;icmp_header_address);
+//&nbsp;Filter&nbsp;ICMP&nbsp;echo&nbsp;request&nbsp;and&nbsp;echo&nbsp;reply
+if&nbsp;(icmphdr.type&nbsp;!=&nbsp;ICMP_ECHO&nbsp;&amp;&amp;&nbsp;icmphdr.type&nbsp;!=&nbsp;ICMP_ECHOREPLY)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}
+//&nbsp;Get&nbsp;ICMP&nbsp;info
+evt.icmptype&nbsp;=&nbsp;icmphdr.type;
+evt.icmpid&nbsp;&nbsp;&nbsp;=&nbsp;icmphdr.un.echo.id;
+evt.icmpseq&nbsp;&nbsp;=&nbsp;icmphdr.un.echo.sequence;
+//&nbsp;Fix&nbsp;endian
+evt.icmpid&nbsp;&nbsp;=&nbsp;be16_to_cpu(evt.icmpid);
+evt.icmpseq&nbsp;=&nbsp;be16_to_cpu(evt.icmpseq);</pre>
+<p>如果要从特定的ping实例中过滤ICMP，可以假设evt.icmpid是ping的PID，至少使用Linux的ping。</p>
+<p>使用一些简单的Python来处理事件，就可以在几种情况下进行测试。以root身份启动程序，在另一终端启动一些“ping”并观察：</p>
+<pre class="brush:html;toolbar:false">#&nbsp;ping&nbsp;-4&nbsp;localhost
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lo&nbsp;request&nbsp;#20212.001&nbsp;127.0.0.1&nbsp;-&gt;&nbsp;127.0.0.1
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lo&nbsp;request&nbsp;#20212.001&nbsp;127.0.0.1&nbsp;-&gt;&nbsp;127.0.0.1
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lo&nbsp;&nbsp;&nbsp;reply&nbsp;#20212.001&nbsp;127.0.0.1&nbsp;-&gt;&nbsp;127.0.0.1
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lo&nbsp;&nbsp;&nbsp;reply&nbsp;#20212.001&nbsp;127.0.0.1&nbsp;-&gt;&nbsp;127.0.0.1</pre>
+<p>ICMP回应请求报文(ICMPEcho-Request)由进程20212（Linux ping上的ICMP id）发送到Loopback接口上，传递给同一个回环接口，并生成返回应答，环回接口既是发射接收接口也是接收接口。</p>
+<p><strong>那WiFi网关呢？</strong></p>
+<pre class="brush:html;toolbar:false">#&nbsp;ping&nbsp;-4&nbsp;192.168.43.1
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wlp2s0&nbsp;request&nbsp;#20710.001&nbsp;192.168.43.191&nbsp;-&gt;&nbsp;192.168.43.1
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wlp2s0&nbsp;&nbsp;&nbsp;reply&nbsp;#20710.001&nbsp;192.168.43.1&nbsp;-&gt;&nbsp;192.168.43.191</pre>
+<p>在这种情况下，返回请求和返回应答会通过WiFi接口。请注意，当我只打印拥有数据包的进程的“comm”时，返回请求将属于ping进程，而返回应答将属于WiFi驱动程序，因为就Linux而言这是生成它的方式。</p>
+<p>这是我最喜欢的方式，因为它能最好地展现eBPF的全部功能，并允许构建一个像ping的工具的“x-ray”，。</p>
+<pre class="brush:html;toolbar:false">#&nbsp;ping&nbsp;-4&nbsp;172.17.0.2
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;docker0&nbsp;request&nbsp;#17146.001&nbsp;172.17.0.1&nbsp;-&gt;&nbsp;172.17.0.2
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vetha373ab6&nbsp;request&nbsp;#17146.001&nbsp;172.17.0.1&nbsp;-&gt;&nbsp;172.17.0.2
+[&nbsp;&nbsp;4026532258]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eth0&nbsp;request&nbsp;#17146.001&nbsp;172.17.0.1&nbsp;-&gt;&nbsp;172.17.0.2
+[&nbsp;&nbsp;4026532258]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eth0&nbsp;&nbsp;&nbsp;reply&nbsp;#17146.001&nbsp;172.17.0.2&nbsp;-&gt;&nbsp;172.17.0.1
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vetha373ab6&nbsp;&nbsp;&nbsp;reply&nbsp;#17146.001&nbsp;172.17.0.2&nbsp;-&gt;&nbsp;172.17.0.1
+[&nbsp;&nbsp;4026531957]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;docker0&nbsp;&nbsp;&nbsp;reply&nbsp;#17146.001&nbsp;172.17.0.2&nbsp;-&gt;&nbsp;172.17.0.1</pre>
+<pre class="brush:html;toolbar:false">Host&nbsp;netns&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;Container&nbsp;netns
++---------------------------+-----------------+
+|&nbsp;docker0&nbsp;---&gt;&nbsp;veth0e65931&nbsp;---&gt;&nbsp;eth0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|
++---------------------------+-----------------+</pre>
+<p><span style="font-size: 20px"><strong>总结</strong></span></p>
+<p>eBPF/bcc使我能够编写一系列新的工具来深入排除故障，跟踪和跟踪以前无法访问的问题，而无需修补内核。跟踪点也非常方便，因为它们在有趣的地方提供了一个好的提示，消除了对繁琐的内核代码的仔细阅读，并且可以被放置在代码中，否则这些代码将不能从kprobe访问，比如内联或静态函数。要进一步利用，可以添加IPv6。</p>
+<p>你可以在Github上看到完整的代码（支持IPv6）：<a href="https://github.com/yadutaf/tracepkt" target="_self">https://github.com/yadutaf/tracepkt</a></p>
+                <div class="foot_description" style="background-color: #fff;">
+                    如若转载，请注明原文地址：                        <a href="http://www.4hou.com/technology/6994.html" target=_blank>http://www.4hou.com/technology/6994.html</a>
+                                    </div>
+
+
+                 </p>
+            </div>
+            <div class="article_con">
+                <!--文章内容-->
+            </div>
+            <div class="post-like">
+                <a href="javascript:;" data-action="ding" target=_blank data-id="6994" class="favorite">
+                <div class="zanbox">
+                    <dd class="zanbefor"></dd>
+                    <dd class="zanafter"></dd>
+                </div>
+                <span class="zantext">点赞</span>
+                <span class="count">
+            5</span>
+                </a>
+            </div>
+            <div class="active_bottom">
+                <ul>
+                    <a class="Sina" href="http://service.weibo.com/share/share.php?url=http://www.4hou.com/technology/6994.html" title="分享到新浪微博" target="_blank"><li class="sinahover"></li></a>
+                    <a onclick="window.open('http://sns.qzone.qq.com/cgi-bin/qzshare/cgi_qzshare_onekey?url='+encodeURIComponent(document.location.href));return false;" title="分享到QQ空间" class="WeChat" href="javascript:void(0)" target="_blank"><li class="kj"></li></a>
+                    <a onclick="dashangToggle()" class="friend" title="分享到微信、朋友圈等" target="_blank"><li class="wx"></li></a>
+
+                </ul>
+                <div class="strat icons"><span class='wpfp-span'><img src='http://img.4hou.com/wp-content/plugins/wp-favorite-posts/img/star.png' alt='Favorite' title='Favorite' class='wpfp-img' /><a class='wpfp-link' href='?wpfpaction=add&amp;postid=6994' title='收藏' rel='nofollow'>收藏</a></span></div>
+                <div class="hide_box"></div>
+                <div class="shang_box">
+                    <a class="shang_close" href="javascript:void(0)" onClick="dashangToggle()" title="关闭"><img src="http://img.4hou.com/wp-content/themes/4houv2/images/close.jpg" alt="取消" /></a>
+                    <img class="shang_logo" width="120px" src="http://img.4hou.com/wp-content/themes/4houv2/images/logo.png" alt="嘶吼" />
+                    <div class="shang_tit">
+                        <p>感谢您的支持，我会继续努力的!</p>
+                    </div>
+                    <div class="shang_payimg">
+                        <img src="http://www.4hou.com/wp-content/themes/4houv2/qrcode.php?url=http%3A%2F%2Fwww.4hou.com%2Ftechnology%2F6994.html" alt="扫码支持" title="扫一扫" />
+                    </div>
+
+                    <div class="shang_info">
+                        <p>打开<span id="shang_pay_txt">微信</span>扫一扫后点击右上角即可分享哟</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="avatarbottomwrap">
+                 <div class="avatarboxleft">
+                        <div class="avatarbottom">
+                           
+                            <a class="upload-img"><img alt='xiaohui' src='http://img.4hou.com/wp-content/uploads/2017/06/4645ece03f124d9c2bb9-96x96.png' class='avatar avatar-96 photo' height='96' width='96' /></a>
+                        </div>
+                        <h1 class="authornamebottom"><a href="http://www.4hou.com/member?Author=xiaohui" class="upload-img" target=_blank>
+                                xiaohui                                                            <i class="mem_level"></i>
+                             </a></h1>
+                        <p class="authorzybottom">嘶吼编辑</p>
+
+                        <div class="authorbottombox">
+                            <!--<div class="gzbtn">关注</div>
+                            <div class="sxbtn">私信</div>-->
+                                                            <span class="gzbtn"  style="cursor: pointer;" onclick="location.href='/mybox?action=reply&to_user=xiaohui&type=send'">发私信</span>
+                                                    </div>
+                 </div>
+                <div class="authorother">
+                 <a class="morearticle" href="http://www.4hou.com/member?Author=xiaohui" class="upload-img" target=_blank>
+                            <span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span>
+                            <span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span>
+                            <span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span>
+                             </a>
+                    <div class="swiper-container">
+
+                                                    <div class="swiper-wrapper">
+                               
+                                <div class="swiper-slide">
+                                                                        <div><a href="http://www.4hou.com/technology/7667.html" target=_blank>
+                                            <img data-original="/uploads/20170915/1505460611763833.jpg?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                        <div><a href="http://www.4hou.com/technology/7638.html" target=_blank>
+                                            <img data-original="http://img.4hou.com/wp-content/uploads/2017/09/dcf441e3e17ab9ef68ff.jpg?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                        <div><a href="http://www.4hou.com/technology/7657.html" target=_blank>
+                                            <img data-original="/uploads/20170915/1505404839986320.jpg?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                        <div><a href="http://www.4hou.com/technology/7600.html" target=_blank>
+                                            <img data-original="/uploads/20170908/1504854270386868.png?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                    </div>
+                            </div>
+                                        </div>
+                </div>
+                <script type="text/javascript">
+                    function dashangToggle(){
+                        $(".hide_box").fadeToggle();
+                        $(".shang_box").fadeToggle();
+                    }
+                </script>
+                <script> 
+                    var mySwiper = new Swiper('.swiper-container', {
+                        direction : 'vertical',
+                        pagination : '.swiper-pagination',
+                        paginationClickable :true,
+                        spaceBetween : 20
+                    })
+                </script>
+            </div>
+                            <div class="review" style="margin-bottom:80px;">
+    <h3 id="reply-title" class="comment-reply-title">发表评论 <small></h3>
+    <form action="http://www.4hou.com/wp-comments-post.php" method="post" id="commentform">
+        <p class="commentname"><label for="author">昵称</label>
+            <input type="text" name="author" id="author" value="" size="14" tabindex="1" aria-required='true' placeholder = "请输入昵称" required />
+        </p>
+        <p class="commenteml">
+            <label for="email">邮箱</label>
+            <input type="text" name="email" id="email" value="" size="25" tabindex="2" aria-required='true' placeholder = "请输入邮箱地址" required />
+        </p>
+        <p class="comment-form-comment">
+           <label for="comment">评论</label>
+           <textarea id="comment" name="comment" cols="45" rows="8" maxlength="65525" aria-required="true" required="required"></textarea>
+        </p>
+
+        <p class="form-submit"><input name="submit" type="submit" id="submit" class="submit" value="发表评论" />
+        <input type='hidden' name='comment_post_ID' value="6994" id='comment_post_ID' />
+            <input type='hidden' name='comment_parent' id='comment_parent' value='0' />
+        </p>
+    </form>
+					
+<div class="new-review">
+   <ol class="commentlist">
+      </ol>
+   <div class="hr clearfix">&nbsp;</div>
+</div>
+</div>             
+        </article>
+
+        <!--作者其他文章-->
+        <aside class="article_authorbox">
+          <div class="article_authorbox_top">
+                <div class="article_author">
+            <div class="article_author_avatar">
+                 <a class="upload-img"><img alt='xiaohui' src='http://img.4hou.com/wp-content/uploads/2017/06/4645ece03f124d9c2bb9-96x96.png' class='avatar avatar-96 photo' height='96' width='96' /></a>
+            </div>
+            <h1 class="article_author_name"><a href="http://www.4hou.com/member?Author=xiaohui" class="upload-img" target=_blank>
+                    xiaohui                                    <i class="mem_level"></i>
+                </a></h1>
+            <p class="article_author_type">嘶吼编辑 </p>
+            <div class="article_author_bottom">
+                                        <span class="send-info" onclick="location.href='/mybox?action=reply&to_user=xiaohui&type=send'">发私信</span>
+                         
+            </div>
+          </div>  
+            <div class="interested">
+                <h1>可能喜欢</h1>
+                                                    <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/technology/7667.html" target="_blank">小心找工作时被挖坑，有人利用 LinkedIn 发送钓鱼链接</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/technology/7653.html" target="_blank">一次服务器被攻击的应急行动</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/info/news/7646.html" target="_blank">一个Tor浏览器0day漏洞价值100万美元，其中的隐情是……</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/info/news/7660.html" target="_blank">Elasticsearche僵尸网络：超过4000台服务器遭到两款POS 恶意软件感染</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/technology/7669.html" target="_blank">渗透挑战赛：从SQL注入到管理员权限</a> 
+                </li> 
+                                                </div>
+       </div>
+
+          
+        </aside>
+    </section>
+    <div id="zooming">
+        <img src="" id="imgcon">
+    </div>
+    <script>
+        $(document).ready(function() {
+            $.fn.postLike = function() {
+                if ($(this).hasClass('done')) {
+                    return false;
+                } else {
+                    $(this).addClass('done');
+                    var id = $(this).data("id"),
+                        action = $(this).data('action'),
+                        rateHolder = $(this).children('.count');
+                    var ajax_data = {
+                        action: "bigfa_like",
+                        um_id: id,
+                        um_action: action
+                    };
+                    $.post("/wp-admin/admin-ajax.php", ajax_data,
+                        function(data) {
+                            $(rateHolder).html(data);
+                        });
+                    return false;
+                }
+            };
+            $(document).on("click", ".favorite",
+                function() {
+                    $(this).postLike();
+                });
+
+
+            $("img").attr("title","");
+            var altcon=$(".art_title").text();
+            $("img").attr("alt",altcon);
+            // 图片放大
+            $(".article_cen").find('img').on("click",function(){
+                var imgsrc=$(this).attr("src");
+                var winthimg=$(this).width();
+                var zooming=winthimg*1.2;
+                $("#imgcon").css({width:zooming});
+                $("#imgcon").css({marginLeft:-zooming/2});
+                $("#imgcon").attr("src",imgsrc);
+                $("#zooming").addClass("zoomaniatae");
+                $("#imgcon").addClass("imgconadimate");
+            });
+            $("#zooming").on("click",function(){
+                $("#imgcon").removeClass("imgconadimate");
+                $("#zooming").removeClass("zoomaniatae");
+
+            });
+
+            $(window).scroll(function(){
+                var scrtop=$(window).scrollTop();
+                if(scrtop>450){
+                    $(".article_authorbox_top").removeClass("asideanimateleave").addClass('asideanimate')
+                    // $(".interested").hide()
+                }
+                else if(scrtop<450&&scrtop>350){
+                     $(".article_authorbox_top").addClass("asideanimateleave").removeClass('asideanimate')
+                     $(".interested").show()
+
+                }
+            });
+            var start=$(".strat .wpfp-span .wpfp-link").text()
+            if(start=="已收藏"){
+                $(".strat").addClass("stratend")
+            }else{
+                $(".strat").removeClass("stratend")
+            }
+
+            $(".avatar-96").width(72);
+            $(".avatar-96").height(72);
+            $(".avatar-120").width(50);
+            $(".avatar-120").height(50);
+
+        });
+    </script>
+<style type="text/css">
+.footer{height:auto; background-color: #282828}
+.footer_about{width: 1200px;height: 50px;padding-top: 26px; margin: 0 auto;border-bottom-color: transparent !important; position: relative;}
+.footer_about>a{font-size: 16px;height: 16px !important;line-height: 16px !important; float: left; padding-right: 18px; border-right:1px solid #ccc;}
+.last-child-a{border:none !important}
+.footer_bottom_cen p{ margin-top: 5px; margin-right: 25px;text-align: left; margin-bottom: 6px;float: left;}
+.footer_bottom_cen>div{width: 450px;float: left;margin-right: 8px}
+.footer_bottom{height: 74px}
+.footerlogos{width: 130px; height: 24px; position: absolute;right: 10%; top:24px;}
+.footerlogos dd{float: left; margin-right: 20px;cursor: pointer;}
+.footerlogos dd a{display: block;width: 100%; height: 100%}
+.wechartlogo{width: 20px; height: 20px; background-position:-227px 0px;}
+.weibologo{width: 20px; height: 20px; background-position:-269px 0px;}
+.zhihulogo{width: 20px; height: 20px; background-position:-361px 0px;}
+.wechartlogo i{width: 80px;height: 78px;background-size: contain !important; right: 137px;display: none;opacity: 1;background: url(http://www.4hou.com/wp-content/themes/4houv2/img/wechatqr.png) no-repeat;position: absolute;top: -28px;}
+.wechartlogo:hover i{display: block;}
+.footer_bottom{width: 1200px; background-color: #282828; margin:0 auto } 
+.footer_bottom_cen>div img{float: left; margin-right: 4px;margin-top: 4px; margin-left: 4px;width: 66px;}
+.footer_bottom_cen{width: 100%}
+.cloudserver{float: right !important; margin: 0 auto !important;width: 385px !important; margin-top: -31px}
+.cloudserver img{float: left;}
+.cloudserver dd{float: left;}
+@media screen and (max-width:1260px) {
+    .footer{width: 100%; padding: 0px 20px;}
+    .footer_about{width: 100%}
+    .footer_bottom{width: 100%}
+    .footer_bottom div{width: 100%;display: none;}
+}
+@media screen and (max-width:660px) {
+    .footer_about{padding-top: 14px; margin-bottom: 22px;}
+    .footerlogos{display: none;}
+    .footer_bottom{height: 44px;}
+
+}
+</style>
+<footer class="footer">
+    <div class="footer_about">
+        <a href="/about" target=_blank>关于我们</a>
+        <!--<a href="">加入我们</a>-->
+        <a href="/submit" target=_blank>我要投稿</a>
+        <a href="/service" target=_blank>广告及服务</a>
+        <a href="/partner" target=_blank class="last-child-a">友情链接</a>
+        <div class="footerlogos">
+                <dd class="wechartlogo icons">
+                  <i></i>
+                </dd>
+                <dd class="weibologo icons">
+                 <a href="http://weibo.com/u/6069423878" target=_blank></a>
+                </dd>
+                <dd class="zhihulogo icons">
+                    <a href="https://zhuanlan.zhihu.com/roartalk" target=_blank></a>
+                    
+                </dd>
+        </div>
+    </div>
+
+    <section class="footer_bottom">
+        <article class="footer_bottom_cen">
+            <p>©2017 北京嘶吼文化传媒有限公司&nbsp;&nbsp;&nbsp;京ICP备16063439号</p>
+            <p class="mobilefooter">©2017 北京嘶吼文化传媒有限公司&nbsp;&nbsp;|&nbsp;&nbsp;京ICP备16063439号</p>
+            <div class="cloudserver">
+                <span>本站由</span>
+                <img src="http://img.4hou.com/wp-content/themes/4houv2/img/bdcloud.png">
+                <img src="http://img.4hou.com/wp-content/themes/4houv2/img/bdcloud1.png">
+                <img src="http://img.4hou.com/wp-content/themes/4houv2/img/ucloud.png">
+                <span>提供云计算服务</span>
+            </div>
+        </article>
+    </section>
+    <section class="footer_top" style="display:none">
+        <article class="footer_top_cen">
+            <div class="homeqrcode">
+                <dd class="icons"></dd>
+                <div class="wb">
+                    <a href="http://weibo.com/u/6069423878" target=_blank>
+                    <i class="icons"></i>
+                    <p>关注嘶吼传媒</p>
+                    </a>
+                </div>
+
+                <div class="sh">
+                    <a href="https://zhuanlan.zhihu.com/roartalk" target=_blank>
+                    <i class="icons"></i>
+                    <p>关注嘶吼</p>
+                    </a>
+                </div>
+            </div>
+            
+            <h1>合作伙伴</h1>
+            <div class="footer_friend">
+                <a href="http://www.xinhuanet.com/talking/chinasafety/" target=_blank>新华网安全中国</a>
+                <a href="http://jaq.alibaba.com/" target=_blank>阿里聚安全</a>
+                <a href="http://www.seclover.com/" target=_blank>四叶草安全</a>
+                <a href="https://sec.vip.com/" target=_blank>唯品会安全应急响应中心</a>
+                <a href="https://www.duoyinsu.com/" target=_blank>安识科技</a>
+                <a href="http://xianzhi.aliyun.com" target=_blank>云盾先知</a>
+                <a href="http://www.ardsec.com/" target=_blank>兴华永恒</a>
+                <a href="https://www.sobug.com/" target=_blank>SOBUG</a>
+            </div>
+        </article>
+    </section>
+    
+</footer>
+<aside class="side" >
+    <div class="side_top icons "></div>
+    <div class="iconbox">
+        <div class="side_wechart icons iconhover">微信
+            <dd></dd>
+        </div>
+        <a href="http://weibo.com/u/6069423878" target=_blank><div class="side_webo icons iconhover">微博</div></a>
+        <a href="http://www.4hou.com/feed/" target=_blank><div class="side_rss icons iconhover">RSS</div></a>
+        <a href="https://zhuanlan.zhihu.com/roartalk" target=_blank><div class="side_zh icons iconhover">知乎</div></a>
+    </div>
+    <div class="side_bottom icons"></div>
+    
+</aside>
+
+<script>
+    var _hmt = _hmt || [];
+    (function() {
+        var hm = document.createElement("script");
+        hm.src = "https://hm.baidu.com/hm.js?ac201c14c3d2a4747423252be421e1bc";
+        var s = document.getElementsByTagName("script")[0];
+        s.parentNode.insertBefore(hm, s);
+    })();
+</script>
+
+<script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-91554508-1', 'auto');
+    ga('send', 'pageview');
+
+</script>
+<script>
+(function(){
+    var bp = document.createElement('script');
+    var curProtocol = window.location.protocol.split(':')[0];
+    if (curProtocol === 'https') {
+        bp.src = 'https://zz.bdstatic.com/linksubmit/push.js';        
+    }
+    else {
+        bp.src = 'http://push.zhanzhang.baidu.com/push.js';
+    }
+    var s = document.getElementsByTagName("script")[0];
+    s.parentNode.insertBefore(bp, s);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,628 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】如何攻击 Xen 虚拟机管理程序 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="xen漏洞,虚拟化安全"/>
+    
+        <meta name="description" content="2017年3月14日，我向Xen安全团队报告了一个漏洞，该漏洞能够突破Xen的虚拟机管理程序（hypervisor），获取宿主机物理内存的完全控制权限。为了演示这个问题所造成的影响，我写了一个漏洞利用工具，当工具以root权限运行在一个64位PV客户机上时，可以获取同一宿主机上其他所有64位PV客户机（包括dom0）的root权限的shell。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】如何攻击 Xen 虚拟机管理程序</h2>
+                <div class="article-msg">
+                    <span class="time">2017-05-09 15:52:32</span>
+                    
+                                        <span class="read">阅读：9440次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3822"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3822" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://googleprojectzero.blogspot.tw/2017/04/pandavirtualization-exploiting-xen.html"
+                             target="_blank">来源： googleprojectzero.blogspot.tw</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2819002922" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t0104d1b8b4ca36e961.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2819002922" style="color:#848e99;">興趣使然的小胃</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; background-color: rgb(255, 255, 255); text-indent: 0em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;"><img src="http://p0.qhimg.com/t01551539b06892630c.png" title="t01551539b06892630c.png" alt="http://p0.qhimg.com/t01551539b06892630c.png"/></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2819002922" target="_blank" textvalue="興趣使然的小胃"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>興趣使然的小胃</strong></span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; word-break: break-all; text-indent: 2em; background-color: rgb(255, 255, 255);"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><span style="font-size: 18px;">预估稿费：200RMB</span></span></strong></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一、概述</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2017年3月14日，我向Xen安全团队报告了一个</span><a href="https://bugs.chromium.org/p/project-zero/issues/detail?id=1184" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，该漏洞允许攻击者在控制半虚拟化（paravirtualized，PV）x86-64架构的Xen客户机（guest）内核的条件下，能够突破Xen的虚拟机管理程序（hypervisor），获取宿主机物理内存的完全控制权限。Xen项目组于2017年4月4日公布了一份</span><a href="https://xenbits.xen.org/xsa/advisory-212.html" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">安全公告</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以及一个</span><a href="https://xenbits.xen.org/xsa/xsa212.patch" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">补丁</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，解决了这个问题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了演示这个问题所造成的影响，我写了一个漏洞利用工具，当工具以root权限运行在一个64位PV客户机上时，可以获取同一宿主机上其他所有64位PV客户机（包括dom0）的root权限的shell。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">二、背景</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">（一）access_ok()</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在x86-64架构上，Xen PV客户机与hypervisor共享虚拟地址空间。大致的内存布局如下图所示:</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01216c2633828467d0.png" title="t010e8c2d0696476ced.png" alt="http://p6.qhimg.com/t010e8c2d0696476ced.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Xen允许客户机内核执行超级调用	（hypercall），hypercall本质上就是普通的系统调用，使用了System V AMD64 ABI实现从客户机内核到hypervisor的过渡。hypercall使用指令执行，寄存器中传递的参数最多不超过6个。与普通的syscall类似，Xen的hypercall经常将客户机指针作为参数使用。由于与hypervisor共享地址空间，客户机只需要简单传入其虚拟指针（guest-virtual pointer）即可。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">与其他内核一样，Xen必须确保客户机的虚拟指针在解除引用前不能指向hypervisor所拥有的内存。Xen通过使用类似于Linux内核的用户空间访问器（userspace accessor）来实现这一点，例如：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">1、使用access_ok(addr, size)，检查是否能够安全访问客户机所提供的虚拟内存区域，换句话说，它会检查访问这片内存是否导致hypervisor内存被修改。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">2、使用__copy_to_guest(hnd, ptr, nr)，从hypervisor的ptr地址拷贝nr字节数据到客户机的hnd地址，但并不检查hnd是否是安全的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">3、使用copy_to_guest(hnd, ptr, nr)，如果hnd是安全的，则从hypervisor的ptr地址拷贝nr字节数据到客户机的hnd地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在Linux内核中，access_ok()宏会使用任意内存访问模式，检查是否可以安全访问从addr到addr+size-1的内存区域。然而，Xen的access_ok()宏并不能保证这一点：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">/*
+&nbsp;*&nbsp;Valid&nbsp;if&nbsp;in&nbsp;+ve&nbsp;half&nbsp;of&nbsp;48-bit&nbsp;address&nbsp;space,&nbsp;or&nbsp;above&nbsp;Xen-reserved&nbsp;area.
+&nbsp;*&nbsp;This&nbsp;is&nbsp;also&nbsp;valid&nbsp;for&nbsp;range&nbsp;checks&nbsp;(addr,&nbsp;addr+size).&nbsp;As&nbsp;long&nbsp;as&nbsp;the
+&nbsp;*&nbsp;start&nbsp;address&nbsp;is&nbsp;outside&nbsp;the&nbsp;Xen-reserved&nbsp;area&nbsp;then&nbsp;we&nbsp;will&nbsp;access&nbsp;a
+&nbsp;*&nbsp;non-canonical&nbsp;address&nbsp;(and&nbsp;thus&nbsp;fault)&nbsp;before&nbsp;ever&nbsp;reaching&nbsp;VIRT_START.
+&nbsp;*/
+#define&nbsp;__addr_ok(addr)&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;(((unsigned&nbsp;long)(addr)&nbsp;&lt;&nbsp;(1UL&lt;&lt;47))&nbsp;||&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;((unsigned&nbsp;long)(addr)&nbsp;&gt;=&nbsp;HYPERVISOR_VIRT_END))
+#define&nbsp;access_ok(addr,&nbsp;size)&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;(__addr_ok(addr)&nbsp;||&nbsp;is_compat_arg_xlat_range(addr,&nbsp;size))</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">Xen通常只会检查addr指针指向的是用户区域或者内核区域，而不检查size值。如果实际访问的客户机内存起始于addr地址附近，在不跳过大量内存空间的前提下，Xen对内存地址进行线性检查，一旦客户机内存访问失败则退出检查过程，此时由于大量非标准（non-canonical）地址的存在（这些地址可以当作守护区域），只检查addr值的确已经足够。然而，如果某个hypercall希望访问客户机中以64位偏移量开始的缓冲区，它需要确保access_ok()的检查过程中使用的是正确的偏移量，此时只检查整个用户空间的缓冲区并不安全！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Xen提供了access_ok()的封装函数，用来访问客户机内存中的数组。如果要确认访问某个从0开始的数组是否安全，你可以使用guest_handle_okay(hnd, nr)。然而，如果要确认访问某个从其他元素开始的数组是否安全，你需要使用guest_handle_subrange_okay(hnd, first, last)。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当我看到access_ok()的定义时，我并不能直观地看出这种不安全性会带来什么影响，因此我开始搜索它的调用函数，查看是否存在对access_ok()的不安全调用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（二）Hypercall抢占</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当某个任务调度时钟触发时，Xen需要具备从当前执行的vCPU快速切换到另一个虚拟机（VM）vCPU的能力。然而，简单中断某个hypercall的执行并不能做到这一点（比如hypercall可能正处于自旋锁（spinlock）状态），因此，与其他操作系统类似，Xen需要使用某种机制，延迟vCPU的切换，直到可以安全进行状态切换。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在Xen中，hypercall的抢占通过自愿抢占（voluntary preemption）机制实现，即：任何长时间运行的hypercall代码都应该定期调用hypercall_preempt_check()来检查调度器是否愿意切换到另一个vCPU。如果这种情况发生，那么hypercall代码会退出，退回到客户机，并向调度器发送信号，表明此时可以安全抢占当前任务的资源。当之前的vCPU重新被调度时，调度器会调整客户机寄存器或客户机内存中的hypercall参数，重新进入hypercall中，执行剩余的任务。Hypercall不会去区分是被正常调用还是在抢占恢复后被重新调用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Xen之所以使用这种hypercall恢复机制，原因在于Xen并没有为每个vCPU维护一个hypervisor栈，而仅仅为每个物理核心维护一个hypervisor栈。这意味着，虽然其他操作系统（比如Linux）可以在内核栈中存储被中断的syscall状态，但对Xen而言这个任务并不简单。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这种设计意味着对某些hypercall而言，为了能够正常恢复任务状态，客户机内存中需要存储额外的数据，而这种数据可能会被客户机篡改，从而实现对hypervisor的攻击。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（三）memory_exchange()</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">HYPERVISOR_memory_op(XENMEM_exchange, arg)这个hypercall使用了“xen/common/memory.c”文件中的memory_exchange(arg)函数。该函数允许客户机使用当前分配给客户机的物理页面列表进行“交易”，以换取另一个新的连续物理页面。这对希望执行DMA的客户机是非常有用的，因为DMA要求具备物理上连续的缓冲区。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">HYPERVISOR_memory_op以xen_memory_exchange这个结构体对象作为参数，结构体的定义如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">struct&nbsp;xen_memory_reservation&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;[...]&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;XEN_GUEST_HANDLE(xen_pfn_t)&nbsp;extent_start;&nbsp;/*&nbsp;in:&nbsp;physical&nbsp;page&nbsp;list&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Number&nbsp;of&nbsp;extents,&nbsp;and&nbsp;size/alignment&nbsp;of&nbsp;each&nbsp;(2^extent_order&nbsp;pages).&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;xen_ulong_t&nbsp;&nbsp;&nbsp;&nbsp;nr_extents;
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;int&nbsp;&nbsp;&nbsp;extent_order;
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;XENMEMF&nbsp;flags.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;int&nbsp;&nbsp;&nbsp;mem_flags;
+&nbsp;&nbsp;&nbsp;&nbsp;/*
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;Domain&nbsp;whose&nbsp;reservation&nbsp;is&nbsp;being&nbsp;changed.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;Unprivileged&nbsp;domains&nbsp;can&nbsp;specify&nbsp;only&nbsp;DOMID_SELF.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;domid_t&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;domid;
+};
+struct&nbsp;xen_memory_exchange&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;/*
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;[IN]&nbsp;Details&nbsp;of&nbsp;memory&nbsp;extents&nbsp;to&nbsp;be&nbsp;exchanged&nbsp;(GMFN&nbsp;bases).
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;Note&nbsp;that&nbsp;@in.address_bits&nbsp;is&nbsp;ignored&nbsp;and&nbsp;unused.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;xen_memory_reservation&nbsp;in;
+&nbsp;&nbsp;&nbsp;&nbsp;/*
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;[IN/OUT]&nbsp;Details&nbsp;of&nbsp;new&nbsp;memory&nbsp;extents.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;We&nbsp;require&nbsp;that:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;1.&nbsp;@in.domid&nbsp;==&nbsp;@out.domid
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;2.&nbsp;@in.nr_extents&nbsp;&nbsp;&lt;&lt;&nbsp;@in.extent_order&nbsp;==&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;@out.nr_extents&nbsp;&lt;&lt;&nbsp;@out.extent_order
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;3.&nbsp;@in.extent_start&nbsp;and&nbsp;@out.extent_start&nbsp;lists&nbsp;must&nbsp;not&nbsp;overlap
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;4.&nbsp;@out.extent_start&nbsp;lists&nbsp;GPFN&nbsp;bases&nbsp;to&nbsp;be&nbsp;populated
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;5.&nbsp;@out.extent_start&nbsp;is&nbsp;overwritten&nbsp;with&nbsp;allocated&nbsp;GMFN&nbsp;bases
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;xen_memory_reservation&nbsp;out;
+&nbsp;&nbsp;&nbsp;&nbsp;/*
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;[OUT]&nbsp;Number&nbsp;of&nbsp;input&nbsp;extents&nbsp;that&nbsp;were&nbsp;successfully&nbsp;exchanged:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;1.&nbsp;The&nbsp;first&nbsp;@nr_exchanged&nbsp;input&nbsp;extents&nbsp;were&nbsp;successfully
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;deallocated.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;2.&nbsp;The&nbsp;corresponding&nbsp;first&nbsp;entries&nbsp;in&nbsp;the&nbsp;output&nbsp;extent&nbsp;list&nbsp;correctly
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;indicate&nbsp;the&nbsp;GMFNs&nbsp;that&nbsp;were&nbsp;successfully&nbsp;exchanged.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;3.&nbsp;All&nbsp;other&nbsp;input&nbsp;and&nbsp;output&nbsp;extents&nbsp;are&nbsp;untouched.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;4.&nbsp;If&nbsp;not&nbsp;all&nbsp;input&nbsp;exents&nbsp;are&nbsp;exchanged&nbsp;then&nbsp;the&nbsp;return&nbsp;code&nbsp;of&nbsp;this
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;command&nbsp;will&nbsp;be&nbsp;non-zero.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;5.&nbsp;THIS&nbsp;FIELD&nbsp;MUST&nbsp;BE&nbsp;INITIALISED&nbsp;TO&nbsp;ZERO&nbsp;BY&nbsp;THE&nbsp;CALLER!
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;xen_ulong_t&nbsp;nr_exchanged;
+};</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">与bug有关的字段是in.extent_start、in.nr_extents、out.extent_start、out.nr_extents以及nr_exchanged。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">官方文档表明客户机始终将nr_exchanged的值初始化为0，这是因为这个变量不仅作为返回值使用，同时也被用于hypercall抢占中。当memory_exchange()被抢占时，它将自身进度存储于nr_exchanged中，在恢复工作时，memory_exchange()使用nr_exchanged的值来决定in.extent_start和out.extent_start这两个输入数组应该恢复到哪个位置。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最开始时，memory_exchange()在使用__copy_from_guest_offset()和__copy_to_guest_offset()访问用户空间前，根本就没有检查用户空间数组指针，同时这两个函数内部也没有做任何检查，这样有可能会导致Xen读取和写入位于hypervisor内存范围内的数据，这是个非常严重的bug。这个漏洞在2012年被发现（</span><a href="https://xenbits.xen.org/xsa/advisory-29.html" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">XSA-29</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">, CVE-2012-5513），补丁代码如下（</span><a href="https://xenbits.xen.org/xsa/xsa29-4.1.patch" _src="https://xenbits.xen.org/xsa/xsa29-4.1.patch" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">https://xenbits.xen.org/xsa/xsa29-4.1.patch</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;）：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">diff&nbsp;--git&nbsp;a/xen/common/memory.c&nbsp;b/xen/common/memory.c
+index&nbsp;4e7c234..59379d3&nbsp;100644
+---&nbsp;a/xen/common/memory.c
++++&nbsp;b/xen/common/memory.c
+@@&nbsp;-289,6&nbsp;+289,13&nbsp;@@&nbsp;static&nbsp;long&nbsp;memory_exchange(XEN_GUEST_HANDLE(xen_memory_exchange_t)&nbsp;arg)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;fail_early;
+&nbsp;&nbsp;&nbsp;&nbsp;}
++&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!guest_handle_okay(exch.in.extent_start,&nbsp;exch.in.nr_extents)&nbsp;||
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;!guest_handle_okay(exch.out.extent_start,&nbsp;exch.out.nr_extents)&nbsp;)
++&nbsp;&nbsp;&nbsp;&nbsp;{
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;-EFAULT;
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;fail_early;
++&nbsp;&nbsp;&nbsp;&nbsp;}
++
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Only&nbsp;privileged&nbsp;guests&nbsp;can&nbsp;allocate&nbsp;multi-page&nbsp;contiguous&nbsp;extents.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!multipage_allocation_permitted(current-&gt;domain,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;exch.in.extent_order)&nbsp;||</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">三、漏洞说明</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">从以下代码片段中可以看出，由于Xen hypercall的抢占恢复机制存在缺陷，客户机可以控制nr_exchanged这个64位偏移量，通过该变量从out.extent_start数组中选择一个偏移值，这个偏移值可以是hypervisor写入的值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;long&nbsp;memory_exchange(XEN_GUEST_HANDLE_PARAM(xen_memory_exchange_t)&nbsp;arg)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Various&nbsp;sanity&nbsp;checks.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!guest_handle_okay(exch.in.extent_start,&nbsp;exch.in.nr_extents)&nbsp;||
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;!guest_handle_okay(exch.out.extent_start,&nbsp;exch.out.nr_extents)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;-EFAULT;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;fail_early;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;(&nbsp;i&nbsp;=&nbsp;(exch.nr_exchanged&nbsp;&gt;&gt;&nbsp;in_chunk_order);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;i&nbsp;&lt;&nbsp;(exch.in.nr_extents&nbsp;&gt;&gt;&nbsp;in_chunk_order);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;i++&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Assign&nbsp;each&nbsp;output&nbsp;page&nbsp;to&nbsp;the&nbsp;domain.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;(&nbsp;j&nbsp;=&nbsp;0;&nbsp;(page&nbsp;=&nbsp;page_list_remove_head(&amp;out_chunk_list));&nbsp;++j&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!paging_mode_translate(d)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;__copy_to_guest_offset(exch.out.extent_start,&nbsp;(i&nbsp;&lt;&lt;&nbsp;out_chunk_order)&nbsp;+&nbsp;j,&nbsp;&amp;mfn,&nbsp;1)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;-EFAULT;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;[...]
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">然而，guest_handle_okay()只是检查能否安全访问客户机中从第0个元素开始的exch.out.extent_start数组，这里本应该使用的是guest_handle_subrange_okay()来进行检查。这意味着攻击者可以通过以下方式，将一个8字节数值写入hypervisor内存中的任意地址：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、将exch.in.extent_order和exch.out.extent_order设为0（将物理内存块更换为新的页面大小的内存块）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、修改exch.out.extent_start以及exch.nr_exchanged的值，使exch.out.extent_start指向用户空间内存，而exch.out.extent_start+8*exch.nr_exchanged指向hypervisor内存中的目标地址（target_addr），此时exch.out.extent_start的值接近于NULL。这两个值可以通过公式计算出来，exch.out.extent_start=target_addr%8，exch.nr_exchanged=target_addr/8。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、修改exch.in.nr_extents，同时将exch.out.nr_extents的值修改为exch.nr_exchanged+1。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4、将exch.in.extent_start值修改为input_buffer-8*exch.nr_exchanged（这里input_buffer是一个合法的客户机内核指针，指向当前客户机拥有的物理页号）。Xen认为exch.in.extent_start始终指向客户机的用户空间（因而能够通过access_ok()的检查），因为exch.out.extent_start大致指向了用户空间的起始地址，且hypervisor和客户机内核的地址空间的大小加起来才与用户空间大小相近。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">攻击者最终写入的数据是一个物理页号（即物理地址除以页面大小的结果）：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">四、漏洞利用：获得页表（pagetable）控制权</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">对于事务繁忙的操作系统来说，控制由内核写入的页号可能比较困难。因此，为了能够稳定利用该漏洞，我们可以将8字节数据重复写入被控内存地址，其中那些最为关键的比特为0（这是因为我们受限于物理内存的大小），其他比特可以稍微随机一些。我决定在8字节的第1个字节写入可控值，剩下的7个字节用垃圾数据填充。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">事实证明，对x86-64架构的PV型客户机来说，这种简单的利用方式足以稳定攻击hypervisor，原因如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">1、x86-64 PV客户机掌握它们能够访问的所有页面的实际物理页号。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">2、x86-64 PV客户机可以将所属域的活动页表映射为只读页表，而Xen只能防止它们被映射为可写页表。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">3、Xen将所有物理内存在0xffff830000000000处映射为可写内存（换句话说，hypervisor可以无视物理页面的保护机制，将数据写入到physical_address+0xffff830000000000地址处，从而实现将数据写入任意物理页面）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">攻击的目标是将一个活动的3级页表(我称之为”受害者页表”)中的某个条目指向客户机具备写访问权限的页面（我称之为“虚假页表”）。这意味着攻击者必须将一个包含虚假页表的物理页号和其他标志的8字节值写入到受害者页表中的一个条目中，并且确保8字节之后的页表条目处于禁用状态（例如，攻击者可以将紧随其后的页表条目的首字节设为0）。本质上来说，攻击者需要写入可控的9个字节，加上7个无关紧要的字节。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">因为所有相关页面的物理页号以及所有映射为可写内存的物理内存对于客户机来说都是已知的，因此确定写入的位置和写入的值不是件难事，那么唯一剩下的问题就是如何利用我们前面分析的原理实际写入数据。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">攻击者希望将一个8字节数值写入内存，其中第1个字节为有效数据，剩下7个字节为垃圾数据，攻击者可以往内存中重复写入一个随机字节并读取该值，直到该值正确。通过这种方式将字节写入连续的内存地址，完成数据写入任务。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">任务完成后，攻击者可以控制活动的页表，因此攻击者可以将任意物理内存映射为客户机的虚拟地址空间。这意味着攻击者可以稳定读取并写入hypervisor和其他所有虚拟机的内存中的代码和数据。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">五、在其他虚拟机上运行shell命令</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">此时，攻击者已经完全控制了主机，权限与hypervisor权限一致，攻击者可以通过搜索物理内存轻松窃取秘密信息，此外，现实点的黑客应该不满足于仅仅将代码注入到虚拟机中，而更在意如何开展更多攻击。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对我来说，在其他虚拟机中运行任意shell命令会让该漏洞的直观感受更为明显，因此我决定修改利用工具，使其可以将shell命令注入到其他64位PV域中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，我需要具备在hypervisor上下文中稳定执行代码的能力。考虑到我们现在可以读取和写入物理内存，我们可以使用一种独立于操作系统（或hypervisor）、使用内核或hypervisor权限调用任意地址的方法，具体来说就是使用非特权SIDT指令定位中断描述符表（Interrupt Descriptor Table, IDT），DPL设置为3（DPL即Descriptor Privilege Level，3级代表特权模式），往IDT中写入一个条目并触发中断。Xen支持SMEP以及SMAP，因此我们不能直接将IDT条目指向客户机内存，但我们可以通过写入页表表项，将带有hypervisor上下文shellcode的客户机页面映射为non-user-accessilbe页面，这样我们就可以绕过SMEP执行shellcode。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">之后，在hypervisor上下文中，我们可以通过读取和写入IA32_LSATAR MSR来hook syscall调用的入口点。在客户机的用户空间以及客户机内核中的hypercall都利用到了syscall入口点。攻击者可以将已控制的页面映射为guest-user-accessible内存，修改寄存器状态，调用sysret，这样就可以将执行客户机用户空间的代码转换为执行任意客户机用户的shellcode，并且独立于hypervisor或者客户机操作系统。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我的漏洞利用工具可以将shellcode注入到所有使用write()系统调用的客户机用户空间进程中。每当shellcode执行时，它会检查自身是否以root权限运行，检查客户机文件系统中是否不存在某个锁定文件（lockfile），如果这些条件全部满足，它会使用clone()系统调用创建子进程，运行任意shell命令。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里需要注意的是，我的漏洞利用工具并没有实现清理功能，因此当攻击结束后，被hook的入口点会迅速导致hypervisor崩溃。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下图是成功攻击Qubes OS 3.2的屏幕截图，这里的Qubes OS使用了Xen作为其虚拟机管理程序。漏洞利用程序运行于“test124”非特权域中，从下图可知，我们可以将代码注入到dom0以及firewallvm中。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01ee485d091f305374.png" title="t01e8f952156be10599.png" alt="http://p5.qhimg.com/t01e8f952156be10599.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">六、结论</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我认为这个问题的根本原因在于access_ok()函数中存在的安全隐患。当前版本的access_ok()于2005年编写完成，刚好是第一版Xen发布的两年后，也远远早于第一版XSA的发布时间。看起来似乎老代码往往比新代码包含更多脆弱点，因为程序人员疏于对老代码做安全评估，通常会把它们遗忘在历史角落中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在优化与安全有关的代码时，我们必须注意避免原来的安全设计理念因为优化工作而失效。使用access_ok()函数的目的是检查整个hypervisor内存，避免内存错误，然而，在2005年，程序人员提交了一次</span><a href="https://xenbits.xen.org/gitweb/?p=xen.git;a=blobdiff;f=xen/include/asm-x86/x86_64/uaccess.h;h=bb23ae81a4456cc5f76ee741b71f944485c7300f;hp=da3d8f5c1f848004d97ddf16f4fce910b88b5e26;hb=f87f8a7110e5dd57091b8484685953414693e2a3;hpb=196c87d1574c5ce7dca4ff78990e3168a4dcad27;ds=sidebyside" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">代码改动</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，将x86_64架构上的access_ok()代码修改为当前版本。当时这个改动没有立刻引发MEMOP_increase_reservation以及MEMOP_decrease_reservation这两个hypercall中存在的漏洞，唯一的原因在于do_dom_mem_op()的nr_extents参数只有32比特大小，这种防御机制真的非常脆弱。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虽然人们已经发现了Xen的几个漏洞，但这些漏洞仅影响PV客户机，因为HVM客户机不会涉及到存在问题的代码，我坚信本文分析的这个漏洞不属于这些漏洞中的任何一个。对PV客户机来说，访问客户机虚拟内存远远比访问HVM客户机虚拟内存简单得多。对PV客户机来说，raw_copy_from_guest()调用了copy_from_user()，后者只是执行了边界检查，随后使用经过缺页异常修正（pagefault fixup）处理后的memcpy函数，这也是普通操作系统内核在访问用户空间内存时的处理流程。对于HVM客户机来说，raw_copy_from_guest()调用了copy_from_user_hvm()，后者必须执行逐页复制操作（因为内存区域在物理上可能是不连续的，也没有映射为hypervisor中连续的虚拟内存）、遍历客户机页表、查找每个页面中的客户机页帧（frame）和引用计数、将客户机页面映射为hypervisor内存以及进行各项检查工作（比如防止HVM客户机写入只读授权映射内存）。因此对于HVM客户机来说，处理客户机内存访问的复杂性远远高于PV客户机。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于安全研究人员而言，半虚拟化分析工作并没有比普通内核分析工作难度大，从本文对该漏洞的分析过程就可以看出这一点。如果你之前已经做过内核代码审计工作，你会发现hypercall的调用路径（位于“xen/arch/x86/x86_64/entry.S”中的lstar_enter和int80_direct_trap）以及hypercall的基本设计（对于x86架构的PV客户机，可以在“xen/arch/x86/pv/hypercall.c”文件中的pv_hypercall_table找到相关内容）看起来与普通的syscall差不多。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://googleprojectzero.blogspot.tw/2017/04/pandavirtualization-exploiting-xen.html" target="_blank">原文链接：https://googleprojectzero.blogspot.tw/2017/04/pandavirtualization-exploiting-xen.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】如何攻击 Xen 虚拟机管理程序 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3822" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

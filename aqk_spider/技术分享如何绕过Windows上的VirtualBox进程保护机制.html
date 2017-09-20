@@ -1,0 +1,567 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】如何绕过Windows上的VirtualBox进程保护机制 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Windows,VirtualBox,进程保护"/>
+    
+        <meta name="description" content="在本文中，我们会介绍Oracle的VirtualBox在进程保护方面的具体实现方法，也会详细介绍如何通过三种方法绕过这种保护机制，将任意代码注入到进程中（这三种方法目前已被修复）。本文所展示的技术同样可以应用在类似的进程“保护”机制上。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】如何绕过Windows上的VirtualBox进程保护机制</h2>
+                <div class="article-msg">
+                    <span class="time">2017-08-29 13:59:11</span>
+                    
+                                        <span class="read">阅读：6964次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4320"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4320" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://googleprojectzero.blogspot.hk/2017/08/bypassing-virtualbox-process-hardening.html"
+                             target="_blank">来源： googleprojectzero.blogspot.hk</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2819002922" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t0104d1b8b4ca36e961.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2819002922" style="color:#848e99;">興趣使然的小胃</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-align: center; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p0.qhimg.com/t010b525bd478575b73.png" title="t013e990a09d7ee7363.png" alt="http://p1.qhimg.com/t013e990a09d7ee7363.png"/></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">译者：</span><a href="http://bobao.360.cn/member/contribute?uid=2819002922" target="_blank" style="color: rgb(0, 112, 192); line-height: 28px; font-weight: 900; text-decoration: underline; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">興趣使然的小胃</span></a></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：300RMB</span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong>一、前言</strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-indent: 2em;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Windows上的进程属于一种安全的对象，可以阻止已登录Windows主机的某个用户危害其他用户的进程。至少从非管理员的用户角度来看，这是一种非常重要的安全特性。在这种安全特性下，非管理员用户无法破坏任何进程的完整性。然而，这种安全屏障在针对管理员、特别是具有调试（Debug）权限的管理员时会显得捉襟见肘，因为启用这种权限后，管理员就可以无视进程拥有的安全属性，打开任意进程。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在某些情况下，应用程序或者操作系统希望能够保护进程免受用户的影响，这些用户包括管理员用户，甚至在某些情况下，包括当前进程对应的具有完全访问权限的同一个用户。因此，许多解决方案使用了内核支持的（kernel support）特性来实现这种保护机制。在大多数情况下，这种实现方案仍然会存在缺陷，我们可以利用这些缺陷来突破“受保护”的进程。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在本文中，我们会介绍Oracle的VirtualBox在进程保护方面的具体实现方法，也会详细介绍如何通过三种方法绕过这种保护机制，将任意代码注入到进程中（这三种方法目前已被修复）。本文所展示的技术同样可以应用在类似的进程“保护”机制上。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">二、Oracle VirtualBox进程防护机制</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">想在用户模式下完全实现进程的保护几乎是不可能的一件事情，现在有很多方法可以将数据注入到某个进程中。特别是当你想要保护的进程正运行在你想要阻止的用户的上下文环境中时，进程保护更加难以实现。比如，攻击者可以使用<strong>PROCESS_CREATE_THREAD</strong>访问权限打开某个进程的句柄，然后直接插入一个新的线程，或者攻击者可以使用<strong>THREAD_SETCON_TEXT</strong>访问权限打开进程中的线程，然后直接修改指令指针（Instruction Pointer）以跳转到任意地址，这些都是直接的攻击方式。攻击者也可以修改进程所处的注册表或者环境，强迫进程加载任意COM对象或者<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms644990(v=vs.85).aspx" target="_self">Windows挂钩</a>（Hook）。攻击者能够做的修改操作可以说是不胜枚举的。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">因此，VirtualBox（VBOX）借用了内核的帮助来保护它的进程。这种保护机制在源代码中对应的是<strong>进程加固</strong>（Process Hardening）技术。VBOX会尝试保护进程免受当前所属的同一用户的影响。我们可以在<a href="https://www.virtualbox.org/browser/vbox/trunk/src/VBox/HostDrivers/Support/SUPR3HardenedMain.cpp?rev=67954#L29" target="_self">源代码注释</a>中找到详细的解释以及技术概述。在这段注释的开头部分详细描述了VBOX内核驱动方面的保护机制，VBOX内核驱动中包含大量方法，这些方法可以用来突破内核或者至少可以用来提升权限。这也是为什么VBOX要去保护其进程免受当前用户的修改，因为如果用户可以访问VBOX内核驱动，那么就可以以此为据点，获取内核或系统权限。虽然某些进程保护机制也会阻止管理员控制当前进程，但这并不是进程加固代码的目标。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我的同事Jann从设备访问角度开展研究，在Linux系统的VBOX驱动及保护机制上发现过<a href="https://bugs.chromium.org/p/project-zero/issues/detail?id=1091" target="_self">许多</a><a href="https://bugs.chromium.org/p/project-zero/issues/detail?id=1141" target="_self">问题</a>。在Linux上，VBOX限制了只有<strong>root</strong>才能访问VBOX驱动，然后利用<strong>SUID</strong>二进制程序赋予VBOX用户进程访问驱动的权限。VBOX驱动在Windows系统没有使用SUID程序，而是使用内核API来尝试阻止用户以及管理员打开受保护的进程，阻止他们注入代码。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内核组件的核心位于<a href="https://www.virtualbox.org/browser/vbox/trunk/src/VBox/HostDrivers/Support/win/SUPDrv-win.cpp?rev=67954" target="_self"><strong>Support\win\SUPDrv-win.cpp</strong></a>文件中。这段代码注册了Windows内核支持的两种回调机制：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff559953(v=vs.85).aspx" target="_self"><strong>PsSetCreateProcessNotifyRoutineEx</strong></a>。当新进程创建时，驱动就会得到通知。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff558692(v=vs.85).aspx" target="_self"><strong>ObRegisterCallback</strong></a>。当进程以及线程句柄创建或者复制时，驱动就会得到通知。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从<strong>PsSetCreateProcessNotifyRoutineEx</strong>发出的通知可以用来配置新创建进程的保护结构。随后，当进程尝试打开VBOX驱动的句柄时，加固机制会调用<a href="https://www.virtualbox.org/browser/vbox/trunk/src/VBox/HostDrivers/Support/win/SUPHardenedVerifyProcess-win.cpp?rev=67954#L2420" target="_self"><strong>supHardenedWinVerifyProcess</strong></a>函数，确保如下验证步骤通过后才允许相应的访问动作：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、确保没有调试器附加到进程上。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、确保进程中只有一个线程，并且该线程是打开驱动的唯一线程，以避免出现进程内竞争（in-process races）问题。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、确保除了一小部分允许的DLL之外，没有其他可执行的内存页面。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4、验证所有已加载的DLL的签名。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5、验证主执行文件的签名，确保该文件为允许的执行文件类型（如VirtualBox.exe）。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">VBOX将自定义运行时代码编译到驱动中，依靠这部分代码完成内核中的签名校验工作。这个过程中，只有很少一部分可信根（Trusted Roots）才能通过校验，主要包括微软的操作系统及代码签名（Authenticode）证书，以及用来签名所有VBOX程序的Oracle证书。你可以在官方的<a href="https://www.virtualbox.org/browser/vbox/trunk/src/VBox/HostDrivers/Support/win/Certificates?rev=67954" target="_self">代码仓库</a>中找到可信的证书列表。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ObRegisterCallback通知用来限制系统上其他用户进程对被保护进程的访问权限范围。ObRegisterCallback API主要是针对反病毒服务设计，以避免反病毒进程被恶意代码注入或者终止。VBOX使用了类似的方法，限制受保护进程的句柄只能具备如下访问权限：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PROCESS_TERMINATE</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PROCESSVMREAD</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PROCESSQUERYINFORMATION</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PROCESSQUERYLIMITED_INFORMATION</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PROCESSSUSPENDRESUME</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">DELETE</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">READ_CONTROL</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">SYNCHRONIZE</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些访问权限可以赋予用户通常需要的大多数权限，比如他们可以读取内存、同步进程以及结束进程，然而他们无法将新的代码注入到进程中。类似地，用户对线程的访问权限也被限制在如下范围，以阻止对线程上下文的修改或其他类似攻击：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">THREAD_TERMINATE</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">THREADGETCONTEXT</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">THREADQUERYINFORMATION</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">THREADQUERYLIMITED_INFORMATION</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">DELETE</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">READ_CONTROL</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">SYNCHRONIZE</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了证实这一点，我们可以打开VirtualBox的进程或者其中某个线程，查看我们获得的访问权限。我们获得的有关进程以及线程的访问权限如下图高亮部分所示。</span></p><p style="text-align: center;"><img src="http://p5.qhimg.com/t01c7b1eec62ec97a73.png" title="t019f0493a16a5b103d.png" alt="http://p8.qhimg.com/t019f0493a16a5b103d.png"/></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虽然内核回调能够阻止对进程的直接修改，也能阻止用户在进程启动时破坏进程的完整性，然而内核回调对运行时的DLL注入攻击（如通过COM实现的DLL注入）显得有点乏力。进程加固机制需要确定哪些模块可以被载入到进程中。对可载入模块的筛选主要是通过Authenticode代码签名来实现。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在已经有一些方法可以确保只加载经过微软签名的二进制文件（比如<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/mt706242(v=vs.85).aspx" target="_self"><strong>PROCESS_MITIGATION_BINARY_SIGNATURE_POLICY</strong></a>方法），然而，这种策略不是特别灵活。因此，受保护的VBOX进程会安装一些钩子（hook），hook用户模式下的几个内部函数，以验证将要载入内存的DLL的完整性。被hook的函数为：</span></p><p style="text-indent: 2em;"><a href="https://undocumented.ntinternals.net/index.html?page=UserMode%2FUndocumented%20Functions%2FExecutable%20Images%2FLdrLoadDll.html" target="_self"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">LdrLoadDll</span></a><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。调用该函数来将DLL加载到内存中</span></p><p style="text-indent: 2em;"><a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff566428(v=vs.85).aspx" target="_self"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">NtCreateSection</span></a><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。调用该函数来为磁盘上的PE文件创建一个Image Section对象。</span></p><p style="text-indent: 2em;"><a href="https://msdn.microsoft.com/en-us/library/dd347461(v=vs.85).aspx" target="_self"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">LdrRegisterDllNotification</span></a><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。这是一个准官方支持的回调函数，当新的DLL被加载或卸载时，该函数就会通知应用程序相关事件。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些钩子扩大了可被加载的经过签名的DLL的范围。由于内核中只包含Oracle以及微软代码，因此可以通过签名验证，能够用来引导进程。然而，当运行某个较为特别的应用时（VirtualBox.exe显然是个特别的应用），我们可能就需要加载第三方签名的代码（比如GPU驱动）。由于这些钩子位于用户模式下，因此程序可以很方便地调用系统的<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/aa388208(v=vs.85).aspx" target="_self">WinVerifyTrust</a> API函数，使用系统证书库来验证证书链，也可以验证使用<a href="https://docs.microsoft.com/en-us/windows-hardware/drivers/install/catalog-files" target="_self">Catalog</a>（.cat）文件签名的那些文件。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果正在加载的某个DLL无法满足VBOX预期的签名标准，那么用户模式下的钩子就会拒绝加载这个DLL。VBOX仍然没有完全信任该用户，WinVerifyTrust会将证书链接回用户的CA证书中的根证书。然而，VBOX只会信任系统的CA证书。由于非管理员用户无法将新的可信根证书添加到系统的CA证书列表中，因此使用这种方法就可以大大限制恶意DLL的注入攻击。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当然，你可以使用合法的经过认证的签名证书，这样应该就能被程序信任，但一般情况下恶意代码不会走这条路。即使代码经过签名，加载程序同样会验证这个DLL文件是否属于TrustedInstaller用户所有。这个验证过程由<a href="https://www.virtualbox.org/browser/vbox/trunk/src/VBox/HostDrivers/Support/win/SUPHardenedVerifyImage-win.cpp?rev=67954#L454" target="_self">supHardNtViCheckIsOwnedByTrustedInstallerOrSimilar</a>来实现。除了自己以外，普通用户无法将文件的所有者改成其他人，因此这样就能限制加载任意签名文件可能造成的危害。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">VBOX代码中的确存在一个函数（<a href="https://www.virtualbox.org/browser/vbox/trunk/src/VBox/HostDrivers/Support/win/SUPHardenedVerifyImage-win.cpp?rev=67954#L1901" target="_self">supR3HardenedWinIsDesiredRootCA</a>），可以限制哪些证书能够成为根证书。在官方发行版中，虽然这个函数中与CA白名单有关的代码已经被注释掉，然而却存在一个黑名单列表，只要你的公司名不叫做“<a href="https://www.virtualbox.org/browser/vbox/trunk/src/VBox/HostDrivers/Support/win/SUPHardenedVerifyImage-win.cpp?rev=67954#L2016" target="_self">U.S. Robots and Mechanical Men, Inc</a>”，那么这个黑名单就不会影响到你。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">即使存在这些保护机制，对管理员而言，进程仍然处于不安全的状态。虽然管理员无法绕过打开进程时存在的安全限制条件，但是他们可以在本地主机中安装一个Trusted Root CA证书，签名一个DLL文件，设置DLL文件的所有者然后强制加载该DLL。这种方法可以绕过镜像验证机制，将镜像加载到经过验证的VBOX进程中。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">稍微总结一下，VBOX加固机制尝试提供如下几种保护措施：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、确保在受保护程序初始化过程中，没有任何代码可以插入进来。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、阻止用户进程打开受保护进程或线程的“可写”句柄，因为这种句柄可以实现任意代码注入。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、阻止不可信DLL通过常见的加载方法（如COM）进行注入。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">整个保护过程很有可能会存在一些bug或者没考虑到的边缘情况。这个过程中，有这么多不同的验证检查操作，这些检查必须全部满足。因此，假如我们不想申请一个合法的代码签名证书，我们也不具备管理员权限，那么这种情况下，我们要如何才能实现在受保护VBOX进程中运行任意代码？我们会重点关注第三种保护措施，因为这可能是所有保护措施中最为复杂的一种，因此很有可能存在最多的问题。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><strong><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">三、利用COM注册中的信任链（Chain-of-Trust）</span></strong></p><p style="text-indent: 2em;"><strong><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我想介绍的第一个<a href="https://bugs.chromium.org/p/project-zero/issues/detail?id=1103" target="_self">漏洞</a>为<strong>CVE-2017-3563</strong>漏洞，这个漏洞在VBOX 5.0.38/5.1.20版本中被修复。该漏洞利用了DLL加载中存在的信任链（chain-of-trust）问题，诱导VBOX加载经过微软签名的DLL，最终实现不可信任意的代码执行。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果运行<a href="https://docs.microsoft.com/en-us/sysinternals/downloads/procmon" target="_self"><strong>Process Monitor</strong></a>来观察受保护的VBOX进程，你会发现该进程使用了COM，更具体来说，该进程使用了在<strong>VBoxC.dll</strong> COM服务器中实现的VirtualBoxClient类。</span></p><p style="text-align: center;"><img src="http://p9.qhimg.com/t019b378d0b56480fdf.png" title="t012afd5fb5dc20e5ed.png" alt="http://p0.qhimg.com/t012afd5fb5dc20e5ed.png"/></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从攻击者的角度来看，COM服务器注册最有用的地方，在于COM对象的注册操作可以在两个地方完成，即用户的注册表中或者本地主机（local machine）注册表中。出于兼容性方面的考虑，系统会优先查找用户的注册表，然后再查找本地主机注册表。因此，在普通用户权限下，攻击者可以覆盖COM注册操作，此时当某个应用程序试图加载指定的COM对象时，就会加载我们刚刚覆盖的任意DLL。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">劫持COM对象并不是一种新颖的技术，这种技术已经存在多年，许多恶意软件利用这种技术来<a href="https://attack.mitre.org/wiki/Technique/T1122" target="_self">实现持久化</a>目的。随着众人重拾对COM的兴趣，这种技术又再度出现在公众视野中。然而，除了UAC绕过之外，COM劫持很少用来权限提升场景中。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">除此之外，UAC以及COM劫持之间还存在着联系，COM运行时会主动去防止劫持技术用于权限提升（EoP）场景，采用的具体方法是，如果当前进程处于高权限下，那么COM运行时就会禁用特定的用户注册表的读取。当然这种方法不是每次都能<a href="https://www.virusbulletin.com/uploads/pdf/conference_slides/2011/Larimer-VB2011.pdf" target="_self">成功</a>。只有当你将UAC当成一种安全防御屏障时，这种方法才行之有效，然而微软坚称他们从来没有也永远不会承认过这个观点。例如，2007年初的<a href="https://blogs.msdn.microsoft.com/cjacks/2007/02/21/per-user-com-registrations-and-elevated-processes-with-uac-on-windows-vista/" target="_self">这篇文章</a>就明确指出这种方法是用于阻止权限提升操作。在我看来，COM的这种查找行为清楚地表明，UAC的设计初衷就是想成为一道安全屏障，然而，它并没有实现这一目标，因此只好被重新<a href="https://technet.microsoft.com/en-us/library/2007.06.uac.aspx" target="_self">包装</a>，用来帮助“开发者”开发更好的代码。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们可以将自己的代码替换COM注册，那么我们应该就能实现在受保护的进程中运行代码。从理论上讲，所有的加固签名检查步骤应该都会阻止我们加载不可信的代码。在实际的研究过程中，我们还是应当具体尝试一下我们觉得会失败的那些操作，万一梦想实现就会收获巨大惊喜。经过尝试后，我们至少可以了解保护机制的具体工作流程。我在用户注册表中注册了一个COM对象，来劫持VirtualBoxClient类，将其指向一个未签名的DLL（实际上我使用了某个管理员账户将DLL的所有者改成<strong>TrustedInstaller</strong>，当然这只是为了测试方便）。当我尝试启动虚拟机时，程序弹出了如下对话框。</span></p><p style="text-align: center;"><img src="http://p3.qhimg.com/t01db81265205e76a9b.png" title="t01eb51857922ec0796.png" alt="http://p9.qhimg.com/t01eb51857922ec0796.png"/></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可能我在COM注册时犯了点错误，然而在另一个独立的应用程序中测试这个COM对象时，却显示一切正常。因此，这个错误很有可能意味着程序无法加载DLL。幸运的是，VBOX非常慷慨，默认就提供了所有进程加固事件的日志。日志名为<strong>VBoxHardening.log</strong>，位于当前虚拟机目录中的Logs文件夹中。在日志中查找DLL的名字，我们得到如下日志条目（我做了大量精简操作，以方便说明）：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">supHardenedWinVerifyImageByHandle:&nbsp;-&gt;&nbsp;-22900&nbsp;(c:\dummy\testdll.dll)&nbsp;
+supR3HardenedScreenImage/LdrLoadDll:&nbsp;c:\dummy\testdll.dll:&nbsp;Not&nbsp;signed.&nbsp;
+supR3HardenedMonitor_LdrLoadDll:&nbsp;rejecting&nbsp;&#39;c:\dummy\testdll.dll&#39;&nbsp;
+supR3HardenedMonitor_LdrLoadDll:&nbsp;returns&nbsp;rcNt=0xc0000190</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">因此，可以确认的是我们的测试DLL没有签名，所以LdrLoadDll hook拒绝加载这个DLL。LdrLoadDll hook返回了一个错误代码，这个代码会传递给COM DLL加载器，导致COM认为该类不存在。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虽然事情并不是简单通过指定自己的DLL就能完成（别忘了我们还修改了DLL的所有者属性），但这至少给了我们一丝希望，因为结果表明VBOX进程还是会使用我们劫持过的COM注册。因此，我们需要的就是满足以下条件的一个COM对象：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、由可信证书进行签名。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、所有者为TrustedInstaller。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、当加载时，可以实现在进程中执行任意代码。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">条件1以及条件2很容易就能满足，系统中所有的微软COM对象都经过可信证书签名（微软内置的某个发行商证书），并且大多对象的所有者为TrustedInstaller。然而，条件3看起来非常难以满足，COM对象通常是在DLL内部实现的，我们不能修改DLL文件，否则文件就会变成未签名状态。我们最终还是找到了这样一个文件，这是一个默认安装的经过微软签名的COM对象，可以帮助我们满足条件3，这就是<a href="https://technet.microsoft.com/en-us/library/ee692848.aspx" target="_self">Windows脚本组件</a>（Windows Script Components，WSC）。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">WSC有时候也称之为Scriptlets（脚本小程序），是可以利用的优秀运行载体。从HTTP URL加载时，我们可以使用WSC来<a href="http://subt0x10.blogspot.co.uk/2017/04/bypass-application-whitelisting-script.html" target="_self">绕过AppLocker</a>。在这里，最让我们感兴趣的是它们也可以注册为COM对象。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">经过注册的WSC包含如下两个部分：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、WSC运行时：scrobj.dll，承担进程内部的COM服务器角色。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、包含Scriptlet实现的一个文件，由兼容的脚本语言编写而成。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当某个应用程序试图加载注册后的类时，scrobj.dll就会加载到内存中。这个COM运行时会请求对应类的一个新对象，导致WSC运行时会在注册表中查找与Scriptlet文件对应的那个URL。然后，WSC运行时会加载Scriptlet文件，在进程中执行文件内部包含的脚本。这里最关键的一点是，从VBOX角度来看，只要scrobj.dll（还有其他相关的脚本语言库，如JScript.dll）是合法的DLL签名文件，那么脚本代码就会得到运行机会，因为VBOX的加固代码永远不会去检查这些脚本代码。这样我们就能实现在加固进程内部运行任意代码的目的。首先，我们来确认scrobj.dll的确可以被VBOX加载。如下图所示，这个DLL经过微软的签名，并且其所有者为TrustedInstaller。</span></p><p style="text-align: center;"><img src="http://p3.qhimg.com/t01b2fcde58b47438de.png" title="t0106f553069ee161bc.png" alt="http://p8.qhimg.com/t0106f553069ee161bc.png"/></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">那么，有效的Scriptlet文件应该满足什么格式？Scriptlet文件是简单的XML文件，我不会去详细阐述每个XML元素所代表的含义，只会重点突出其中涉及任意JScript代码的脚本段。在这个例子中，当被加载时，Scriptlet会启动计算器（Calculator）进程：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:xml;toolbar:false">&lt;scriptlet&gt;
+&nbsp;&nbsp;&lt;registration
+&nbsp;&nbsp;&nbsp;&nbsp;description&nbsp;=&quot;Component&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;progid=&quot;Component&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;version=&quot;1.00&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;classid=&quot;{DD3FC71D-26C0-4FE1-BF6F-67F633265BBA}&quot;
+&nbsp;&nbsp;/&gt;
+&nbsp;&nbsp;&lt;public/&gt;
+&nbsp;&nbsp;&lt;script&nbsp;language&nbsp;=&nbsp;&quot;JScript&quot;&nbsp;&gt;
+&nbsp;&nbsp;&lt;![CDATA[
+&nbsp;&nbsp;new&nbsp;ActiveXObject(&#39;WScript.Shell&#39;).Exec(&#39;calc&#39;);
+&nbsp;&nbsp;]]&gt;
+&nbsp;&nbsp;&lt;/script&gt;
+&lt;/scriptlet&gt;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如果你在JScript或者VBScript语言方面造诣颇深，那么你可能会注意到一个问题，如果这些语言不是通过COM对象来实现，那么它们就无法达成我们的目的。在上面这个Scriptlet文件中，如果我们不加载WScript.Shell这个COM对象，然后调用其Exec方法，那么我们就不能创建新的进程。为了与VBOX驱动交流（这是注入代码的必经之地），我们必须需要能够提供该功能的一个COM对象。我们不能在另一个COM对象中实现具体代码，因为这样就无法绕过镜像签名检查过程。当然，脚本引擎中存在许多<a href="https://bugs.chromium.org/p/project-zero/issues/list?can=1&q=javascript" target="_self">内存破坏漏洞</a>，但我个人并不喜欢利用内存破坏漏洞，因此我们需要其他方法来实现任意代码执行。这时该轮到 .NET Framework上场了。</span><br/></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">.NET运行时使用了常规的DLL加载方法来将代码加载到内存中。因此我们不能加载未签名的 .NET DLL，因为VBOX加固代码会拦截这种行为。然而，.NET提供了一种<a href="https://msdn.microsoft.com/en-us/library/h538bck7(v=vs.110).aspx" target="_self">Assembly::Load</a>方法，利用这种方法可以通过内存中的数组来加载任意代码，并且一旦加载完成，这段代码看起来就如同原生代码（native code）一样，可以调用任意API、检查或修改内存。由于 .NET平台经过微软的签名，因此我们需要做的就是从我们的Scriptlet文件中调用Load方法，然后我们就可以在进程内部获得完整的任意代码执行权限。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了实现这个目标，我们应该从哪里开始呢？根据之<a href="https://googleprojectzero.blogspot.co.uk/2017/04/exploiting-net-managed-dcom.html" target="_self">前一篇文章</a>的研究结果，我们可以通过注册方式将.NET对象导出为COM对象，再通过二进制序列化（Binary Serialization）方法，从字节数组中加载任意代码。许多.NET核心运行时类已经被自动注册为COM对象，脚本引擎可以加载并修改这些对象。现在，我们需要确定的是，BinaryFormatter究竟有没有导出为COM对象？</span></p><p style="text-align: center;"><img src="http://p4.qhimg.com/t014664dc8a097ddd8d.png" title="t01d8e70f1c6a6d4d41.png" alt="http://p2.qhimg.com/t01d8e70f1c6a6d4d41.png"/></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">事实证明的确如此。BinaryFormatter是一个.NET对象，脚本引擎可以通过COM来加载这个对象并与之交互。现在，我们可以直接使用上一篇文章的二进制流，从内存中执行任意代码。在上一篇文章中，不可信代码的执行必须在反序列化过程中完成，在本文案例中，我们可以与脚本中的反序列化结果交互，这样一来，我们需要做的序列化操作就会大大简化。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后我选择反序列化一个<a href="https://msdn.microsoft.com/en-us/library/system.delegate(v=vs.110).aspx" target="_self">Delegate</a>（委托）对象，当脚本引擎执行这个对象时，就会从内存中加载一个<a href="https://msdn.microsoft.com/en-us/library/system.reflection.assembly(v=vs.110).aspx" target="_self">Assembly</a>（程序集），并返回Assembly实例。然后，脚本引擎可以实例化Assembly中的一个Type实例，运行任意代码。原理上听起来很简单，实际操作起来还是有许多事项需要注意。我不想在这篇文章里面讲述具体的细节，以免打断整体节奏，你可以访问此链接获取<a href="https://github.com/tyranid/DotNetToJScript" target="_self">DotNetToJScript</a>这个工具，顺便了解工具的工作原理。此外，你可以访问<a href="https://bugs.chromium.org/p/project-zero/issues/attachment?aid=268607" target="_self">此链接</a>获取PoC代码。从JSciprt组件到调用VBOX驱动的过程大概如下所示：</span></p><p style="text-align: center;"><img src="http://p2.qhimg.com/t01db75a0e071f18311.png" title="t01acfd068b72bf725e.png" alt="http://p2.qhimg.com/t01acfd068b72bf725e.png"/></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在你已经可以在受保护进程中运行任意代码，我不会详细介绍利用VBOX驱动可以做哪些事情，这是另一个话题。当然你可以参考Jann写的<a href="https://bugs.chromium.org/p/project-zero/issues/detail?id=1091" target="_self">另一篇文章</a>，其中介绍了这种情况下，你可以在Linux系统上做的一些操作。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Oracle如何修复这个问题？他们添加了一个DLL黑名单，在<a href="https://www.virtualbox.org/browser/vbox/trunk/src/VBox/HostDrivers/Support/win/SUPHardenedVerifyImage-win.cpp?rev=67954#L146" target="_self">黑名单</a>中的DLL无法被受保护的VBOX进程加载。目前，这个名单中仅包含scrobj.dll这个文件。当开始验证文件时，程序就会验证文件是否位于黑名单中，程序会对当前文件名及版本资源内部的原始文件名（Original Filename）进行检查。这样就能防止用户通过重命名文件绕过黑名单，并且版本资源数据位于签名的PE数据中，攻击者无法在不破坏签名的前提下修改内部的原始文件名。坦诚说来，除了DLL黑名单机制，我也想不出来有其他较好的方法能够阻止这类攻击。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">四、利用用户模式下的DLL加载方式</span></strong></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我想介绍的第二个<a href="https://bugs.chromium.org/p/project-zero/issues/detail?id=1257" target="_self">漏洞</a>为<strong>CVE-2017-10204</strong>漏洞，这个漏洞在VBOX 5.1.24版本中被修复。该漏洞利用了Windows DLL加载器以及VBOX中的某些错误，诱导VBOX加固代码将未经验证的DLL加载到内存中并加以执行。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虽然这个漏洞不需要依赖前面描述过的COM加载逻辑，但用户模式下的COM加载技术的确非常好用，可以使用任意路径来调用<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms684175(v=vs.85).aspx" target="_self">LoadLibrary</a>函数。因此我们会继续利用这种技术来劫持VirtualBoxClient COM对象，利用进程内的服务器路径来加载DLL。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">LoadLlibrary是一个Windows API，该函数存在大量已知的非常奇怪的行为。就我们看来，其中最为有趣的一个行为就是该函数在文件扩展名方面的处理逻辑。根据具体扩展名的不同，LoadLibrary API在加载文件之前，可能会添加或移除相应的扩展名。为此，我用一个表稍微总结了一下，表中显示了传递给LoadLibrary的具体扩展名以及该函数真正尝试加载的那个文件。</span></p><p style="text-align: center;"><img src="http://p5.qhimg.com/t016ddcf15ee2010689.png" title="t015802a5c803b7a889.png" alt="http://p3.qhimg.com/t015802a5c803b7a889.png"/></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在上表中，我用绿色高亮了两种比较重要的情况。这两种情况下，传递给LoadLibrary的文件名与最终加载的文件名不一致。这里的问题在于，任何程序想在加载DLL之前验证该文件的话，就会用到CreateFile函数，而该函数并不会遵循我们高亮的那两种情况。因此在这两种情况下，如果我们使用原始文件名来打开文件并做签名校验，实际上我们最终加载的是另一个文件，因此我们要对另一个文件做签名校验。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在Windows中，普通代码与Kernel32代码之间通常<strong>存在明显的分离界限</strong>，Kernel32代码主要是负责处理Win32平台上已存在多年的许多奇怪行为，也负责处理内核通过<strong>NTDLL</strong>对外提供的“纯净”的NT逻辑层。由于LoadLibrary的实现位于Kernel32中，而LdrLoadDll的实现位于NTDLL中（LdrLoadDll也是VBOX加固代码所hook的那个函数），因此，前面提到的扩展名处理逻辑应该由前者来负责。我们可以分析一下简化版的LoadLibrary，看情况是否如此：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">HMODULE&nbsp;LoadLibrary(LPCWSTR&nbsp;lpLibFileName)
+{
+&nbsp;&nbsp;UNICODE_STRING&nbsp;DllPath;
+&nbsp;&nbsp;HMODULE&nbsp;ModuleHandle;
+&nbsp;&nbsp;ULONG&nbsp;Flags&nbsp;=&nbsp;//&nbsp;Flags;
+&nbsp;&nbsp;RtlInitUnicodeString(&amp;DllPath,&nbsp;lpLibFileName);&nbsp;&nbsp;
+&nbsp;&nbsp;if&nbsp;(NT_SUCCESS(LdrLoadDll(DEFAULT_SEARCH_PATH,&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;Flags,&nbsp;&amp;DllPath,&nbsp;&amp;ModuleHandle)))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;ModuleHandle;
+&nbsp;&nbsp;}
+&nbsp;&nbsp;return&nbsp;NULL;
+}</pre><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从这段代码中可知，不论具体情况如何，<strong>LoadLibrary</strong>只是<strong>LdrLoadDll</strong>的一个封装函数。虽然实际代码比上述代码更为复杂，但简而言之，当LdrLoadDll将文件路径传递给LdrLoadDll时，LoadLibrary并没有作修改，只是将其转换为<strong>UNICODE_STRING</strong>形式的字符串而已。因此，如果我们传入一个没有扩展名的DLL时，VBOX会检查无扩展名的文件的签名，而LdrLoadDll会使用.DLL扩展名来加载文件。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在我们开始测试之前，我们需要解决另一个问题，即文件的所有者需为<strong>TrustedInstaller</strong>。为了让VBOX检查我们所提供的文件的签名，我们只需要将某个已有的、经过合法签名的文件重命名即可，这个任务可以交给硬链接（hard links）来完成。我们可以在某个可控的目录中创建一个不同的文件名，该文件实际上指向的是某个经过签名的系统文件，同时还可以维持文件的原始安全描述符属性（包括文件所有者属性）。正如我在两年前的<a href="https://googleprojectzero.blogspot.co.uk/2015/12/between-rock-and-hard-link.html" target="_self">一篇文章</a>中提到的那样，硬链接存在的问题是，虽然Windows支持创建指向系统文件的链接（当然你无法以写权限打开这些系统文件），然而Win32 API以及在CMD命令行中使用的“<a href="https://technet.microsoft.com/en-us/library/cc753194(v=ws.11).aspx" target="_self">mklink</a>”命令都需要以<strong>FILE_WRITE_ATTRIBUTES</strong>访问权限打开目标文件。我们不想使用其他程序来创建硬链接，因此我们复制了目标文件，但复制操作会修改文件的原始安全描述符，使得该文件所有者不再为TrustedInstaller。为了解决这一问题，我们来检查一下验证代码，看有没有方法能绕过这个难题。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">文件所有者的检查主要在<strong>supHardenedWinVerifyImageByLdrMod</strong>函数中完成。这个函数做的第一件事情基本上就是调用<strong>supHardNtViCheckIsOwnedByTrustedInstallerOrSimilar</strong>函数，后者我们在之前已经见到过。然而，正如在源码中注释部分说明的那样，这段代码还允许使用System32以及WinSxS目录下所有者不为TrustedInstaller的那些文件。这些位置对检查过程来说简直是非常广阔的可利用点，我们要做的只是找到System32下可写入的一个目录。我们可以利用我开发的NtObjectManager PS模块中的<strong>Get-AccessibleFile cmdlet</strong>来找到这些目录。</span></p><p style="text-align: center;"><img src="http://p6.qhimg.com/t018599d61543972e43.png" title="t01c389f57c916bf559.png" alt="http://p3.qhimg.com/t01c389f57c916bf559.png"/></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如上所述，有很多目录可以为我们所用，我们选择了Tasks目录作为目标，因为这个目录肯定会存在。因此，漏洞利用过程包含如下步骤：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、将某个已签名的程序拷贝到<strong>%SystemRoot%\System32\Tasks\Dummy\ABC</strong></span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、将某个未签名的程序拷贝到<strong>%SystemRoot%\System32\Tasks\Dummy\ABC.DLL</strong></span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、注册COM劫持，将进程内的服务器指向步骤1中的已签名的文件路径。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果你启动虚拟机，你会发现上述步骤的确能够成功。VBOX加固代码会检查ABC文件的签名，但LdrLoadDll最终加载的是ABC.DLL。为了确认我们没有利用涉及其他操作，我们来检查一下加固代码的日志：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">..\Tasks\dummy\ABC:&nbsp;Owner&nbsp;is&nbsp;not&nbsp;trusted&nbsp;installer&nbsp;
+..\Tasks\dummy\ABC:&nbsp;Relaxing&nbsp;the&nbsp;TrustedInstaller&nbsp;requirement&nbsp;for&nbsp;this&nbsp;DLL&nbsp;(it&#39;s&nbsp;in&nbsp;system32).
+supHardenedWinVerifyImageByHandle:&nbsp;-&gt;&nbsp;0&nbsp;(..\Tasks\dummy\ABC)&nbsp;
+supR3HardenedMonitor_LdrLoadDll:&nbsp;pName=c:..\tasks\dummy\ABC&nbsp;[calling]</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">前两行表明文件所有者属性的检查的确已被绕过，如我们预期的那样。接下来的两行表明程序验证通过ABC文件的签名，因此会调用LdrLoadDll，后者会添加文件的扩展名，尝试加载ABC.DLL。稍等，为什么NtCreateSection以及加载回调函数（Loader Callback）没有捕捉到程序正在加载一个完全不同的文件？我们可以在加固日志中搜索ABC.DLL，看一下具体发生了什么：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">\..\Tasks\dummy\ABC.dll:&nbsp;Owner&nbsp;is&nbsp;not&nbsp;trusted&nbsp;installer&nbsp;
+\..\Tasks\dummy\ABC.dll:&nbsp;Relaxing&nbsp;the&nbsp;TrustedInstaller&nbsp;requirement&nbsp;for&nbsp;this&nbsp;DLL&nbsp;(it&#39;s&nbsp;in&nbsp;system32).&nbsp;
+supHardenedWinVerifyImageByHandle:&nbsp;-&gt;&nbsp;22900&nbsp;(\..\Tasks\dummy\ABC.dll)&nbsp;
+supR3HardenedWinVerifyCacheInsert:&nbsp;\..\Tasks\dummy\ABC.dll&nbsp;
+supR3HardenedDllNotificationCallback:&nbsp;c:\..\tasks\dummy\ABC.DLL&nbsp;
+supR3HardenedScreenImage/LdrLoadDll:&nbsp;cache&nbsp;hit&nbsp;(Unknown&nbsp;Status&nbsp;22900)&nbsp;on&nbsp;\...\Tasks\dummy\ABC.dll</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">前面两行依然说明，我们文件所处的位置使得我们绕过了文件所有者的检查。接下来的一行，有关<strong>supHardenedWinVerifyImageByHandle</strong>的日志显得更为有趣。这个函数用来验证镜像文件。我在上文展示的日志中提到过这个函数，当时这个函数返回的是-22900，这个值表明有错误发生。然而，在上面的日志中，这个函数返回的是22900，VBOX将任何大于等于0的返回值都当成成功的返回值，加固代码没见过这种返回值，因此也会认为这个文件为有效的文件。在源代码中，负值的错误代码为<strong>VERR_LDRVI_NOT_SIGNED</strong>，正值的“成功”代码为<strong>VINF_LDRVI_NOT_SIGNED</strong>。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">貌似验证代码在调用<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/dn633971(v=vs.85).aspx" target="_self">DLL Loader Lock</a>中的代码时存在错误，这与<strong>NtCreateSection</strong>中的hook情况类似。当代码尝试加载另一个DLL时，它就无法调用WinVerifyTrust，因此会发生死锁现象。通常情况下，内部签名检查代码会返回<strong>VINF_LDRVI_NOT_SIGNED</strong>。现有的代码实现只能处理具有内嵌签名的文件，因此如果某个文件没有经过签名，程序就会返回一个信息代码，促使验证代码来检查文件是否经过catalog（.cat）签名。正常情况下，<strong>WinVerifyTrust</strong>会被调用，如果文件仍然没有经过签名，那么该函数就会返回错误代码。然而，由于死锁问题，<strong>WinVerifyTrust</strong>无法被调用，因此信息代码会广播给调用者，作为成功代码加以使用。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后一个问题，为什么最终的加载回调函数没有捕捉到未签名的文件？VBOX基于文件路径实现了一种签名文件缓存机制，以避免某个文件被多次检查。当程序认为<strong>supHardenedWinVerifyImageByHandle</strong>调用成功时，就会调用<strong>supR3HardenedWinVerifyCacheInsert</strong>，将该路径添加到缓存的“成功”结果中。我们可以观察到，在加载器回调函数中，程序尝试验证文件，但会从缓存中得到一个“成功”代码，因此会假设一切正常，从而加载过程可以顺利完成。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这一过程涉及到许多交互操作，那么Oracle如何修复这个问题？如果DLL文件没有扩展名，Oracle就会添加相应的<a href="https://www.virtualbox.org/browser/vbox/trunk/src/VBox/HostDrivers/Support/win/SUPR3HardenedMain-win.cpp?rev=67954#L1913" target="_self">扩展名</a>。此外，Oracle针对另一种文件名情况也作了相应处理（加载DLL时会删除文件名尾部的附加字符）。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">五、利用内核模式下的镜像加载方式</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我想介绍的最后一个<a href="https://bugs.chromium.org/p/project-zero/issues/detail?id=1296" target="_self">漏洞</a>为CVE-2017-10129漏洞，这个漏洞在VBOX 5.1.24版本中被修复。该漏洞实际上并不算是VBOX的漏洞，因为它属于Windows的一种异常行为。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们需要注意的是，加固代码中存在隐式的条件竞争现象，具体说来，我们可以在验证点以及文件映射点之间修改文件。从理论上讲，我们可以将这种操作应用于VBOX上，但可利用的时间窗口非常短。我们可以选择使用OPLOCK（机会锁）以及类似机制，但这类机制有点麻烦，还不如使用TOCTOU（time-of-check-to-time-of-use）攻击方法。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们来看看镜像文件在内核中的处理过程。在Windows上执行镜像文件的映射操作是非常麻烦的一件事情，操作系统没有使用位置无关的代码，因此无法将DLL作为简单的文件直接映射到内存中。相反的是，DLL必须重新定位到特定的内存地址。这个过程需要修改DLL文件对应的内存页面，以确保任何相关的指针都被正确修复。当涉及到ASLR时，这个步骤显得更为重要，因为ASLR基本上都会强迫DLL在其基地址基础上进行重新定位。因此，只要条件允许，Windows就会缓存镜像映射的实例，这也是为什么DLL的加载地址在同一个系统的不同进程中不会发生变化的原因，因为它使用的是同一个缓存镜像数据。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">缓存实际上位于文件系统驱动的控制之下。当某个文件被打开时，IO管理器会分配<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff545834(v=vs.85).aspx" target="_self">FILE_OBJECT</a>结构体的一个新实例，将该实例传递给驱动的IRPMJCREATE处理程序。驱动可以初始化里面的SectionObjectPointer字段。这个字段对应的是SECTIONOBJECTPOINTERS结构体的一个实例，该结构体的定义如下所示：</span></p><pre class="brush:cpp;toolbar:false">struct&nbsp;SECTION_OBJECT_POINTERS&nbsp;{
+&nbsp;&nbsp;PVOID&nbsp;DataSectionObject;
+&nbsp;&nbsp;PVOID&nbsp;SharedCacheMap;
+&nbsp;&nbsp;PVOID&nbsp;ImageSectionObject;
+};</pre><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些字段本身由缓存管理器负责管理，但结构体本身必须由文件系统驱动来进行分配。更具体的是，每个文件在文件系统中都对应着不同的分配操作。虽然对某个文件而言，每个打开实例都具有不同的<strong>FILE_OBJECT</strong>实例，但SectionObjectPointer只有一个。这样一来，缓存管理器就可以填充结构体中的不同字段，当同一个文件的另一个实例需要映射时，缓存管理器就能重新使用这些字段。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些字段中，比较重要的字段是<strong>ImageSectionObject</strong>，该字段包含映射镜像数据所对应的缓存数据。我不会去深入分析ImageSectionObject指针所包含的具体细节，因为这与文章主题关系不大。重要的是，如果某个FILE_OBJECT实例对应的SectionObjectPointer以及ImageSectionObject指针完全一致，那么将该文件映射为镜像的话，也会映射已缓存的相同镜像。然而，当读取某个文件时并没有用到ImageSectionObject指针，因此系统并没有去检查缓存与硬盘上的实际文件是否相匹配。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在NTFS卷环境下，想要取消SectionObjectPointer的文件数据同步是非常棘手的一件事，特别是当我们没有管理员权限时更是如此。在某种场景下，我们在访问网络共享时，可以借助SMB转向器（redirector）实现数据去同步目的。原理非常简单，当打开远程服务器上的文件时，需要由本地转向器来负责分配SectionObjectPointer结构体的实例。就转向器而言，如果它分两次打开服务器上的“<strong>\Share\File.dll</strong>”文件，那么它会认为这两个文件属于同一个文件。转向器没有额外的信息可以使用，无法判断文件的真实身份，因此只能靠猜测来执行具体操作。因此，你能想到的所有属性（比如对象ID（<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff540335(v=vs.85).aspx" target="_self">Object ID</a>）、修改时间等）都可能是虚假信息。你可以修改SAMBA的副本来实现欺骗目的。此外，转向器无法锁定文件，也无法确保文件处于锁定状态。因此，转向器似乎放弃了这个任务，如果它看到了同一个文件，那么它就会认为一切都处于正常状态。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然而，这种场景仅适用于SectionObjectPointer，如果调用者想读取文件的内容，那么SMB转向器就会退出这种场景，尝试去读取文件的当前状态。此时依然存在虚假信息的可能，因为服务器还是可以返回任意数据。这也是我们为什么能完成去同步化任务，如果我们从SMB服务器上映射某个镜像文件，修改文件底层数据，然后重新打开这个文件，再次映射这个镜像，那么被映射的镜像对应的是已缓存的那个镜像，但读取的数据来自于服务器上的当前文件。这样一来，我们可以先映射一个不可信的DLL，然后将这个文件替换为经过签名的有效文件（SMB支持读取文件的所有者信息，所以我们也能实现伪造所有者为TrustedInstaller的目的），当VBOX试图加载这个文件时，它会验证经过签名的文件，但会映射已缓存的不可信镜像，然而它自己却没有意识到这一点。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">很多时候我们无法使用远程服务器，然而我们可以使用本地环回（loopback）SMB服务器，然后通过admin共享（admin$）来访问文件。admin共享其实名不副实，如果我们从本地主机来访问，那么除管理员之外的用户也可以访问这个共享资源。完成这一任务的关键是使用目录连接（Direcory Junction）技术。Junction点由服务器负责解析，转向器无法获取Junction点的任何信息。因此，在客户端看来，如果客户端之前打开过“<strong>\localhost\c$\Dir\File.dll</strong>”这个文件，然后重新打开这个文件，那么这两次打开的文件可能是完全不同的文件，整个流程如下图所示：</span></p><p style="text-align: center;"><img src="http://p4.qhimg.com/t01d85a2c06934d4f98.png" title="t01d85a2c06934d4f98.png" alt="http://p4.qhimg.com/t01d85a2c06934d4f98.png"/></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">幸运的是，根据前面两个问题的分析结果，我们知道VBOX的加固代码并不在意DLL文件的具体位置，只要能够满足两个条件即可，即文件所有者为TrustedInstaller且文件经过合法签名。我们可以将COM劫持指向本地系统中的某个SMB共享。因此，我们可以按照如下步骤实施攻击：</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、在C:盘上设置一个junction点，将其指向我们不可信文件所在的那个目录。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、在c$ admin共享的junction点上使用LoadLibrary映射这个文件，在攻击过程结束之前，不要释放映射文件。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、修改junction点，将其指向一个有效的经过签名的文件，文件名与我们不可信文件的文件名一致。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4、将COM劫持指向这个文件，然后启动VBOX。VBOX会读取文件，验证文件经过签名并且文件所有者为TrustedInstaller，然而当它使用这个文件时，实际上使用的是已缓存的不可信的镜像数据。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">那么Oracle如何修复这个问题？Oracle会将文件路径与“<a href="https://www.virtualbox.org/browser/vbox/trunk/src/VBox/HostDrivers/Support/win/SUPR3HardenedMain-win.cpp?rev=67981#L1644" target="_self">\Device\Mup</a>”前缀进行对比，以验证映射的文件是否位于网络共享中。</span></p><p style="text-indent: 2em;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">六、总结</span></strong></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">VirtualBox中实现的进程加固机制非常复杂，因此也非常容易出错。我敢肯定的是，只要人们用心去寻找，还能找到其他方法来绕过进程保护机制。当然，如果Oracle不想保护VirtualBox内核驱动免受恶意攻击场景利用，那么这一切都不是问题，然而这属于设计理念问题，短时间内很难解决。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://googleprojectzero.blogspot.hk/2017/08/bypassing-virtualbox-process-hardening.html" target="_blank">原文链接：https://googleprojectzero.blogspot.hk/2017/08/bypassing-virtualbox-process-hardening.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】如何绕过Windows上的VirtualBox进程保护机制 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4320" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

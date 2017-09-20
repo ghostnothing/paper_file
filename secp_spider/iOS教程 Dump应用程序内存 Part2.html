@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8" />	
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="renderer" content="webkit">
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<title>iOS教程：Dump应用程序内存 Part2 - SecPulse.COM | 安全脉搏</title>
+<meta name="description" content="在上一篇文章《iOS教程：对App的内存堆内容进行转储》中，我们讨论了如何使用GDB从iOS应用程序的堆中转储敏感信息。在本文中，我们将介绍如何使用Cycript实现相同的目的，并使用class-dump-z专门输出类属性或者实例变量。这一次，我们将以更加自动化的方式来自动解析二进制文件的类转储，并创建必要的Cycript脚本来从内存中获取特定的属性。此外，我以后还将给出实现以上功能的另一工具。留意我们的GitHub账号，以获取最新的工" />
+<meta name="keywords" content="class-dump-z,Cycript,dump,iOS教程,内存,移动安全" />
+
+<link rel='stylesheet' id='style-css'  href='https://www.secpulse.com/wp-content/themes/sec/style.css?ver=2014.9.21' type='text/css' media='all' />
+<link rel='stylesheet' id='jquery.fancybox-css'  href='https://www.secpulse.com/wp-content/themes/sec/css/jquery.fancybox.css?ver=1.0' type='text/css' media='all' />
+<link rel='stylesheet' id='font-awesome-css'  href='https://www.secpulse.com/wp-content/themes/sec/css/font-awesome.min.css?ver=1.0' type='text/css' media='all' />
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/jquery.min.js?ver=2.15'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/jquery.fancybox.js?ver=2.15'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/helpers/jquery.fancybox-buttons.js?ver=2.15'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/jquery.mousewheel-3.0.6.pack.js?ver=1.0'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/owl.carousel.min.js?ver=1.0'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/custom.js?ver=1.0'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/comments-ajax.js?ver=1.3'></script>
+<link rel='canonical' href='https://www.secpulse.com/archives/5415.html' />
+<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+<!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+<!--[if lt IE 9]>
+<script src="http://cdn.bootcss.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+<script src="http://cdn.bootcss.com/respond.js/1.4.2/respond.min.js"></script>
+<![endif]-->
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "//hm.baidu.com/hm.js?7f4cc5524dcb1aec487b4266c18bae48";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+
+</head>
+<body class="single single-post postid-5415 single-format-standard">
+	<header id="header" class="header clr">
+		<div class="header-top inner clr">
+	<hgroup class="logo-main"><h1 class="logo"><a href="https://www.secpulse.com/" rel="home" title="安全脉搏">安全脉搏</a></h1><h4 class="xs-hidden">分享技术，悦享品质 
+	</h4>
+	</hgroup>
+
+<div class="login xs-hidden">
+				<div class="logindiv">
+					<div class="img">
+<img src="https://www.secpulse.com/wp-content/uploads/2017/05/rabbit.jpeg" width="36" height="36" alt="" class="avatar avatar-36 wp-user-avatar wp-user-avatar-36 photo avatar-default" /></div><span href="javascript:void(0);" title="用户" class="yh">用户</span><i
+						class="fa fa-caret-down fa-2"></i>
+					<ul class="login-links">
+						<li class="log"><a
+							href="https://www.secpulse.com/wp-login.php"
+							target="_blank"><i class="fa fa-arrow-right"></i><span>登陆</span></a></li>
+						<li class="exit"><a
+							href="https://www.secpulse.com/wp-login.php?action=register"><i
+								class="fa fa-user-times"></i><span>注册</span></a></li>
+					</ul>
+	
+  </div>
+			</div>
+			<div class="top-search xs-hidden">
+  <form id="search" method="get" action="https://www.secpulse.com" >
+	<input type="text" name="s" id="s" autocomplete="off"  placeholder="输入搜索内容">
+	<button class="btn-search"> <i class="fa fa-search"></i></button>
+</form></div>
+			<div class="menu-button">
+				<i class="fa fa-bars fa-3x"></i>
+			</div>
+		</div>
+
+
+		<div class="main-nav  xs-hidden">
+			<div class="inner clr"><nav class="left-nav clr"><ul id="menu-%e5%af%bc%e8%88%aa" class="header-menu-nav"><li id="menu-item-15" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-home menu-item-15"><a href="https://www.secpulse.com/">首页</a></li>
+<li id="menu-item-17" class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor menu-item-has-children menu-item-17"><a href="https://www.secpulse.com/archives/category/articles">文章</a>
+<ul class="sub-menu">
+	<li id="menu-item-34048" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34048"><a href="https://www.secpulse.com/archives/category/articles/intranet-penetration">内网渗透</a></li>
+	<li id="menu-item-34047" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34047"><a href="https://www.secpulse.com/archives/category/articles/code-audit">代码审计</a></li>
+	<li id="menu-item-34046" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34046"><a href="https://www.secpulse.com/archives/category/articles/web">Web安全</a></li>
+	<li id="menu-item-34565" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34565"><a href="https://www.secpulse.com/archives/category/articles/sec-doc">安全文献</a></li>
+	<li id="menu-item-34568" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34568"><a href="https://www.secpulse.com/archives/category/articles/social-engineering">社会工程</a></li>
+	<li id="menu-item-35948" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35948"><a href="https://www.secpulse.com/archives/category/articles/wireless">无线安全</a></li>
+	<li id="menu-item-35949" class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor current-menu-parent current-post-parent menu-item-35949"><a href="https://www.secpulse.com/archives/category/articles/mobile-security">移动安全</a></li>
+	<li id="menu-item-35950" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-35950"><a href="https://www.secpulse.com/archives/category/articles/system">系统安全</a>
+	<ul class="sub-menu">
+		<li id="menu-item-35951" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35951"><a href="https://www.secpulse.com/archives/category/articles/system/linux">Linux</a></li>
+		<li id="menu-item-35952" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35952"><a href="https://www.secpulse.com/archives/category/articles/system/windows">Windows</a></li>
+	</ul>
+</li>
+	<li id="menu-item-35953" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35953"><a href="https://www.secpulse.com/archives/category/articles/reverse-break">逆向破解</a></li>
+</ul>
+</li>
+<li id="menu-item-18" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-18"><a href="https://www.secpulse.com/archives/category/news">资讯</a>
+<ul class="sub-menu">
+	<li id="menu-item-35956" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35956"><a href="https://www.secpulse.com/archives/category/news/china-news">国内资讯</a></li>
+	<li id="menu-item-35957" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35957"><a href="https://www.secpulse.com/archives/category/news/world-news">国外资讯</a></li>
+</ul>
+</li>
+<li id="menu-item-379" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-379"><a href="https://www.secpulse.com/archives/category/construction">安全建设</a>
+<ul class="sub-menu">
+	<li id="menu-item-51480" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51480"><a href="https://www.secpulse.com/archives/category/construction/securityissue">安全管理</a></li>
+	<li id="menu-item-54332" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54332"><a href="https://www.secpulse.com/archives/category/construction/%e4%b8%9a%e5%8a%a1%e5%ae%89%e5%85%a8">业务安全</a></li>
+	<li id="menu-item-35955" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35955"><a href="https://www.secpulse.com/archives/category/construction/bigdata">数据分析</a></li>
+	<li id="menu-item-54333" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54333"><a href="https://www.secpulse.com/archives/category/construction/security-reports">安全报告</a></li>
+</ul>
+</li>
+<li id="menu-item-368" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-368"><a href="https://www.secpulse.com/archives/category/exclusive">独家</a>
+<ul class="sub-menu">
+	<li id="menu-item-35947" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35947"><a href="https://www.secpulse.com/archives/category/articles/industrial-safety">工控安全</a></li>
+	<li id="menu-item-35954" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35954"><a href="https://www.secpulse.com/archives/category/exclusive/ctf-writeup">CTF</a></li>
+	<li id="menu-item-50217" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-50217"><a href="https://www.secpulse.com/archives/category/exclusive/duoyinsu">多因素令牌</a></li>
+	<li id="menu-item-51479" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51479"><a href="https://www.secpulse.com/archives/category/exclusive/dataleakage">数据泄露</a></li>
+</ul>
+</li>
+<li id="menu-item-16" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-16"><a href="https://www.secpulse.com/archives/category/tools">工具</a></li>
+<li id="menu-item-52" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-52"><a href="https://www.secpulse.com/archives/category/hiring">招聘</a></li>
+<li id="menu-item-50" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-50"><a href="https://www.secpulse.com/newsend">投稿</a></li>
+<li id="menu-item-6645" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-6645"><a href="https://www.secpulse.com/archives/category/vul">漏洞</a></li>
+</ul></nav>  <nav class="right-nav clr "><ul id="menu-%e5%af%bc%e8%88%aa%e4%ba%8c" class="header-menu-nav"><li id="menu-item-33967" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-33967"><a title="付费渗透测试" href="http://service.secpulse.com">安全服务</a></li>
+<li id="menu-item-52043" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-52043"><a title="安全从业者最实用的安全导航" href="http://nav.secpulse.com">安全导航</a></li>
+<li id="menu-item-33966" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-33966"><a title="安识科技" href="https://www.duoyinsu.com">多因素</a></li>
+</ul></nav></div>
+		</div>
+		<div class="nav-bg"></div>
+   <nav class="mini-nav visible-xs"><ul id="menu-%e5%af%bc%e8%88%aa-1" class="menu-mini-nav"><li class="menu-item menu-item-type-custom menu-item-object-custom menu-item-home menu-item-15"><a href="https://www.secpulse.com/">首页</a></li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor menu-item-has-children menu-item-17"><a href="https://www.secpulse.com/archives/category/articles">文章</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34048"><a href="https://www.secpulse.com/archives/category/articles/intranet-penetration">内网渗透</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34047"><a href="https://www.secpulse.com/archives/category/articles/code-audit">代码审计</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34046"><a href="https://www.secpulse.com/archives/category/articles/web">Web安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34565"><a href="https://www.secpulse.com/archives/category/articles/sec-doc">安全文献</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34568"><a href="https://www.secpulse.com/archives/category/articles/social-engineering">社会工程</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35948"><a href="https://www.secpulse.com/archives/category/articles/wireless">无线安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor current-menu-parent current-post-parent menu-item-35949"><a href="https://www.secpulse.com/archives/category/articles/mobile-security">移动安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-35950"><a href="https://www.secpulse.com/archives/category/articles/system">系统安全</a>
+	<ul class="sub-menu">
+		<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35951"><a href="https://www.secpulse.com/archives/category/articles/system/linux">Linux</a></li>
+		<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35952"><a href="https://www.secpulse.com/archives/category/articles/system/windows">Windows</a></li>
+	</ul>
+</li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35953"><a href="https://www.secpulse.com/archives/category/articles/reverse-break">逆向破解</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-18"><a href="https://www.secpulse.com/archives/category/news">资讯</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35956"><a href="https://www.secpulse.com/archives/category/news/china-news">国内资讯</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35957"><a href="https://www.secpulse.com/archives/category/news/world-news">国外资讯</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-379"><a href="https://www.secpulse.com/archives/category/construction">安全建设</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51480"><a href="https://www.secpulse.com/archives/category/construction/securityissue">安全管理</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54332"><a href="https://www.secpulse.com/archives/category/construction/%e4%b8%9a%e5%8a%a1%e5%ae%89%e5%85%a8">业务安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35955"><a href="https://www.secpulse.com/archives/category/construction/bigdata">数据分析</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54333"><a href="https://www.secpulse.com/archives/category/construction/security-reports">安全报告</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-368"><a href="https://www.secpulse.com/archives/category/exclusive">独家</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35947"><a href="https://www.secpulse.com/archives/category/articles/industrial-safety">工控安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35954"><a href="https://www.secpulse.com/archives/category/exclusive/ctf-writeup">CTF</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-50217"><a href="https://www.secpulse.com/archives/category/exclusive/duoyinsu">多因素令牌</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51479"><a href="https://www.secpulse.com/archives/category/exclusive/dataleakage">数据泄露</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-16"><a href="https://www.secpulse.com/archives/category/tools">工具</a></li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-52"><a href="https://www.secpulse.com/archives/category/hiring">招聘</a></li>
+<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-50"><a href="https://www.secpulse.com/newsend">投稿</a></li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-6645"><a href="https://www.secpulse.com/archives/category/vul">漏洞</a></li>
+</ul></nav>     </header><section class="xs-main index-main clr">
+<div class="inner">
+<div class="xs-left">
+<nav class="crumbs">现在位置： <a title="返回首页" href="https://www.secpulse.com">首页</a> &gt; <a href="https://www.secpulse.com/archives/category/articles">文章</a> &gt; <a href="https://www.secpulse.com/archives/category/articles/mobile-security" rel="category tag">移动安全</a> &gt;  正文 </nav><article id="post-5415" class="post-5415 post type-post status-publish format-standard hentry category-mobile-security tag-class-dump-z tag-cycript tag-dump tag-ios tag-2131 tag-2127">
+	<header class="single-header">
+		<h1>iOS教程：Dump应用程序内存 Part2</h1>
+			<div class="single-meta">
+				
+		    <div class="time"><i></i> <a href="javascript:void(0);">2015 /3/16 13:19</a></div>
+			<div class="eye xs-hidden"><i class="fa fa-eye fa-1"></i><a href="javascript:void(0);">4,743</a> </div>			<div class="comments xs-hidden"><i class="fa fa-comments fa-1"></i><a href="https://www.secpulse.com/archives/5415.html#respond">沙发</a></div>
+			
+			
+		</div>
+		<!-- .entry-meta -->
+	</header>
+	<!-- .single-header -->
+
+	<div class="single-main">
+		<p>在上一篇文章《<a href="http://www.secpulse.com/archives/4183.html" target="_blank">iOS教程：对App的内存堆内容进行转储</a>》中，我们讨论了如何使用GDB从iOS应用程序的堆中转储敏感信息。在本文中，我们将介绍如何使用Cycript实现相同的目的，并使用<a href="http://cydia.radare.org/debs/classdumpz_0.2_iphoneos-arm.deb" target="_blank">class-dump-z</a>专门输出类属性或者实例变量。这一次，我们将以更加自动化的方式来自动解析二进制文件的类转储，并创建必要的Cycript脚本来从内存中获取特定的属性。此外，我以后还将给出实现以上功能的另一工具。留意我们的<a href="https://github.com/NetSPI" target="_blank">GitHub</a>账号，以获取最新的工具和脚本。</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2015/03/meitu_1.jpg"><img class="size-full wp-image-5419 aligncenter" src="http://www.secpulse.com/wp-content/uploads/2015/03/meitu_1.jpg" alt="meitu_1" width="800" height="427" /></a></p>
+<h2>0x01 class-dump-z获取类信息</h2>
+<p>对于一个iOS应用程序，如果我们不能获取它的源代码，那么我们就必须首先解密二进制文件。首先，我们转储该文件的类信息。虽然已经有很多教程讲解如何进行解密，但是<a href="https://github.com/KJCracks/Clutch" target="_blank">Clutch</a>是我常用的工具，因为它使用起来很容易，而且它还能生成一个包含解密后的二进制文件信息的IPA文件，所以有需要时你就可以在其他设备上重新安装它。在我们提取和安装解密后的二进制文件后，我们可以运行class-dump-z来获得所有类的头文件信息、属性、类方法、实例方法等等。</p>
+<pre class="theme:sublime-text lang:python decode:true">MAPen-iPad-000314:~ root# ./class-dump-z -z TestApp
+ 
+[TRUNCATED]
+ 
+@interface CryptoManager : XXUnknownSuperclass {
+@private
+	NSData* key;
+}
+@property(retain, nonatomic) NSData* key;
++(id)CryptoManager;
+-(id)init;
+-(id)cipher:(id)cipher key:(id)key context:(unsigned)context;
+-(id)cipher:(id)cipher key:(id)key context:(unsigned)context withIV:(BOOL)iv;
+-(id)cipher:(id)cipher key:(id)key context:(unsigned)context withIV:(BOOL)iv usingIV:(id)iv5;
+-(id)cipher:(id)cipher key:(id)key context:(unsigned)context withIV:(BOOL)iv usingIV:(id)iv5 withPad-ding:(BOOL)padding;
+-(void)clearKey;
+-(void)dealloc;
+-(id)decryptData:(id)data;
+-(id)decryptData:(id)data usingIV:(id)iv;
+-(id)decryptData:(id)data usingIV:(id)iv withPadding:(BOOL)padding;
+-(id)decryptData:(id)data withIV:(BOOL)iv;
+-(id)decryptData:(id)data withIV:(BOOL)iv withHeader:(BOOL)header;
+-(id)decryptData:(id)data withKey:(id)key;
+-(id)decryptString:(id)string;
+-(id)decryptString:(id)string withIV:(BOOL)iv;
+-(id)decryptString:(id)string withIV:(BOOL)iv withHeader:(BOOL)header;
+-(id)decryptString:(id)string withIV:(BOOL)iv withHeader:(BOOL)header withKey:(id)key;
+-(id)decryptString:(id)string withKey:(id)key;
+-(id)encryptData:(id)data;
+-(int)encryptData:(id)data AndAppendToFileAtPath:(id)path initiatedByUnlockOperation:(BOOL)operation error:(id*)error;
+-(id)encryptData:(id)data usingIV:(id)iv;
+-(id)encryptData:(id)data withKey:(id)key;
+-(id)encryptString:(id)string;
+-(id)encryptString:(id)string withKey:(id)key;
+-(id)hashString:(id)string;
+-(id)hashString:(id)string salt:(id)salt;
+-(BOOL)isHashOfString:(id)string equalToHash:(id)hash;
+-(BOOL)isHeaderValid:(id)valid;
+-(id)newHeader;
+-(unsigned long)readEncryptedData:(void**)data atPath:(id)path offset:(long)offset length:(unsigned long)length initiatedByUnlockOperation:(BOOL)operation error:(id*)error;
+@end
+ 
+[TRUNCATED]</pre>
+<p>所以从上面代码中可以看出，TestApp中有一个类“CryptoManager”，并且它有一个属性“key”。这一点看起来很有趣，因为从上面信息中看出内存中可能会有一个加密密钥。接下来，我们使用Cycript从内存中抓取特定的属性。需要注意的是，在运行时期间，在登陆之前，类“CryptoManager”就被实例化了，但只有用户曾经在该设备上成功登录过才可以。此外，即使该类不再需要（例如，用户退出账号）了，它也并没有被清理掉，而这正是漏洞所在。在这个例子中，在前面的会话中我们已经成功登录，所以在下一次用户登录之前类已经存在于内存中。</p>
+<h2>0x02 获取实例信息</h2>
+<p>首先，我们通过一个SSH会话hook 正在运行的TestApp进程，这样我们就可以不用管运行在iOS设备上的应用程序了。</p>
+<pre class="theme:sublime-text lang:python decode:true">MAPen-iPad-000314:~ root# cycript -p TestApp
+cy#</pre>
+<p>既然我们已经hook成功，下面我们接着讨论Cycript中的choose方法。Choose方法扫描堆以匹配类名字，并返回一个匹配目标类结构的对象数组。所以，如果我们输入“choose（MyClass）”，那么它将包含一个索引数组，该数组中包含着当前内存中（或者匹配结构的）类MyClass所有的实例化对象。下面的输出仅仅是第一个索引对象，它的索引值是“0”，并将其存储在一个变量“a”中。如果你更喜欢使用GDB，我们也可以返回内存位置，然后利用GDB转储内存的子区域中的所有内容，或者设置断点并观察寄存器。至于如何扫描堆，你可以查看上一篇文章《<a href="http://www.secpulse.com/archives/4183.html" target="_blank">iOS教程：对App的内存堆内容进行转储</a>》。然而，需要注意的是，该数组中可能有不止一个类的实例对象，那么你就需要遍历每个索引来得到目标类实例的属性。</p>
+<pre class="theme:sublime-text lang:python decode:true">cy# a=choose(CryptoManager)
+[#"&lt; CryptoManager: 0x17dcc340&gt;",#"&lt; CryptoManager: 0x17f42ba0&gt;"]</pre>
+<p>接下来，为了方便我们以后抓取密钥并解密应用中的任何数据，现在我们从内存中转储属性“key”。</p>
+<pre class="theme:sublime-text lang:python decode:true">cy# a[0].key.hexString
+@"6D2268CFFDDC16E890B365910543833190C9C02C4DCA2342A9AEED68428EF9B6"</pre>
+<p>Bingo！现在我们已经拥有了十六进制的密钥，后面我们将可以利用此密钥来解密应用程序想要加密的任何东西。</p>
+<h2>0x03 实现自动化</h2>
+<p>现在，我们讨论下如何对上面操作实现自动化，并理清我们所了解的以及如何通过编程实现自动化。我们知道，class-dump-z输出中包含了所以类和它们属性。但我们不知道的是那些类目前是否已经实例化，而且我们也不知道内存中那些类实例化了多少次。所以，我们能做的就是解析class-dump-z的输出，并创建一个类和它们属性的映射图。既然我们有了映射图，那么现在我们就可以创建Cycript脚本来获取相关信息。然而，需要注意的是，这种技术只是针对已经实例化的类，我们并不会涉及在Cycript中如何创建一个新的实例，因为已经有很多教程和书籍介绍过了。</p>
+<p>所以，我们必须从choose方法中阅读Cycript的输出内容，以此来确定对象已经在内存中实例化了多少次。为了实现这一点，我们可以使用JavaScript来获得数组长度：</p>
+<pre class="theme:sublime-text lang:python decode:true">cy# choose(CryptoManager).length
+2
+cy#</pre>
+<p>很酷吧，现在我们知道需要对数组循环多少次来获取“CryptoManager”所有的实例对象。现在我们就可以继续cycript脚本的编写。</p>
+<p>Cycript可以将脚本作为参数，一个基本的脚本必须包含我们想运行的命令，就像下面一样：</p>
+<pre class="theme:sublime-text lang:python decode:true">MAPen-iPad-000314:~ root# cat dump.cy
+a=choose(CryptoManager)[0]
+a.key.hexString
+ 
+MAPen-iPad-000314:~ root# cycript -p TestApp dump.cy
+@"6D2268CFFDDC16E890B365910543833190C9C02C4DCA2342A9AEED68428EF9B6"</pre>
+<h2>0x04 遗留问题</h2>
+<p>不过，有一个我似乎无法解决的问题是，当你运行一个脚本时，Cycript只返回最后一行输出到终端，而不是所有的输出。所以，要从终端输出多个类以及它们的属性，你就不得不为每个类及属性创建一个新脚本。如果谁知道如何突破这个限制，请告诉我如何实现，或者你也可以用Cycript JavaScript（如果你喜欢这种语言）写出来。</p>
+<p>【原文：<a href="https://blog.netspi.com/ios-tutorial-dumping-the-application-memory-part-2/" target="_blank">iOS Tutorial – Dumping the Application Memory Part 2</a>   安全脉搏<span class="muted"><a title="" href="http://www.secpulse.com/archives/author/jackpulse" target="_blank">PulseO0O</a>翻译</span>整理发布<a title="" href="https://blog.netspi.com/ios-tutorial-dumping-the-application-heap-from-memory/" target="_blank"> 】</a></p>
+		<div class="pageShenming">
+【安全脉搏：分享技术、悦享品质。文章仅代表作者看法，如有不同观点，欢迎添加安全脉搏微信号：SecPulse，进行交流。】</div>
+<div class="post-tags"><span>Tags: </span><a href="https://www.secpulse.com/archives/tag/class-dump-z" rel="tag">class-dump-z</a><a href="https://www.secpulse.com/archives/tag/cycript" rel="tag">Cycript</a><a href="https://www.secpulse.com/archives/tag/dump" rel="tag">dump</a><a href="https://www.secpulse.com/archives/tag/ios%e6%95%99%e7%a8%8b" rel="tag">iOS教程</a><a href="https://www.secpulse.com/archives/tag/%e5%86%85%e5%ad%98" rel="tag">内存</a><a href="https://www.secpulse.com/archives/tag/%e7%a7%bb%e5%8a%a8%e5%ae%89%e5%85%a8" rel="tag">移动安全</a></div>
+		</div>
+	<!-- .single-content -->
+		<div class="pageActive">
+	<div class="mark-like-btn">
+							</div>
+	<!-- Baidu Button BEGIN -->
+	<div class="bdshare">
+		<div class="bdsharebuttonbox">
+			<a href="#" class="bds_more" data-cmd="more"></a><a href="#"
+				class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a><a href="#"
+				class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a><a href="#"
+				class="bds_weixin" data-cmd="weixin" title="分享到微信"></a>
+		</div>
+		<script>
+		window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":false,"bdPic":"","bdStyle":"0","bdSize":"32"},"share":{}};
+		with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];
+		</script>
+
+	</div>
+</div>    <section id="text-6" class="widget-container widget_text hidden-xs">			<div class="textwidget"><center><a href="https://www.duoyinsu.com" target="_blank" title="安识科技 专业安全服务商"><img src="https://www.secpulse.com/wp-includes/images/secweixin.png" style="width:785px;height:315px"></a><center></div>
+		</section><section id="related_post-2" class="widget-container widget_related_post hidden-xs"><h3 class="widget-title">相关文章</h3>
+
+	<ul class="related_post">
+				<li><a href="https://www.secpulse.com/archives/60044.html" title="详细阅读 北京中睿天下招聘安全人才">
+		 <img src="https://www.secpulse.com/wp-content/themes/sec/timthumb.php?src=https://www.secpulse.com/wp-content/uploads/2017/08/zt3.png&h=150&w=249&zc=1" alt="北京中睿天下招聘安全人才" class="xg-img"/>
+		<p>北京中睿天下招聘安全人才</P></a></li>
+				<li><a href="https://www.secpulse.com/archives/59770.html" title="详细阅读 电商的支付风控怎么玩？">
+		 <img src="https://www.secpulse.com/wp-content/themes/sec/timthumb.php?src=https://www.secpulse.com/wp-content/uploads/2017/08/pay123.jpg&h=150&w=249&zc=1" alt="电商的支付风控怎么玩？" class="xg-img"/>
+		<p>电商的支付风控怎么玩？</P></a></li>
+				<li><a href="https://www.secpulse.com/archives/59201.html" title="详细阅读 滴滴出行信息安全部诚聘安全大牛！">
+		 <img src="https://www.secpulse.com/wp-content/themes/sec/timthumb.php?src=https://www.secpulse.com/wp-content/uploads/2017/07/微信图片_20170710144254.png&h=150&w=249&zc=1" alt="滴滴出行信息安全部诚聘安全大牛！" class="xg-img"/>
+		<p>滴滴出行信息安全部诚聘安全大牛！</P></a></li>
+			</ul>
+
+
+</section></article>
+
+
+<!-- 引用 -->
+<div id="comments" class="comments-area">
+	<h2 class="comments-title">
+		抢沙发
+	</h2>
+			<div id="respond" class="comment-respond row">
+		
+
+
+			<form action="https://www.secpulse.com/wp-comments-post.php" method="post" id="commentform">
+		
+				
+						
+			<div id="comboxinfo">
+					<div class="cominfodiv cominfodiv-author ">
+					<p for="author" class="nicheng">
+     <input type="text" name="author" id="author" class="texty" value="" tabindex="1" /> <span class="required">昵称*</span>
+      </p>
+</div>
+					<div class="cominfodiv cominfodiv-email">
+					<p for="email">	<input type="text" name="email" id="email" class="texty" value="" tabindex="2" /> <span class="required">邮箱*</span>
+						</p>
+					</div>
+					<div class="cominfodiv cominfodiv-url">
+					 	<p for="url"><input type="text" name="url" id="url" class="texty" value="" tabindex="3" /><span>网址 </span>
+						</p>
+					</div>
+					
+			
+				
+</div>		       <div class=" cominfodiv-nr">  
+<textarea class="texty" name="w" id="comment" rows="10" tabindex="4" placeholder="输入评论内容..."></textarea><textarea name="comment" cols="100%" rows="4" style="display:none"></textarea>
+							<div class="submitcom">
+							
+					<input id="submit" name="submit" type="submit" tabindex="5" value="提&nbsp;交"/>
+					<input type='hidden' name='comment_post_ID' value='5415' id='comment_post_ID' />
+<input type='hidden' name='comment_parent' id='comment_parent' value='0' />
+<p style="display: none;"><input type="hidden" id="akismet_comment_nonce" name="akismet_comment_nonce" value="3c4c907b10" /></p><p style="display: none;"><input type="hidden" id="ak_js" name="ak_js" value="77"/></p>				</div>
+				<div id="cancel_comment_reply"><a rel="nofollow" id="cancel-comment-reply-link" href="/archives/5415.html#respond" style="display:none;">取消回复</a></div>
+			
+</div>
+			
+				
+			</form>
+			
+			
+			<script type="text/javascript">
+				document.getElementById("comment").onkeydown = function (moz_ev){
+				var ev = null;
+				if (window.event){
+				ev = window.event;
+				}else{
+				ev = moz_ev;
+				}
+				if (ev != null && ev.ctrlKey && ev.keyCode == 13){
+				document.getElementById("submit").click();}
+				}
+			</script></div>
+	 		
+</div>
+<!-- #comments --></div>
+		
+<div class="xs-right sidebar xs-hidden xss-hidden">
+	<div class="authorbox">
+	<div class="author-top">
+<div id="author-img">
+<img src="https://www.secpulse.com/wp-content/uploads/2015/01/1420329838150-150x150.jpg" width="96" height="96" alt="PulseO0O" class="avatar avatar-96 wp-user-avatar wp-user-avatar-96 alignnone photo" />
+</div>
+<div class="au-name">
+<a href="https://www.secpulse.com/archives/author/jackpulse" title="由PulseO0O发布" rel="author">PulseO0O</a><br>
+ <span class="au-title">总共12篇文章</span>
+</div> </div>
+	<div class="author-word"><span class="quotes q1"></span>
+搞死“永恒之蓝”。	<span class="quotes q2"></span></div>
+	</div>
+	
+				<aside id="recent-posts-2" class="widget-container widget_recent_entries">		<div class="si-title"><h2>最新脉搏</h2></div>		<ul>
+					<li>
+				<a href="https://www.secpulse.com/archives/60653.html">《安天365安全研究》第5期</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60630.html">供应链攻击：CCleaner 5.33官方下载被植入恶意代码（附技术详解）</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60605.html">2017先知创新大会：有ZHI而来</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60576.html">甲方工作杂谈</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60394.html">Catfish—缓存漏洞&#038;&#038;配合CSRF到Getshell</a>
+						</li>
+				</ul>
+		</aside><aside id="hot_comment-3" class="widget-container widget_hot_comment"><div class="si-title"><h2>脉搏热评</h2></div>
+	<ul class="hot_comment_widget">
+		
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59497.html" rel="bookmark" title="XSS挑战之旅学习总结 (7条评论)" >XSS挑战之旅学习总结</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59065.html" rel="bookmark" title="web安全之如何全面发现系统后台 (6条评论)" >web安全之如何全面发现系统后台</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59770.html" rel="bookmark" title="电商的支付风控怎么玩？ (3条评论)" >电商的支付风控怎么玩？</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59466.html" rel="bookmark" title="安天移动安全联合猎豹揭秘无形之贼Dosoft免杀病毒 (2条评论)" >安天移动安全联合猎豹揭秘无形之贼Doso&hellip;</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59262.html" rel="bookmark" title="跟着DVWA学Web安全开发 (2条评论)" >跟着DVWA学Web安全开发</a></li>			</ul>
+
+</aside><aside id="random_post-2" class="widget-container widget_random_post"><div class="si-title"><h2>随机脉搏</h2></div>
+
+	<ul class="random_post">
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/7889.html" rel="bookmark" title="详细阅读 中铁快运Oracle注入（问题厂商不知选的对不对）">中铁快运Oracle注入（问题厂商不知选的对不对）</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/37103.html" rel="bookmark" title="详细阅读 金融安全1#多个内网系统沦陷#工银瑞信基金某系统漏洞">金融安全1#多个内网系统沦陷#工银瑞信基金某系统漏洞</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/29004.html" rel="bookmark" title="详细阅读 中国电信某视频系统中间件配置不当(已getshell)">中国电信某视频系统中间件配置不当(已getshell)</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/31132.html" rel="bookmark" title="详细阅读 中国石化某采油厂数字化管理系统漏洞可远程启停油井">中国石化某采油厂数字化管理系统漏洞可远程启停油井</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/45187.html" rel="bookmark" title="详细阅读 美的邮件系统某员工邮箱弱口令">美的邮件系统某员工邮箱弱口令</a></li>
+					</ul>
+
+
+</aside><aside id="text-11" class="widget-container widget_text"><div class="si-title"><h2>脉搏官方微信公众号</h2></div>			<div class="textwidget"><img src="https://www.secpulse.com/wp-includes/images/SecPulse.png" width="280px" height="364px" /></div>
+		</aside>				</div>
+	</div>
+
+	</section>
+
+  <div class="inner row visible-lg-block">
+
+	<div class="friends">
+		<h3>友情链接</h3>
+		<ul>
+			<li><a href="https://xianzhi.aliyun.com/forum/?secpulse" target="_blank">先知安全社区</a><span>|</span></li>
+			<li><a href="https://threathunter.org/" target="_blank">ThreatHunter社区</a><span>|</span></li>
+			<li><a href="http://www.ijiandao.com/" target="_blank">网络尖刀</a><span>|</span></li>
+			<li><a href="http://navisec.it/" target="_blank">NaviSec导航</a><span>|</span></li>
+		    <li><a href="https://www.easyaq.com/" target="_blank">E安全</a><span>|</span></li>
+			<li><a href="http://www.sec-wiki.com/" target="_blank">Sec-Wiki</a><span>|</span></li>
+			<li><a href="http://www.waitalone.cn/" target="_blank">独自等待</a><span>|</span></li>
+			<li><a href="http://www.shellsec.com/" target="_blank">神刀网</a><span>|</span></li>
+			<li><a href="http://www.ineice.com/" target="_blank">爱内测</a><span>|</span></li>
+			<li><a href="http://www.itet.cn/" target="_blank">北京ITET培训中心</a><span>|</span></li>
+			<li><a href="http://www.ihonker.org/" target="_blank">中国红客联盟</a><span>|</span></li>
+			<li><a href="http://www.bigniu.com/" target="_blank">比戈大牛</a><span>|</span></li>
+			<li><a href="http://www.tiejiang.org/" target="_blank">铁匠运维网</a><span>|</span></li>
+			<li><a href="http://www.nagain.com" target="_blank">娜迦信息</a><span>|</span></li>
+			<li><a href="https://www.secsilo.com/" target="_blank">SecSilo</a><span>|</span></li>
+			<li><a href="https://team.armyzer0.com" target="_blank">armyzer0</a><span>|</span></li>
+			<li><a href="http://www.nosafe.org" target="_blank">NoSafe</a></li>
+		</ul>
+	</div>
+
+	<div class="friends">
+		<h3>合作伙伴</h3>
+		<ul>
+			<a href="https://www.duoyinsu.com" class="external" target="_blank">
+				<img src="https://www.secpulse.com/wp-content/uploads/anshi-logo.png"
+				alt="安识科技" width="150px" height="45px">
+			</a>
+			<a href="http://aq.163.com/module/partner.html" class="external"
+				target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/netease.jpg"
+				alt="网易安全中心" width="150px" height="45px">
+			</a>
+			<a href="https://security.alibaba.com/" class="external"
+				target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/asrc.jpg"
+				alt="阿里安全中心" width="150px" height="45px">
+			</a>
+			
+			<a href="http://yaq.qq.com/" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/yaqnew.png" alt="腾讯御安全"
+				width="140px" height="45px">
+			</a>
+			
+			<a href="http://www.4hou.com" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/4hou.png"
+				alt="嘶吼RoarTalk" width="150px" height="45px">
+			</a>
+			
+			<a href="http://www.ichunqiu.com/?from=secpulse" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/ichunqiu.png" alt="i春秋学院"
+				width="140px" height="45px">
+			</a>
+
+			<a href="#" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/bigsec.png" alt="bigsec岂安科技"
+				width="140px" height="45px">
+			</a>
+		
+			<a href="http://www.milw0rm.cn/" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/milw0rm.png"
+				alt="Milw0rm Team" width="120px" height="40px">
+			</a>
+
+
+			<a href="#" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/cloversec.png"
+				alt="四叶草安全" width="130px" height="45px">
+			</a>
+			<a href="https://www.aqdog.com" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/aqdog.png"
+				alt="安犬云平台" width="140px" height="45px">
+			</a>
+			
+			<a href="http://www.e365.org/" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/e365.png"
+				alt="易安在线" width="130px" height="45px">
+			</a>
+			
+			
+			
+
+		</ul>
+	</div>
+</div>
+<footer class="footer clr" id="footer">
+	<div class="inner inner-footer">
+		<div class="footer-secpulse">
+			<h3>SecPulse</h3>
+			<ul>
+				<li><a href="/about">关于SecPulse</a></li>
+				<!--<li><a href="http://test.secpulse.com">SecPulse专测</a> <sup>NEW!</sup></li>-->
+				<li><a href="/hire">加入我们</a></li>
+				<li><a href="/report">寻求报道</a></li>
+				<li><a href="/contact-us">联系我们</a></li>
+			</ul>
+		</div>
+		<div class="footer-subscribe xs-hidden">
+			<h3>订阅</h3>
+			<ul>
+				<li><a href="/feed">RSS订阅</a></li>
+				<li><a href="/feed">邮箱订阅</a></li>
+				<li><a href="/feed">线下活动订阅</a></li>
+				<li></li>
+				<li><a href="http://weibo.com/311057789">官方微博</a></li>
+				<!-- <li><a href="https://twitter.com/secpulse">Twitter</a></li> -->
+			</ul>
+		</div>
+		<div class="footer-partner">
+			<h3>全力驱动</h3>
+			<ul class="cf">
+				<li><a href="https://www.secpulse.com" class="external"
+					target="_blank"><img
+						src="https://www.secpulse.com/wp-content/uploads/seclogo.png"
+						alt="安全脉搏" width="200px"></a></li>
+			</ul>
+		</div>
+		<div class="footer-copyright xs-hidden">
+			<p>本站由SecPulse安全脉搏团队全力维护。</p>
+			<p>
+				Powered By <a title="安全脉搏" href="https://www.secpulse.com">SecPulse</a>
+			</p>
+			<p>©2013-2017 安全脉搏</p>
+			<p>沪ICP备16016474号</p>
+			<img src="https://www.secpulse.com/wp-includes/images/qrcode.jpg"
+				alt="Qrcode" height="150px" width="150px">
+
+		</div>
+	</div>
+</footer>
+<div id="shangxia">
+	<div id="shang" title="↑ 返回顶部"></div>
+              <div id="comt" title="查看评论"></div>
+              <div id="xia" title="↓ 移至底部"></div>
+</div>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/plugins/akismet/_inc/form.js?ver=3.1.2'></script>
+</body>
+
+</html>

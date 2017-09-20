@@ -1,0 +1,573 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>如何使用开源的AFL FUZZ一个服务器 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="如何使用,开源的AFL,FUZZ一个服务器,模糊测试"/>
+    
+        <meta name="description" content="American Fuzzy Lop (AFL) 是一种开源，协助报告的模糊测试工具，其由谷歌公司的Michał Zalewski开发。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>如何使用开源的AFL FUZZ一个服务器</h2>
+                <div class="article-msg">
+                    <span class="time">2015-07-23 15:22:33</span>
+                                        <span class="read">阅读：30634次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_550"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="550" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://www.fastly.com/blog/how-to-fuzz-server-american-fuzzy-lop"
+                             target="_blank">来源： 360安全播报</a></span>
+                    
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align:center"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(0, 176, 80);" href="http://lcamtuf.coredump.cx/afl/"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(0, 176, 80);"><img alt="http://p8.qhimg.com/t01bb6147b3d977ecc5.png" src="http://p8.qhimg.com/t01bb6147b3d977ecc5.png" title="t01bb6147b3d977ecc5.png"/></span></a></p><p style="text-indent: 2em; text-align: left;"><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(0, 176, 80);" href="http://lcamtuf.coredump.cx/afl/"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(0, 176, 80);">American Fuzzy Lop</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(0, 176, 80);">&nbsp;(AFL)
+是一种开源，协助报告的模糊测试工具，其由谷歌公司的Michał 
+Zalewski开发。在nutshell中，它已将精妙的输入放入到了某个程序，并在目标程序中找到了bug。在该博文中，并没有对服务器的代码库进行
+主要的修改，我将描述如何进行使用AFL的persistent模式对服务器进行修改实验。我已使用了该技术来扩展我们所依赖的和其他我们进行实验的服务
+器的测试范围。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">贯彻整篇文章，我将使用开源&nbsp;</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="https://www.knot-dns.cz/"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Knot DNS</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">作为运行范例对AFL进行基础的配置，但该技术可应用于其它的服务器也能让进程持续运行。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">问题：文件的输入数据和服务器的启动次数</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">AFL通过文件接口来传递输入的数据，但是服务器通常从socket或网络接口中读取数据。此外，在每次执行测试时，默认会重新运行目标程序。因为服务器经常启动一次或多次，所以在探索程序或未公开的漏洞中会妨碍AFL的处理。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">在过去，测试者不得不应用测试案例（或开发的不错的应用或仅是服务器处理逻辑请求的测试子集（观察存在于</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="https://github.com/CZ-NIC/knot/blob/50fdbdc6d873cca8e41fc47e14f971ec4754290f/tests-fuzz/packet.c"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">AFL harness in Knot DNS</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">&nbsp;中的范例）。这些解决方案都是理想化的-第一部分可以消费时间（并且要求需要感觉意会的源码）来实现而后者会限制你的测试范围。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">解决方案：采用Persistent模式</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">从</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://lcamtuf.blogspot.com/2015/06/new-in-afl-persistent-mode.html"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这里</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">你可以了解到更多关于AFL的persistent模式的相关信息。通过较小程度地修改源码，可让测试者控制：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(0, 176, 80);">1.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 当AFL对目标程序进行fork操作时</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(0, 176, 80);">2.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 当AFL将新的输入数据放入应用程序时。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">该模式解决了等待程序开始运行的问题；在没有重启它之前，测试者可以将用于模糊测试的输入数据放到目标程序。主要预先告知测试者在每次重复测试应用程序</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">前必须先小心重启它，将在测试案例，而不是在目标中找到bug。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">需要熟悉的部分：Persistent模式+服务器</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">比编写自定义测试程序（涉及模拟API函数将并且/或将解析逻辑操作提取到独立的程序）花费更少的时间来确认并修改目标代码。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">将技术应用到Knot DNS</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">寻找进程循环部分</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Knot
+ DNS 使用socket来进行通信, 因此我已搜索了用于select的源码并找出读取并处理UDP报文的循环. 这是部分相关源代码 
+(我已经添加了&nbsp;**** AFL: .. ****&nbsp;注释来展示在AFL的persistent模式中用于支持模糊测试而进行改变。):</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">记录：这里我针对的是用于Knot DNS的select操作，但是如果你的目标服务器为了处理网络流量而使用不同的API，那么可以搜索到类似于recv或read的函数来达到相同的目的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">shim</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">我调用shim部分修改的代码来支持persistent模式。第一段shim相当枯燥；它仅声明并初始化其它shim需要的变量：</span></p><pre class="brush:cpp;toolbar:false">#ifdef&nbsp;KNOT_AFL_PERSISTENT_SHIM&nbsp;&nbsp;/*&nbsp;For&nbsp;AFL&nbsp;persistent&nbsp;mode&nbsp;fuzzing&nbsp;shim&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Initialize&nbsp;variables&nbsp;for&nbsp;fuzzing&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;size_t&nbsp;insize;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;sockaddr_in&nbsp;servaddr;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;udp_socket;
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;*env_dest_ip&nbsp;=&nbsp;getenv(&quot;KNOT_AFL_DEST_IP&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;*env_dest_port&nbsp;=&nbsp;getenv(&quot;KNOT_AFL_DEST_PORT&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;dest_port&nbsp;=&nbsp;env_dest_port&nbsp;?&nbsp;strtol(env_dest_port,&nbsp;NULL,&nbsp;10)&nbsp;:&nbsp;9090;
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;*dest_ip&nbsp;=&nbsp;env_dest_ip&nbsp;?&nbsp;env_dest_ip&nbsp;:&nbsp;&quot;127.0.0.1&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;bzero(&amp;servaddr,sizeof(servaddr));
+&nbsp;&nbsp;&nbsp;&nbsp;servaddr.sin_family&nbsp;=&nbsp;AF_INET;
+&nbsp;&nbsp;&nbsp;&nbsp;servaddr.sin_addr.s_addr&nbsp;=&nbsp;inet_addr(dest_ip);
+&nbsp;&nbsp;&nbsp;&nbsp;servaddr.sin_port&nbsp;=&nbsp;htons(dest_port);
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;buf[5120];
+#endif&nbsp;//&nbsp;#ifdef&nbsp;KNOT_AFL_PERSISTENT_SHIM</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">笔记：利用如上的代码可从默认的环境变量中读取IP地址和端口。这是重点，如果你计划进一步运行AFL-你将可能利用服务器的实例来在不同的端口上进行监听。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">其次shim从文件中读取需要模糊测试的输入数据-在该案例中是stdin-并将其放入正在Knot DNS上监听的socket中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">我通常试图将代码部分不保留用户信息以致于我不必要担心将任意痕迹清除。如果你确实在该地方分配了内存，重点在于确保他们已处理提交shim后清理干净，当消息被处理后注意关注任意边缘案例。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">笔记：该代码确实需要认真思考，在该范例中，我使用了Knot-specific数据结构来获取用于socket（服务器将从中读取）的文件描述符。在其它案例中我已经使用了FD_ISSET和一个循环来找到在readfds集中被传递到select的 socket。通常不会很困难-如果你在select文件描述符（它从中读取）集合附近写代码将不会太有难度。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">同时这里记下getenv的使用。如果KNOT_AFL_STDIN，KNOT_AFL_CMIN&nbsp;is set (我使用这个用于afl-cmin的运行), 或&nbsp;AFL_PERSISTENT&nbsp;(在persistent模式中设定).</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">那么仅会执行该段shim，第三部分的shim相当基础。在每次模糊测试时，它将简单地通过发送SIGSTOP信号来完成测试，因此如果afl-cmin运行或不做任何事，那么下次将会发送被处理的报文。</span></p><pre class="brush:cpp;toolbar:false;">#ifdef&nbsp;KNOT_AFL_PERSISTENT_SHIM&nbsp;&nbsp;/*&nbsp;For&nbsp;AFL&nbsp;persistent&nbsp;mode&nbsp;fuzzing&nbsp;shim&nbsp;&nbsp;*/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Signal&nbsp;AFL&nbsp;to&nbsp;fuzz&nbsp;input&nbsp;and&nbsp;continue&nbsp;execution&nbsp;*/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(getenv(&quot;AFL_PERSISTENT&quot;))&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise(SIGSTOP);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;if&nbsp;(getenv(&quot;KNOT_AFL_CMIN&quot;))&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;exit(0);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;#endif&nbsp;//&nbsp;#ifdef&nbsp;KNOT_AFL_PERSISTENT_SHIM</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">我已经使用了预处理器宏来涵盖以上所有的shim。通过这种方法，但shims仍会玷污代码库，至少他们不会和任何其他的构建代码相冲突。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">模糊测试</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">阅读文档，</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://lcamtuf.coredump.cx/afl/README.txt"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">fuzzing with AFL</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">和</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="http://lcamtuf.blogspot.com/2015/06/new-in-afl-persistent-mode.html"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">using persistent mode</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">，你可以了解到更多关于AFL的信息。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">配置并编译app</span></strong></p><pre class="brush:bash;toolbar:false;">$&nbsp;CC=~/afl-1.83b/afl-clang-fast&nbsp;CFLAGS=&#39;-DKNOT_AFL_PERSISTENT_SHIM&#39;&nbsp;./configure&nbsp;--disable-shared
+$&nbsp;make</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">笔记：你将不得不从&nbsp;llvm_mode目录中编译afl-clang-fast来支持persistent模式；更多信息请查看README。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">将测试案例最小化</span></strong></p><pre class="brush:bash;toolbar:false;">KNOTD_AFL_CMIN=1&nbsp;~/afl-1.83b/afl-cmin&nbsp;-i&nbsp;~/knot-seeds&nbsp;-o&nbsp;~/knot-seeds-cmin&nbsp;--&nbsp;~/knot-dns/src/knotd&nbsp;-c&nbsp;my_config.config</pre><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">用 persistent 模式开始进行模糊测试</span></strong></p><pre class="brush:bash;toolbar:false;">AFL_PERSISTENT=1&nbsp;~/afl-1.83b/afl-fuzz&nbsp;-i&nbsp;~/knot-seeds-cmin&nbsp;-o&nbsp;~/my_output_dir&nbsp;~/knot-dns/src/knotd&nbsp;-c&nbsp;my_config.config</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">AFL中使用的persistent模式是一种令人敬畏的功能，但是你没有必要用我说的话语来描绘它。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">如果你已进行了更深入的研究，那么希望你现在能对AFL的persistent模式有更深刻的理解来增加你进行模糊测试的范围。当我曾经使用了Knot DNS作为范例时，该技术应该可应用于多数服务器或使用读取并处理的循环模板的伺服器。随着进一步的学习，甚至带来超过协议级状态的服务器在persistent模式下也应该可以被定位。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">脚注: 那么bug在哪?</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">Knot团队已经使用AFL来模糊测试服务器逻辑（并且我已将persistent模式的补丁&nbsp;</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;" href="https://gitlab.labs.nic.cz/labs/knot/merge_requests/410"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">upstream</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">发送给了他们），但是仅花费了几小时在低端PC上使用该技术（我们正在用upstream调整一个补丁，因此在这时我拒绝花费时间来讨论这方面的事），我就可以找到存在于另一个流行的DNS服务器的漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">不顾一切的，为了给予完整的非科学性的测试范例(AFL持续性模块带来的项目，此处出自用存在的测试应用在笔记本的VM中的AFL下进行模糊测试KnotDNS的结果概要，它包括了lcov/genhtml覆盖范围：</span></p><pre class="brush:html;toolbar:false;">Overall&nbsp;coverage&nbsp;rate:
+&nbsp;&nbsp;lines......:&nbsp;24.5%&nbsp;(711&nbsp;of&nbsp;2903&nbsp;lines)
+&nbsp;&nbsp;functions..:&nbsp;28.1%&nbsp;(88&nbsp;of&nbsp;313&nbsp;functions)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">出于比较的目的，此处是将简单化的config文件应用于新的测试应用进行实验的结果：</span></p><pre class="brush:html;toolbar:false;">Overall&nbsp;coverage&nbsp;rate:
+&nbsp;&nbsp;lines......:&nbsp;23.9%&nbsp;(6638&nbsp;of&nbsp;27796&nbsp;lines)
+&nbsp;&nbsp;functions..:&nbsp;32.9%&nbsp;(704&nbsp;of&nbsp;2139&nbsp;functions)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">当报告出覆盖范围时，初始化为利用persistent模式运行，line和function的覆盖范围是通过利用新的测试程序来达到目的的。（笔记：如果通过百分率将你搞糊涂了，那么考虑使用程序的大小来进行衡量）。此外，通过使用新的测试程序来让AFL覆盖的line被执行地更多。当使用存在的测试程序进行时长5分钟的实验退出时，在如下展示了AFL的状态：</span></p><pre class="brush:html;toolbar:false;">total&nbsp;execs&nbsp;:&nbsp;518k&nbsp;
+exec&nbsp;speed&nbsp;:&nbsp;1610/sec</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">当新的exit退出时，为如下信息：</span></p><pre class="brush:html;toolbar:false;">total&nbsp;execs&nbsp;:&nbsp;1.34M&nbsp;
+exec&nbsp;speed&nbsp;:&nbsp;3382/sec</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">因此，当你没有在该博文中找到0day时，在覆盖范围内，执行区域，和相关技术将刺激你对其进行尝试。感谢阅读！</span></p><div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"></div></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://www.fastly.com/blog/how-to-fuzz-server-american-fuzzy-lop" target="_blank">原文链接：https://www.fastly.com/blog/how-to-fuzz-server-american-fuzzy-lop</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="如何使用开源的AFL FUZZ一个服务器 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="550" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="64d932c9bb50dc5a83db601d9b02e735">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14160" user-name="土司观光团" href="javascript:;">
+                土司观光团            </a>
+                        <span class="comment-time">2017-05-15 09:08:10</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14160">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14160" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">翻译好烂......</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="550" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+                                <li><a href="/learning/detail/4424.html" alt="【知识】9月16日 - 每日安全知识热点" target="_blank">【知识】9月16日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

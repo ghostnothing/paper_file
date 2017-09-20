@@ -1,0 +1,842 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】利用动态符号执行进行代码覆盖测试 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="漏洞挖掘,fuzz测试,动态符号执行,代码覆盖测试"/>
+    
+        <meta name="description" content="代码覆盖测试主要用于漏洞研究领域。主要目的是使用不同输入覆盖程序代码的不同部分。如果某个输入导致程序崩溃，我们将检测崩溃是否能被利用。有很多代码覆盖测试的方法，比如随机测试等。但是本文重点关注使用动态符号执行进行代码覆盖测试。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】利用动态符号执行进行代码覆盖测试</h2>
+                <div class="article-msg">
+                    <span class="time">2017-01-19 20:50:48</span>
+                    
+                                        <span class="read">阅读：20713次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3430"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3430" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://triton.quarkslab.com/blog/Code-coverage-using-dynamic-symbolic-execution/"
+                             target="_blank">来源： quarkslab.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2775084127" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2775084127" style="color:#848e99;">myswsun</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="white-space: normal; text-indent: 0em; text-align: center;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><img src="http://p1.qhimg.com/t018bc6291b2cd39f2c.jpg" title="t018bc6291b2cd39f2c.jpg" alt="http://p1.qhimg.com/t018bc6291b2cd39f2c.jpg"/></span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">翻译：</span></strong></span><a href="http://bobao.360.cn/member/contribute?uid=2775084127" target="_blank" textvalue="myswsun" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">myswsun</span></strong><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></span></a></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">预估稿费：200RMB</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong><strong>投稿方式：发送邮件至</strong><a href="mailto:linwei@360.cn" target="_self" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong>linwei#360.cn</strong></span></a><strong>，或登陆</strong><a href="http://bobao.360.cn/contribute/index" target="_blank" style="color: rgb(0, 112, 192); text-decoration: none;"><strong>网页版</strong></a><strong>在线投稿</strong></strong></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x00&nbsp;前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">代码覆盖测试主要用于漏洞研究领域。主要目的是使用不同输入覆盖程序代码的不同部分。如果某个输入导致程序崩溃，我们将检测崩溃是否能被利用。有很多代码覆盖测试的方法，比如随机测试等。但是本文重点关注使用动态符号执行进行代码覆盖测试。覆盖代码不意味着能找到所有的可能的缺陷。一些缺陷不会引起程序崩溃。然而2017年刚到，勒索软件以惊人的速度爆发。这周我们发现了大量的新变种，尤其是以很有名的名次命名的FSociety。我们也发现了一些解密工具，圣诞节有关的勒索软件，CryptoMix/CryptFile2的分析，大量的小的勒索软件。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">0x01&nbsp;代码覆盖和动态符号执行（DSE）</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">不像SSE（静态符号执行），DSE应用于跟踪，并且只有在执行期间达到这些分支时才能发现新的分支。要想到达另一个路径，我们必须搞清楚从上个跟踪发现的分支约束条件。然后我们重复操作，直到到达所有分支。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">举个例子，我们假设程序P&nbsp;有称为I的输入。I可以是模型M或者随机种子R。执行P（I）能返回一组PC约束。所有的φi表示基础块，πi表示分支约束。模型Mi是约束πi的一种可靠的解决方案，M1 = Solution(¬π1&nbsp;∧&nbsp;π2)。为了发现所有的路径，我们维护一个叫W的工作列表，它是一组M。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在第一轮迭代，执行I = R,&nbsp;W =&nbsp;∅&nbsp;和P(I) → PC。然后是∀π&nbsp;∈&nbsp;PC, W = W&nbsp;∪&nbsp;{Solution(π)}&nbsp;，再次执行∀M&nbsp;∈&nbsp;W, P(M)。当模型M作为程序的输入后，将它从列表W中删除。重复操作知道W为空。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t0173487704371991b1.png" title="t01740bea9c3d6e4a77.png" alt="http://p5.qhimg.com/t01740bea9c3d6e4a77.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">符号执行的代码覆盖测试既有优点又有缺点。它对于在混淆的二进制文件中很有帮助。确实利用符号覆盖能检测到隐藏的、不可达到的代码但会是个平面的图表。最糟糕的是当你的表达式太复杂，可能会超时或巨大的内存消耗（在过去，我们符号表达式在超时前消耗了差不多450 G的 RAM）。这种场景主要发生在分析超大二进制文件或者包含复杂功能的混淆的二进制文件。<br/></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">0x02&nbsp;使用Triton进行代码覆盖测试</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从版本v0.1 build 633开始，Triton整合了我们代码覆盖测试需要的一切。它可以让我们更好的处理及计算SMT2-lib表达的</span><a href="https://en.wikipedia.org/wiki/Abstract_syntax_tree" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="color: rgb(255, 0, 0);">AST</span></a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。下面我们将关注代码覆盖的设计和使用的算法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">算法</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以下面的</span><a href="https://github.com/JonathanSalwan/Triton/blob/master/src/samples/crackmes/crackme_xor.c#L7" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">代码</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为例。</span></p><pre class="brush:plain;toolbar:false">01.&nbsp;char&nbsp;*serial&nbsp;=&nbsp;&quot;\x31\x3e\x3d\x26\x31&quot;;
+02.&nbsp;int&nbsp;check(char&nbsp;*ptr)
+03.&nbsp;{
+04.&nbsp;&nbsp;&nbsp;int&nbsp;i&nbsp;=&nbsp;0;
+05.&nbsp;&nbsp;&nbsp;while&nbsp;(i&nbsp;&lt;&nbsp;5){
+06.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(((ptr[i]&nbsp;-&nbsp;1)&nbsp;^&nbsp;0x55)&nbsp;!=&nbsp;serial[i])
+07.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;1;
+08.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;i++;
+09.&nbsp;&nbsp;&nbsp;}
+10.&nbsp;&nbsp;&nbsp;return&nbsp;0;
+11.&nbsp;}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">函数控制流图如下显示。它是一个好例子，因为我们需要找到好的输入才能覆盖所有的基础块。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01a4edebc990a01f7f.png" title="t012003ba6bf1d2a31f.png" alt="http://p4.qhimg.com/t012003ba6bf1d2a31f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到可以看到只有一个变量可控，位于地址rbp+var_18，指向argv[1]的指针。目标是通过计算约束条件和使用快照引擎到达check函数的所有基础块。例如到达位于地址0x4005C3基础块的约束条件是[rbp+var_4] &gt; 4，但是我们不能直接控制这个变量。另一方面，在地址0x4005B0处的跳转依赖于用户的输入并且这个约束条件可以通过符号执行解决。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">归纳以前的想法的算法是使用基于微软的Fuzzer算法（</span><a href="http://research.microsoft.com/en-us/um/people/pg/public_psfiles/ndss2008.pdf" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">SAGE</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">），下图表示包含约束条件的check函数。这个start和end节点表示了我们的函数开端（0x40056D）和函数的结尾（0x4005C8）</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t01dd3f0516c9d49da4.png" title="t015d099b3c3b215b40.png" alt="http://p6.qhimg.com/t015d099b3c3b215b40.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在首次执行前，我们不知道任何的分支约束。因此我们按照上文所述，我们注入一些随机种子来收集第一个PC并且构建我们的W集合。首次执行P(I)的跟踪结果由下图蓝色表示。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">执行结果给了我们第一条路径约束P(I)&nbsp;→ (π0&nbsp;∧&nbsp;¬π1)。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t0139c299b9bc795e49.png" title="t010f32c619cc26952b.png" alt="http://p5.qhimg.com/t010f32c619cc26952b.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">基于第一次跟踪，我们知道发现了两条分支（π0&nbsp;∧&nbsp;¬π1），并且还有两条没有发现。为了到达基础块φ3，我们计算第一个分支约束的否定条件。当且仅当Solution(¬π0)&nbsp;是SAT，我们将它添加到模型工作列表W中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">同样到达&nbsp;φ4&nbsp;可以得到W&nbsp;=&nbsp;W&nbsp;∪&nbsp;{Solution(π0&nbsp;∧&nbsp;¬(¬π1))}。所有解决方案都生成了并且模型被添加到工作列表中，我们执行工作列表中每个模型。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t010da25f01905858ae.png" title="t015a8952a7523898b3.png" alt="http://p8.qhimg.com/t015a8952a7523898b3.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">实现</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">执行代码覆盖的一个条件是在一个跳转指令处能预测下一条指令的地址。这是构建路径约束的必要条件。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们不能在一个分支指令后放置一个回调，因为RIP寄存器已经改变了。因为Triton为所有的寄存器创建语义表达式，所以在分支指令时可以判定RIP。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一次，我们开发了一个SMT判定器用来计算RIP，但是我们发现Pin提供的用于获得下一个RIP值的IARG_BRANCH_TARGET_ADDR和IARG_BRANCH_TAKEN有点滞后。使用Pin计算下一个地址非常简单，但是SMT判定器用来检查指令的语义是很有用的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了更好的演示判定，我们实现了</span><a href="https://en.wikipedia.org/wiki/Visitor_pattern" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">visitor pattern</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">来将SMT的抽象语法树（AST）转化为Z3的抽象语法树。这个设计能够用于将SMT AST转化为任意其他的表达。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Z3的AST使用Z3 API处理更加简单。转化代码是</span><a href="https://github.com/JonathanSalwan/Triton/blob/master/src/includes/Z3ast.h" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">src/smt2lib/z3AST.h</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;">&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">和&nbsp;</span><a href="https://github.com/JonathanSalwan/Triton/blob/master/src/smt2lib/z3AST.cpp" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">src/smt2lib/z3AST.cpp</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们解释代码覆盖的工具如何工作。让我们假定输入来自命令行。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，我们有：</span></p><pre class="brush:plain;toolbar:false">160.&nbsp;def&nbsp;run(inputSeed,&nbsp;entryPoint,&nbsp;exitPoint,&nbsp;whitelist&nbsp;=&nbsp;[]):
+161.&nbsp;...
+175.&nbsp;if&nbsp;__name__==&#39;__main__&#39;:
+176.&nbsp;&nbsp;&nbsp;TritonExecution.run(&quot;bad&nbsp;!&quot;,&nbsp;0x400480,&nbsp;0x40061B,&nbsp;[&quot;main&quot;,&nbsp;&quot;check&quot;])&nbsp;#&nbsp;crackme_xor</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在176行，我们定义了输入种子bad！，代表程序的第一个参数。然后我们给出代码覆盖的起始地址，在这个地址我们将做一个快照。第三个参数将匹配最后一个块，这个地址我们将恢复快照。最后，我们设置一个避免库函数、加密函数等的白名单。</span></p><pre class="brush:plain;toolbar:false">134.&nbsp;def&nbsp;mainAnalysis(threadId):
+135.
+136.&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[+]&nbsp;In&nbsp;main&quot;
+137.&nbsp;&nbsp;&nbsp;&nbsp;rdi&nbsp;=&nbsp;getRegValue(IDREF.REG.RDI)&nbsp;#&nbsp;argc
+138.&nbsp;&nbsp;&nbsp;&nbsp;rsi&nbsp;=&nbsp;getRegValue(IDREF.REG.RSI)&nbsp;#&nbsp;argv
+139.
+140.&nbsp;&nbsp;&nbsp;&nbsp;argv0_addr&nbsp;=&nbsp;getMemValue(rsi,&nbsp;IDREF.CPUSIZE.QWORD)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;argv[0]&nbsp;pointer
+141.&nbsp;&nbsp;&nbsp;&nbsp;argv1_addr&nbsp;=&nbsp;getMemValue(rsi&nbsp;+&nbsp;8,&nbsp;IDREF.CPUSIZE.QWORD)&nbsp;&nbsp;#&nbsp;argv[1]&nbsp;pointer
+142.
+143.&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[+]&nbsp;In&nbsp;main()&nbsp;we&nbsp;set&nbsp;:&quot;
+144.&nbsp;&nbsp;&nbsp;&nbsp;od&nbsp;=&nbsp;OrderedDict(sorted(TritonExecution.input.dataAddr.items()))
+145.
+146.&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;k,v&nbsp;in&nbsp;od.iteritems():
+147.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;\t[0x%x]&nbsp;=&nbsp;%x&nbsp;%c&quot;&nbsp;%&nbsp;(k,&nbsp;v,&nbsp;v)
+148.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;setMemValue(k,&nbsp;IDREF.CPUSIZE.BYTE,&nbsp;v)
+149.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;convertMemToSymVar(k,&nbsp;IDREF.CPUSIZE.BYTE,&nbsp;&quot;addr_%d&quot;&nbsp;%&nbsp;k)
+150.
+151.&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;idx,&nbsp;byte&nbsp;in&nbsp;enumerate(TritonExecution.input.data):
+152.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;argv1_addr&nbsp;+&nbsp;idx&nbsp;not&nbsp;in&nbsp;TritonExecution.input.dataAddr:&nbsp;#&nbsp;Not&nbsp;overwrite&nbsp;the&nbsp;previous&nbsp;setting
+153.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;\t[0x%x]&nbsp;=&nbsp;%x&nbsp;%c&quot;&nbsp;%&nbsp;(argv1_addr&nbsp;+&nbsp;idx,&nbsp;ord(byte),&nbsp;ord(byte))
+154.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;setMemValue(argv1_addr&nbsp;+&nbsp;idx,&nbsp;IDREF.CPUSIZE.BYTE,&nbsp;ord(byte))
+155.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;convertMemToSymVar(argv1_addr&nbsp;+&nbsp;idx,&nbsp;IDREF.CPUSIZE.BYTE,&nbsp;&quot;addr_%d&quot;&nbsp;%&nbsp;idx)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下一个执行的代码是mainAnalysis回调函数，我们注入一些值到输入中（行148，154），我们能通过符号变量覆盖这些输入（行149，155）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">所有被选择的输入存储在全局变量TritonExecution.input中。然后我们开始代码检测。</span></p><pre class="brush:plain;toolbar:false">58.&nbsp;if&nbsp;instruction.getAddress()&nbsp;==&nbsp;TritonExecution.entryPoint&nbsp;and&nbsp;not&nbsp;isSnapshotEnabled():
+59.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[+]&nbsp;Take&nbsp;Snapshot&quot;
+60.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;takeSnapshot()
+61.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当我们在入口点时，我们做一个快照，为了用新的输入重新执行代码检测。</span></p><pre class="brush:plain;toolbar:false">52.&nbsp;if&nbsp;instruction.getAddress()&nbsp;==&nbsp;TritonExecution.entryPoint&nbsp;+&nbsp;2:
+53.&nbsp;&nbsp;&nbsp;TritonExecution.myPC&nbsp;=&nbsp;[]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Reset&nbsp;the&nbsp;path&nbsp;constraint
+54.&nbsp;&nbsp;&nbsp;TritonExecution.input&nbsp;=&nbsp;TritonExecution.worklist.pop()&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Take&nbsp;the&nbsp;first&nbsp;input
+55.&nbsp;&nbsp;&nbsp;TritonExecution.inputTested.append(TritonExecution.input)&nbsp;&nbsp;#&nbsp;Add&nbsp;this&nbsp;input&nbsp;to&nbsp;the&nbsp;tested&nbsp;input
+56.&nbsp;&nbsp;&nbsp;return</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们重置路径约束（行53），从工作列表中取出一个新的输入。</span></p><pre class="brush:plain;toolbar:false">63.&nbsp;if&nbsp;instruction.isBranch()&nbsp;and&nbsp;instruction.getRoutineName()&nbsp;in&nbsp;TritonExecution.whitelist:
+64.
+65.&nbsp;&nbsp;&nbsp;addr1&nbsp;=&nbsp;instruction.getAddress()&nbsp;+&nbsp;2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Address&nbsp;next&nbsp;to&nbsp;this&nbsp;one
+66.&nbsp;&nbsp;&nbsp;addr2&nbsp;=&nbsp;instruction.getOperands()[0].getValue()&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Address&nbsp;in&nbsp;the&nbsp;instruction&nbsp;condition
+67.
+68.&nbsp;&nbsp;&nbsp;#&nbsp;[PC&nbsp;id,&nbsp;address&nbsp;taken,&nbsp;address&nbsp;not&nbsp;taken]
+69.&nbsp;&nbsp;&nbsp;if&nbsp;instruction.isBranchTaken():
+70.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TritonExecution.myPC.append([ripId,&nbsp;addr2,&nbsp;addr1])
+71.&nbsp;&nbsp;&nbsp;else:
+72.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TritonExecution.myPC.append([ripId,&nbsp;addr1,&nbsp;addr2])
+73.
+74.&nbsp;&nbsp;&nbsp;return</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上述代码检测是否位于分支指令（如jnz，jle等）或者位于白名单中的函数中。如果是，我们得到两种可能的地址（addr1和addr2），通过isBranchTaken()（行69）计算有效的地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后，我们将条件约束存储在RIP表达式中。</span></p><pre class="brush:plain;toolbar:false">81.&nbsp;if&nbsp;instruction.getAddress()&nbsp;==&nbsp;TritonExecution.exitPoint:
+82.&nbsp;&nbsp;print&nbsp;&quot;[+]&nbsp;Exit&nbsp;point&quot;
+83.
+84.&nbsp;&nbsp;#&nbsp;SAGE&nbsp;algorithm
+85.&nbsp;&nbsp;#&nbsp;http://research.microsoft.com/en-us/um/people/pg/public_psfiles/ndss2008.pdf
+86.&nbsp;&nbsp;for&nbsp;j&nbsp;in&nbsp;range(TritonExecution.input.bound,&nbsp;len(TritonExecution.myPC)):
+87.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;expr&nbsp;=&nbsp;[]
+88.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;i&nbsp;in&nbsp;range(0,j):
+89.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ripId&nbsp;=&nbsp;TritonExecution.myPC[i][0]
+90.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;symExp&nbsp;=&nbsp;getFullExpression(getSymExpr(ripId).getAst())
+91.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;addr&nbsp;=&nbsp;TritonExecution.myPC[i][1]
+92.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;expr.append(smt2lib.smtAssert(smt2lib.equal(symExp,&nbsp;smt2lib.bv(addr,&nbsp;&nbsp;64))))
+93.
+94.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ripId&nbsp;=&nbsp;TritonExecution.myPC[j][0]
+95.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;symExp&nbsp;=&nbsp;getFullExpression(getSymExpr(ripId).getAst())
+96.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;addr&nbsp;=&nbsp;TritonExecution.myPC[j][2]
+97.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;expr.append(smt2lib.smtAssert(smt2lib.equal(symExp,&nbsp;smt2lib.bv(addr,&nbsp;&nbsp;64))))
+98.
+99.
+100.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;expr&nbsp;=&nbsp;smt2lib.compound(expr)
+101.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;model&nbsp;=&nbsp;getModel(expr)
+102.
+103.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;len(model)&nbsp;&gt;&nbsp;0:
+104.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;newInput&nbsp;=&nbsp;TritonExecution.input
+105.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;newInput.setBound(j&nbsp;+&nbsp;1)
+106.
+107.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;k,v&nbsp;in&nbsp;model.items():
+108.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;symVar&nbsp;=&nbsp;getSymVar(k)
+109.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;newInput.addDataAddress(symVar.getKindValue(),&nbsp;v)
+110.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;newInput.dataAddr
+111.
+112.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;isPresent&nbsp;=&nbsp;False
+113.
+114.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;inp&nbsp;in&nbsp;TritonExecution.worklist:
+115.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;inp.dataAddr&nbsp;==&nbsp;newInput.dataAddr:
+116.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;isPresent&nbsp;=&nbsp;True
+117.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break
+118.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;isPresent:
+119.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TritonExecution.worklist.append(newInput)
+120.
+121.&nbsp;&nbsp;#&nbsp;If&nbsp;there&nbsp;is&nbsp;input&nbsp;to&nbsp;test&nbsp;in&nbsp;the&nbsp;worklist,&nbsp;we&nbsp;restore&nbsp;the&nbsp;snapshot
+122.&nbsp;&nbsp;if&nbsp;len(TritonExecution.worklist)&nbsp;&gt;&nbsp;0&nbsp;and&nbsp;isSnapshotEnabled():
+123.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[+]&nbsp;Restore&nbsp;snapshot&quot;
+124.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;restoreSnapshot()
+125.
+126.&nbsp;&nbsp;return</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当我们在出口点是是最后一步。行84-120是SAGE的实现。简言之，我们浏览路径约束列表，对于每个PC，我们尝试获得满足否定的模型。如果有不可靠的模型到达了新的目标块中，我们将这个模型添加到工作列表中。一旦所有的模型被插入工作列表中，我们恢复快照并且重新执行每个模型。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">全部代码能在</span><a href="https://github.com/JonathanSalwan/Triton/blob/master/src/tools/code_coverage.py" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">这里</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">找到，我们</span><a href="https://triton.quarkslab.com/blog/Code-coverage-using-dynamic-symbolic-execution/#3.1" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">例子</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的执行过程如下：</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01df04b96f6785a529.png" title="t0186b36ffdbd39bdb1.png" alt="http://p5.qhimg.com/t0186b36ffdbd39bdb1.png"/></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01f5d59b50d807be4c.png" title="t01e56150d187d0bca1.png" alt="http://p7.qhimg.com/t01e56150d187d0bca1.png"/></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-align: left; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-align: left; text-indent: 2em;">0x03 总结</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">尽管代码覆盖使用符号执行是一个好的方法，但它是个复杂的任务。路径遍历意味着内存消耗，并且一些情况下要计算的表达式太过复杂。目前，判定器非常慢，判定表达式非常慢。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://triton.quarkslab.com/blog/Code-coverage-using-dynamic-symbolic-execution/" target="_blank">原文链接：https://triton.quarkslab.com/blog/Code-coverage-using-dynamic-symbolic-execution/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】利用动态符号执行进行代码覆盖测试 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3430" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11480" user-name="被985完虐的考研D0sd4y" href="javascript:;">
+                被985完虐的考研D0sd4y            </a>
+                        <span class="comment-time">2017-01-20 12:30:41</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11480">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11480" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@o_0xJ0k3r:</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/4x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11478" user-name="BruceFan1992" href="javascript:;">
+                BruceFan1992            </a>
+                        <span class="comment-time">2017-01-20 09:30:41</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11478">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11478" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@我叫0day谁找我_:gggggggg//@o_0xJ0k3r:</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/6x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11476" user-name="呆萌的叶星" href="javascript:;">
+                呆萌的叶星            </a>
+                        <span class="comment-time">2017-01-19 20:00:42</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11476">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11476" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@HappyQQ://@福柯式精神病: Repost</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11475" user-name="HappyQQ" href="javascript:;">
+                HappyQQ            </a>
+                        <span class="comment-time">2017-01-19 19:50:57</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11475">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11475" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@福柯式精神病: Repost</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11474" user-name="HappyQQ" href="javascript:;">
+                HappyQQ            </a>
+                        <span class="comment-time">2017-01-19 19:50:57</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11474">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11474" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@福柯式精神病: Repost</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11473" user-name="HappyQQ" href="javascript:;">
+                HappyQQ            </a>
+                        <span class="comment-time">2017-01-19 19:50:42</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11473">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11473" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@福柯式精神病: Repost</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11472" user-name="福柯式精神病" href="javascript:;">
+                福柯式精神病            </a>
+                        <span class="comment-time">2017-01-19 19:40:47</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11472">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11472" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">Repost</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/12x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11470" user-name="我叫0day谁找我_" href="javascript:;">
+                我叫0day谁找我_            </a>
+                        <span class="comment-time">2017-01-19 18:10:40</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11470">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11470" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">gggggggg//@o_0xJ0k3r:</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3430" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

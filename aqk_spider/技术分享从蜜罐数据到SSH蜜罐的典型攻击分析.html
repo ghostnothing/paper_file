@@ -1,0 +1,557 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】从蜜罐数据到SSH蜜罐的典型攻击分析 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="蜜罐,SSH蜜罐,360天眼实验室"/>
+    
+        <meta name="description" content="随着威胁情报的兴起和虚拟化技术的发展，蜜罐技术也得到了新的发展。360天眼实验室于2016年中旬运营了一套蜜罐系统，发展至今已相对成熟，蜜罐节点遍布世界五大洲，覆盖了20多个国家，涵盖企业服务、工控服务等常见端口。本篇文章为从蜜罐数据到SSH蜜罐的典型攻击分析。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】从蜜罐数据到SSH蜜罐的典型攻击分析</h2>
+                <div class="article-msg">
+                    <span class="time">2017-06-01 11:56:09</span>
+                    
+                                        <span class="read">阅读：24624次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3929"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3929" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2794533901" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2794533901" style="color:#848e99;">360天眼实验室</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p2.qhimg.com/t015780fa9bdc2281ad.jpg" title="t015780fa9bdc2281ad.jpg" alt="http://p2.qhimg.com/t015780fa9bdc2281ad.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x01．蜜罐整体介绍</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">随着威胁情报的兴起和虚拟化技术的发展，蜜罐技术也得到了新的发展。可以通过虚拟机来实现高交互蜜罐，以及通过docker实现的业务型蜜罐，不再像是以前需要昂贵硬件设备的部署支撑，大大减少了蜜罐的部署成本。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">蜜罐高保真高质量的数据集把安全人员从以前海量日志分析的繁琐过程中解脱出来，对于蜜罐的连接访问都是攻击信息，并且不再像以前的特征分析具有一定的滞后性，可以用于捕获新型的攻击和方法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">360天眼实验室于2016年中旬运营了一套蜜罐系统，发展至今已相对成熟，蜜罐节点遍布世界五大洲，覆盖了20多个国家，涵盖企业服务、工控服务等常见端口。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1）	蜜罐部署</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">目前的蜜罐集群集管理、监控、数据收集与分析，实现基本全自动化流程。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t013c848a0ba15b8f8a.png" title="t015354d9d0292c978c.png" alt="http://p5.qhimg.com/t015354d9d0292c978c.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2）	总体数据量</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">目前我们的蜜罐日志每天以近10W的数量增长。随着蜜罐数量的增加，这个数据还会进一步增长。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">攻击IP的地理分布图，攻击IP遍布全球，其中东南亚和南美最多。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01bce58b3ef17f4c02.png" title="t01d722ed194814b35d.png" alt="http://p3.qhimg.com/t01d722ed194814b35d.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面是以2016年11月以来的攻击IP每日访问情况。其中来自俄罗斯的某IP日访问日志条数达到88万条。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01c15e32ee0f142c6a.png" title="t017ca0b992581e4c23.png" alt="http://p1.qhimg.com/t017ca0b992581e4c23.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">攻击端口统计，可以看出攻击者对哪些端口比较感兴趣，也能在第一时间发现基于某个端口的攻击事件的爆发。比如，通过统计4月份以来的端口访问情况，分别发现在4月中旬和5月中旬有对445端口扫描的小高峰，这与SMB漏洞的爆发不无关系。而基于6881端口的访问存在几次暴增的访问流量，可能跟P2P探测有关。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t0136047c41771c3e8c.png" title="t0159d56b472f793ccf.png" alt="http://p8.qhimg.com/t0159d56b472f793ccf.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x02 SSH蜜罐（Cowrie）典型攻击分析</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="color: rgb(0, 112, 192); font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">1）SSH蜜罐分析</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面我们以SSH蜜罐（22端口）来介绍我们通过蜜罐数据发现的典型攻击。今年4月10日以来成功爆破SSH蜜罐的统计数据，其中4月中旬达到了一个峰值。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01a6b0de9bcce45ec5.png" title="t017c521192abbad327.png" alt="http://p4.qhimg.com/t017c521192abbad327.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">蜜罐中发现的用于自动化爆破的用户名、密码排行如下。其中，root/12345还是黑客最喜欢探测的账号口令。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">用户名TOP 10：</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01bb5893bb349e43a6.png" title="t01562fdc70c4cf3a03.png" alt="http://p6.qhimg.com/t01562fdc70c4cf3a03.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">密码TOP 10：</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01fc715157de112862.png" title="t01f3ae9a3c7dfa01d0.png" alt="http://p2.qhimg.com/t01f3ae9a3c7dfa01d0.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">攻击者在成功入侵蜜罐后，一般都会执行相关命令。比较靠前的有意思的命令如下，其中来自法国的46.218.149.85频繁在众多命令中出现，充当了恶意下载站的角色。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t012cb3584b8bd032d8.png" title="t010372704b5a9e887b.png" alt="http://p6.qhimg.com/t010372704b5a9e887b.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">另外，引起全球震惊的Mirai僵尸网络于2016年10月份曾令美国多个城市出现互联网瘫痪情况。收集到的Mirai的恶意样本如下：</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01347a9b96dfeeab2a.png" title="t01cc2cea0351df9987.png" alt="http://p2.qhimg.com/t01cc2cea0351df9987.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2）典型攻击分析 &nbsp;&nbsp;</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从蜜罐数据来看，我们选择了SSH攻击当中较为常见的两种：</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1）僵尸病毒投放：</span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"> 通过爆破成功登陆后下载恶意软件（僵尸病毒），使得机器沦为肉鸡，以便实施进一步的攻击；</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2）SSHTunnel跳板攻击：</span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"> 将蜜罐作为跳板，利用蜜罐扫描或攻击其他机器，我们发现的是利用蜜罐去爆破一些金融电商的登录入口。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">a）僵尸病毒投放分析</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">恶意样本从命名方式来看，主要有两种。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01f3104fe7159d27d5.png" title="t018591ce4884b51cbc.png" alt="http://p9.qhimg.com/t018591ce4884b51cbc.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一种是以常见的linux程序来命名，如sh，wget；第二种是以tty来命名。命名方式比较隐蔽，加大了管理人员的排查难度。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们从中抽取一条典型的攻击为例进行分析。5月17日，源IP为94.102.52.195对我们的蜜罐进行ssh爆破，然后通过root/admin登陆成功。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t0115752906ef8dfe3d.png" title="t01335add89e2b669c4.png" alt="http://p5.qhimg.com/t01335add89e2b669c4.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">进入到shell之后，可以看到挑选了几个目录然后通过wget，tftp，ftpget三种方法来下载恶意的shell脚本</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t015376138f97bf95bb.png" title="t015376138f97bf95bb.png" alt="http://p1.qhimg.com/t015376138f97bf95bb.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过查看shell脚本发现，3种方式下载的恶意脚本是一样的，这应该是攻击者为了确保能下载成功。Shell脚本如下：</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01fbafe3e25e0e1532.png" title="t01fbafe3e25e0e1532.png" alt="http://p3.qhimg.com/t01fbafe3e25e0e1532.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这次攻击下载的恶意样本如下：</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01431d117988a70fd6.png" title="t01431d117988a70fd6.png" alt="http://p8.qhimg.com/t01431d117988a70fd6.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">VirusTotal的检测结果:</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01cd5c4524c427d9e7.png" title="t01cd5c4524c427d9e7.png" alt="http://p2.qhimg.com/t01cd5c4524c427d9e7.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过比较，这一系列的样本功能类似，但是适配了不同的CPU架构，保证了能在多个平台运行。部分功能函数截图：</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01ef276a2f7d13720d.png" title="t01ef276a2f7d13720d.png" alt="http://p6.qhimg.com/t01ef276a2f7d13720d.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看出功能很齐全，包括执行命令（processCmd），更新样本（UpdateBins），获取公网ip（getOutIP），清除history（ClearHistory）等。其中sendCNC函数引起了我的兴趣，google了一下，然后发现了以下部分：</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01ec7571e992795eab.png" title="t01ec7571e992795eab.png" alt="http://p3.qhimg.com/t01ec7571e992795eab.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这三个的代码一样。查看了一番，发现代码存在的UserAgent与恶意样本里的字符串非常相似，经过函数的比较，发现这应该就是攻击者使用的恶意程序。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t016cb26f59383b9565.png" title="t016cb26f59383b9565.png" alt="http://p8.qhimg.com/t016cb26f59383b9565.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">而且还有作者的签名，是由Gr1n1337所写</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t013b23fa296a61d6b4.png" title="t013b23fa296a61d6b4.png" alt="http://p6.qhimg.com/t013b23fa296a61d6b4.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其中，最早的一个搜索结果显示是7个月前所建，而我们最早搜集到的恶意样本是2016年10月，与该结果相符。而且还带有该恶意样本的介绍，是最强大的telnet botnet。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01c5af3d73bf88f067.png" title="t01c5af3d73bf88f067.png" alt="http://p7.qhimg.com/t01c5af3d73bf88f067.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过源代码分析，该恶意样本是一种IOT病毒，分为Client端和Server端，Server端是攻击者的控制端，Client端会接收控制端的命令执行相应操作，并且会扫描其他存在弱口令的ssh/telnet设备进行传播。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">b） SSHTunel跳板攻击</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们在分析跳板攻击方式时，IP为5.45.86.133引起了我们的兴趣。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">攻击时间截图如下，从图中可以看出该IP在2016年7月开始对我们的蜜罐进行尝试攻击，在2017年2月1号攻击次数达到顶峰28W次，最后在2017年3月31后停止了攻击。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01625b88a4af97b49f.png" title="t01625b88a4af97b49f.png" alt="http://p6.qhimg.com/t01625b88a4af97b49f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们通过蜜罐的日志完整地复现了该IP的攻击时间线。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2016年7月到9月：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这段时间攻击者的攻击行为较少，还处于试探阶段，只是请求了几个IP的80端口。典型的攻击如下，从5556端口访问目的IP的80端口</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01584e2ab62139851f.png" title="t01584e2ab62139851f.png" alt="http://p3.qhimg.com/t01584e2ab62139851f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2016年9月到10月：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这段时间，攻击次数逐渐增多，到9月中旬到达顶峰13000多次。这段时间主要是请求46.4.100.47的80端口和62.210.136.117的81端口。其中46.4.100.47是德国Hetzner Online公司的IP，而62.210.136.117是法国IDC 机房的IP。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2016年10月到11月：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">攻击者沉寂了下去，一个月只有20多条记录</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2016年11月到2017年1月：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">攻击者又开始活跃起来，主要的请求目标还是62.210.136.117，请求大多数集中在11月的下旬，而12月的请求比较平均，12月20号后请求消失</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2017年1月到3月：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">攻击者在沉寂了一段时间后，于1月13日活跃了一下，对https://shop.selectflavour.com网站做了一段时间爆破，然后又沉寂到2月初的前3天，这几天攻击者的请求有了爆炸式的增长，对多个电商、金融网站进行登陆的暴力破解，其中包括creditonebank和ebay，还有一些Wordpress网站的爆破。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01a4c395c30982b143.png" title="t01a4c395c30982b143.png" alt="http://p6.qhimg.com/t01a4c395c30982b143.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其中，signin.m.ebay.in是Ebay移动端登录页面。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01d1c3b721ea1d93c7.png" title="t01d1c3b721ea1d93c7.png" alt="http://p1.qhimg.com/t01d1c3b721ea1d93c7.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">关于端口转发，举个栗子：</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t013bf7b9286b4e0572.png" title="t013bf7b9286b4e0572.png" alt="http://p6.qhimg.com/t013bf7b9286b4e0572.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果知道了跳板机的SSH密码，使用如下命令即可实现SSH端口转发：</span></p><pre class="brush:plain;toolbar:false">ssh&nbsp;-f&nbsp;-N&nbsp;-L&nbsp;3307:172.16.1.30:3306&nbsp;wanghua@ssh.xyz.com&nbsp;-p8822</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">从攻击者的整个时间线来看，他们的攻击行为是非常有规律的，一旦爆发一次后，就会销声匿迹一段时间。持续的时间也比较长，从2016年7月到2017年3月，持续了半年的时间。攻击的目标非常明确，大部分集中在对于金融和电商的攻击，而且都是以爆破密码为主，所以可以猜测应该是一股有组织的团伙在进行批量的撞库。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x03．结束语</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">通过对于SSH蜜罐数据的分析，我们可以找出许多有意思的攻击手法。同时，通过对日志的分析，我们也可以用时间线将攻击者的整个攻击流程做一个完整的梳理。随着这些数据量的增多，预测攻击者的下次攻击也并非不可能，从而形成新的威胁情报。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">威胁情报带动了蜜罐技术的发展，而蜜罐收集的高价值数据反过来对威胁情报也是一个很好的补充，二者相辅相成，缺一不可。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x04. 参考链接</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><a href="http://thehackernews.com/2015/11/what-is-cyber-threat-intelligence.html" _src="http://thehackernews.com/2015/11/what-is-cyber-threat-intelligence.html">http://thehackernews.com/2015/11/what-is-cyber-threat-intelligence.html</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://en.wikipedia.org/wiki/Honeypot_(computing)" _src="https://en.wikipedia.org/wiki/Honeypot_(computing)">https://en.wikipedia.org/wiki/Honeypot_(computing)</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://github.com/DavidOfficiel/botnet" _src="https://github.com/DavidOfficiel/botnet">https://github.com/DavidOfficiel/botnet</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://www.nothink.org/honeypot_ssh.php" _src="http://www.nothink.org/honeypot_ssh.php">http://www.nothink.org/honeypot_ssh.php</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://www.virustotal.com/" _src="https://www.virustotal.com/">https://www.virustotal.com/</a>&nbsp;</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3929.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】从蜜罐数据到SSH蜜罐的典型攻击分析 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3929" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="164716783" class="response" data-bind-id="164716783" data-target="14598" user-name="习惯J被遗忘" href="javascript:;">
+                习惯J被遗忘            </a>
+                        <span class="comment-time">2017-06-14 08:22:49</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="164716783" data-target="14598">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14598" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">图在哪里哈</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3929" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

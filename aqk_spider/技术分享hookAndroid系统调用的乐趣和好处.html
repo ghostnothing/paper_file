@@ -1,0 +1,784 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】hook Android系统调用的乐趣和好处 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="逆向工程,android逆向,android安全"/>
+    
+        <meta name="description" content="Android的内核是逆向工程师的好伙伴。虽然常规的Android应用被限制和沙盒化，逆向工程师可以按自己希望自定义和改变操作系统和内核中行为。本文从构建内核启用新内核、用内核模块hook系统调用到修改系统调用表一步一步向我们介绍了如何hookAndroid系统调用。
+"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】hook Android系统调用的乐趣和好处</h2>
+                <div class="article-msg">
+                    <span class="time">2017-01-20 16:28:05</span>
+                    
+                                        <span class="read">阅读：23906次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3432"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3432" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://www.vantagepoint.sg/blog/82-hooking-android-system-calls-for-pleasure-and-benefit"
+                             target="_blank">来源： vantagepoint.sg</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2775084127" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2775084127" style="color:#848e99;">myswsun</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="white-space: normal; text-indent: 0em; text-align: center;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><img src="http://p7.qhimg.com/t01be974f663eba3332.jpg" title="t01be974f663eba3332.jpg" alt="http://p7.qhimg.com/t01be974f663eba3332.jpg"/></span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">翻译：</span></strong></span><a href="http://bobao.360.cn/member/contribute?uid=2775084127" target="_blank" textvalue="myswsun" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">myswsun</span></strong><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></span></a></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">预估稿费：200RMB</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong><strong>投稿方式：发送邮件至</strong><a href="mailto:linwei@360.cn" target="_self" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong>linwei#360.cn</strong></span></a><strong>，或登陆</strong><a href="http://bobao.360.cn/contribute/index" target="_blank" style="color: rgb(0, 112, 192); text-decoration: none;"><strong>网页版</strong></a><strong>在线投稿</strong></strong></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x00&nbsp;前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">Android</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">的内核是逆向工程师的好伙伴。虽然常规的Android应用被限制和沙盒化，逆向工程师可以按自己希望自定义和改变操作系统和内核中行为。这给了你不可多得的优势，因为大部分完整性校验和防篡改功能都依赖内核的服务。部署这种可以滥用信任并自我欺骗的内核和环境，可以避免走很多歪路。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Android应用有几种方式和系统环境交互。标准方法是通过安卓应用框架的API函数。然而在底层，很多重要的函数，例如分配内存和访问文件，都是被转化为linux的系统调用。在ARM linux中，系统调用的调用是通过SVC指令触发软件中断实现的。中断调用内核函数vector_swi()，用系统调用号作为一个函数指针表的偏移（如安卓上的sys_call_table）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">拦截系统调用最直接的方法是注入你的代码到内核内存中，覆盖系统调用表中的原始函数地址重定向执行。不幸的是，目前Android内核加强了内存限制阻止了这种操作。具体来说，内核是在启用CONFIG_STRICT_MEMORY_RWX选项的情况下构建的。这阻止了向只读内核内存区写入，意味着任何试图修改系统代码或者系统调用表的操作都将导致崩溃和重启。绕过这个的一个方法就是自己编译内核：能够禁用这种保护，做更多自定义的修改有利于逆向分析。如果你按常规方法逆向Android应用，构建你自己的逆向沙盒是不明智的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">注意：下面的步骤是最好在Ubuntu 14.04环境中用Android NDK 4.8完成。我个人在Mac上面失败了很多次才完成。我推荐用Ubuntu虚拟机，除非你是个受虐狂。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">0x01&nbsp;构建内核</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了hack的目的，我推荐使用支持</span><a href="https://source.android.com/" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="color: rgb(255, 0, 0);">AOSP</span></a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的设备。Google的Nexus智能手机和平板电脑是最合理的选择，从AOSP构建的内核和系统组件在上面运行没有问题。另外，索尼的Xperia也可以。为了构建AOSP内核，需要一系列</span><a href="https://developer.android.com/ndk/downloads/index.html" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="color: rgb(255, 0, 0);">工具</span></a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（交叉编译工具）和相应的内核源代码。根据</span><a href="https://source.android.com/source/initializing.html" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="color: rgb(255, 0, 0);">谷歌的指导</span></a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，确定了正确的git仓库和分支。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">例如，获取匹配Nexus 5的Lollipop的内核源码，需要克隆“msm”仓库并检出一个分支“android-msm-hammerhead”。一旦源码下载了，用make hammerhead_defconfig(或者whatever_defconfig，取决于你的设备)命令创建默认内核配置。</span></p><pre class="brush:plain;toolbar:false">$&nbsp;git&nbsp;clone&nbsp;https://android.googlesource.com/kernel/msm.git
+$&nbsp;cd&nbsp;msm
+$&nbsp;git&nbsp;checkout&nbsp;origin/android-msm-hammerhead-3.4-lollipop-mr1&nbsp;
+$&nbsp;export&nbsp;ARCH=arm&nbsp;
+$&nbsp;export&nbsp;SUBARCH=arm
+$&nbsp;make&nbsp;hammerhead_defconfig
+$&nbsp;vim&nbsp;.config</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了启动系统调用挂钩功能，我推荐增加可加载模块的支持，由/dev/kmem接口支持，同时导出全局内核符号表。不要忘了禁用内存保护。这些选项的值在配置文件中已经存在，只需要简单的设置以下值。</span></p><pre class="brush:plain;toolbar:false">CONFIG_MODULES=Y
+CONFIG_MODULE_UNLOAD=y
+CONFIG_STRICT_MEMORY_RWX=N
+CONFIG_DEVMEM=Y
+CONFIG_DEVKMEM=Y
+CONFIG_KALLSYMS=Y
+CONFIG_KALLSYMS_ALL=Y</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一旦你完成了编辑配置文件。或者，您现在可以创建一个独立的工具链，用于交叉编译内核和以后的任务。为了给Android 5.1创建一个工具链，运行Android NDK包的make-standalone_toolchain.sh：</span></p><pre class="brush:plain;toolbar:false">$&nbsp;cd&nbsp;android-ndk-rXXX
+$&nbsp;build/tools/make-standalone-toolchain.sh&nbsp;--arch=arm&nbsp;--platform=android-21&nbsp;--install-dir=/tmp/my-android-toolchain</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">设置CROSS_COMPILE环境变量，指向NDK目录，并运行make构建内核。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;export&nbsp;CROSS_COMPILE=/tmp/my-android-toolchain/bin/arm-eabi-&nbsp;
+$&nbsp;make</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">当构建过程完成后，能在arch/arm/boot/zImage-dtb找到引导内核模块。</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">0x02&nbsp;启动新内核</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在启动新内核前，备份一个你设备的原始引导映像。找到启动分区的位置：</span></p><pre class="brush:plain;toolbar:false">root@hammerhead:/dev&nbsp;#&nbsp;ls&nbsp;-al&nbsp;/dev/block/platform/msm_sdcc.1/by-name/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+lrwxrwxrwx&nbsp;root&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;root&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1970-08-30&nbsp;22:31&nbsp;DDR&nbsp;-&gt;&nbsp;/dev/block/mmcblk0p24
+lrwxrwxrwx&nbsp;root&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;root&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1970-08-30&nbsp;22:31&nbsp;aboot&nbsp;-&gt;&nbsp;/dev/block/mmcblk0p6
+lrwxrwxrwx&nbsp;root&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;root&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1970-08-30&nbsp;22:31&nbsp;abootb&nbsp;-&gt;&nbsp;/dev/block/mmcblk0p11
+lrwxrwxrwx&nbsp;root&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;root&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1970-08-30&nbsp;22:31&nbsp;boot&nbsp;-&gt;&nbsp;/dev/block/mmcblk0p19
+(...)
+lrwxrwxrwx&nbsp;root&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;root&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1970-08-30&nbsp;22:31&nbsp;userdata&nbsp;-&gt;&nbsp;/dev/block/mmcblk0p28</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后，将所有的内容转储到一个文件中：</span></p><pre class="brush:plain;toolbar:false">$&nbsp;adb&nbsp;shell&nbsp;&quot;su&nbsp;-c&nbsp;dd&nbsp;if=/dev/block/mmcblk0p19&nbsp;of=/data/local/tmp/boot.img&quot;
+$&nbsp;adb&nbsp;pull&nbsp;/data/local/tmp/boot.img</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来，提取ramdisk以及有关引导映像结构的一些信息。有很多工具可以做到这个，我使用Gilles Grandou的</span><a href="https://github.com/gerasiov/abootimg-android" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">abootimg</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">工具。安装工具并执行以下的命令：</span></p><pre class="brush:plain;toolbar:false">$&nbsp;abootimg&nbsp;-x&nbsp;boot.img</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在本地目录会创建bootimg.cfg、initrd.img和zImage（原始的内核）文件。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">能用快速引导测试新内核。“fastboot boot”命令允许测试内核。在fastboot模式下用下面命令汗重启设备：</span></p><pre class="brush:plain;toolbar:false">$&nbsp;adb&nbsp;reboot&nbsp;bootloader</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后，用“fastboot boot”命令引导Android的新内核。除了新建的内核和原始ramdisk，还需指定内核偏移量，ramdisk偏移量，标签偏移量和命令行（使用在之前提取的bootimg.cfg中列出的值）。</span></p><pre class="brush:plain;toolbar:false">$&nbsp;fastboot&nbsp;boot&nbsp;zImage-dtb&nbsp;initrd.img&nbsp;--base&nbsp;0&nbsp;--kernel-offset&nbsp;0x8000&nbsp;--ramdisk-offset&nbsp;0x2900000&nbsp;--tags-offset&nbsp;0x2700000&nbsp;-c&nbsp;&quot;console=ttyHSL0,115200,n8&nbsp;androidboot.hardware=hammerhead&nbsp;user_debug=31&nbsp;maxcpus=2&nbsp;msm_watchdog_v2.enable=1&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在应该手动重启。为了快速验证内核=正确运行了，通过校验Settings-&gt;About phone中的“内核版本”的值。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01fd7a9f87a4d1f700.jpg" title="t016222e69a9ad5ca74.jpg" alt="http://p5.qhimg.com/t016222e69a9ad5ca74.jpg"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果一切运行良好，将显示自定义构建的版本字符串。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">0x03&nbsp;用内核模块hook系统调用</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">hook系统调用能让我们绕过任何依赖内核提供的反逆向防御措施。在我们自定义的内核中，我们能用LKM加载例外的代码到内核中。我们也可以访问/dev/kmem接口，用来修改内核内存。这是个经典的linux rootkit技术。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t0190681a042c0cfc46.jpg" title="t0157114b29e0ec0080.jpg" alt="http://p3.qhimg.com/t0157114b29e0ec0080.jpg"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先需要的是sys_call_table的地址。幸运的是它被Android内核导出了符号（iOS没这么幸运）。我们在/proc/kallsyms寻找地址：</span></p><pre class="brush:plain;toolbar:false">$&nbsp;adb&nbsp;shell&nbsp;&quot;su&nbsp;-c&nbsp;echo&nbsp;0&nbsp;&gt;&nbsp;/proc/sys/kernel/kptr_restrict&quot;
+$&nbsp;adb&nbsp;shell&nbsp;cat&nbsp;/proc/kallsyms&nbsp;|&nbsp;grep&nbsp;sys_call_table
+c000f984&nbsp;T&nbsp;sys_call_table</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这是我们仅需要写入的内核地址，其他的可以通过便宜计算出来。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们将使用内核模块隐藏一个文件。让我们在设备创建一个文件，以便我们能在后面隐藏它：</span></p><pre class="brush:plain;toolbar:false">$&nbsp;adb&nbsp;shell&nbsp;&quot;su&nbsp;-c&nbsp;echo&nbsp;ABCD&nbsp;&gt;&nbsp;/data/local/tmp/nowyouseeme&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+$&nbsp;adb&nbsp;shell&nbsp;cat&nbsp;/data/local/tmp/nowyouseeme
+ABCD</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后时候写内核模块了。为了文件隐藏，我们需要挂钩用来打开文件的一个系统调用。有很多关于打开open, openat, access, accessat, facessat, stat, fstat,等等。现在我们只需要挂钩openat系统调用，这个系统调用被“/bin/cat”程序访问文件时使用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你能在内核头文件中（arch/arm/include/asm/unistd.h）找到所有系统调用的函数原型。用下面代码创建一个文件kernel_hook.c:</span></p><pre class="brush:plain;toolbar:false">#include&nbsp;&lt;linux/kernel.h&gt;
+#include&nbsp;&lt;linux/module.h&gt;
+#include&nbsp;&lt;linux/moduleparam.h&gt;
+#include&nbsp;&lt;linux/unistd.h&gt;
+#include&nbsp;&lt;linux/slab.h&gt;
+#include&nbsp;&lt;asm/uaccess.h&gt;
+asmlinkage&nbsp;int&nbsp;(*real_openat)(int,&nbsp;const&nbsp;char&nbsp;__user*,&nbsp;int);
+void&nbsp;**sys_call_table;
+int&nbsp;new_openat(int&nbsp;dirfd,&nbsp;const&nbsp;char&nbsp;__user*&nbsp;pathname,&nbsp;int&nbsp;flags)
+{
+&nbsp;&nbsp;char&nbsp;*kbuf;
+&nbsp;&nbsp;size_t&nbsp;len;
+&nbsp;&nbsp;kbuf=(char*)kmalloc(256,GFP_KERNEL);
+&nbsp;&nbsp;len&nbsp;=&nbsp;strncpy_from_user(kbuf,pathname,255);
+&nbsp;&nbsp;if&nbsp;(strcmp(kbuf,&nbsp;&quot;/data/local/tmp/nowyouseeme&quot;)&nbsp;==&nbsp;0)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;printk(&quot;Hiding&nbsp;file!\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-ENOENT;
+&nbsp;&nbsp;}
+&nbsp;&nbsp;kfree(kbuf);
+&nbsp;&nbsp;return&nbsp;real_openat(dirfd,&nbsp;pathname,&nbsp;flags);
+}
+int&nbsp;init_module()&nbsp;{
+&nbsp;&nbsp;sys_call_table&nbsp;=&nbsp;(void*)0xc000f984;
+&nbsp;&nbsp;real_openat&nbsp;=&nbsp;(void*)(sys_call_table[__NR_openat]);
+return&nbsp;0;
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了构建内核模块，需要内核资源和工具链，因为之前编译了内核，一切就绪。用以下内容创建makefile文件：</span></p><pre class="brush:plain;toolbar:false">KERNEL=[YOUR&nbsp;KERNEL&nbsp;PATH]
+TOOLCHAIN=[YOUR&nbsp;TOOLCHAIN&nbsp;PATH]
+obj-m&nbsp;:=&nbsp;kernel_hook.o
+all:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;make&nbsp;ARCH=arm&nbsp;CROSS_COMPILE=$(TOOLCHAIN)/bin/arm-eabi-&nbsp;-C&nbsp;$(KERNEL)&nbsp;M=$(shell&nbsp;pwd)&nbsp;CFLAGS_MODULE=-fno-pic&nbsp;modules
+clean:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;make&nbsp;-C&nbsp;$(KERNEL)&nbsp;M=$(shell&nbsp;pwd)&nbsp;clean</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">运行make编译代码，得到文件kernel_hook.ko。复制这个文件到设备并用insmod命令加载它。用lsmod命令验证模块是否加载成功。</span></p><pre class="brush:plain;toolbar:false">$&nbsp;make
+(...)
+$&nbsp;adb&nbsp;push&nbsp;kernel_hook.ko&nbsp;/data/local/tmp/
+[100%]&nbsp;/data/local/tmp/kernel_hook.ko
+$&nbsp;adb&nbsp;shell&nbsp;su&nbsp;-c&nbsp;insmod&nbsp;/data/local/tmp/kernel_hook.ko
+$&nbsp;adb&nbsp;shell&nbsp;lsmod
+kernel_hook&nbsp;1160&nbsp;0&nbsp;[permanent],&nbsp;Live&nbsp;0xbf000000&nbsp;(PO)</pre><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><br/></span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">0x04&nbsp;修改系统调用表</span></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在，我们访问/dev/kmem来用我们注入的函数地址来覆盖sys_call_table中的原始函数的指针（这也能直接在内核模块中做，但是用/dev/kmem更加简单）。我参考了Dong-Hoon You的文章，但是我用文件接口代替nmap()，因为我发现会引起一些内核警告。用下面代码创建文件kmem_util.c：</span></p><pre class="brush:cpp;toolbar:false">#include&nbsp;&lt;stdio.h&gt;&nbsp;
+#include&nbsp;&lt;stdlib.h&gt;
+#include&nbsp;&lt;fcntl.h&gt;&nbsp;
+#include&nbsp;&lt;asm/unistd.h&gt;&nbsp;
+#include&nbsp;&lt;sys/mman.h&gt;
+#define&nbsp;MAP_SIZE&nbsp;4096UL
+#define&nbsp;MAP_MASK&nbsp;(MAP_SIZE&nbsp;-&nbsp;1)
+int&nbsp;kmem;
+void&nbsp;read_kmem2(unsigned&nbsp;char&nbsp;*buf,&nbsp;off_t&nbsp;off,&nbsp;int&nbsp;sz)
+{
+&nbsp;&nbsp;off_t&nbsp;offset;&nbsp;ssize_t&nbsp;bread;
+&nbsp;&nbsp;offset&nbsp;=&nbsp;lseek(kmem,&nbsp;off,&nbsp;SEEK_SET);
+&nbsp;&nbsp;bread&nbsp;=&nbsp;read(kmem,&nbsp;buf,&nbsp;sz);
+&nbsp;&nbsp;return;&nbsp;
+}
+void&nbsp;write_kmem2(unsigned&nbsp;char&nbsp;*buf,&nbsp;off_t&nbsp;off,&nbsp;int&nbsp;sz)&nbsp;{
+&nbsp;&nbsp;off_t&nbsp;offset;&nbsp;ssize_t&nbsp;written;
+&nbsp;&nbsp;offset&nbsp;=&nbsp;lseek(kmem,&nbsp;off,&nbsp;SEEK_SET);
+&nbsp;&nbsp;if&nbsp;(written&nbsp;=&nbsp;write(kmem,&nbsp;buf,&nbsp;sz)&nbsp;==&nbsp;-1)&nbsp;{&nbsp;perror(&quot;Write&nbsp;error&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;exit(0);
+&nbsp;&nbsp;}&nbsp;
+&nbsp;&nbsp;return;
+}
+int&nbsp;main(int&nbsp;argc,&nbsp;char&nbsp;*argv[])&nbsp;{
+&nbsp;&nbsp;off_t&nbsp;sys_call_table;
+&nbsp;&nbsp;unsigned&nbsp;int&nbsp;addr_ptr,&nbsp;sys_call_number;
+&nbsp;&nbsp;if&nbsp;(argc&nbsp;&lt;&nbsp;3)&nbsp;{&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+&nbsp;&nbsp;}
+&nbsp;&nbsp;kmem=open(&quot;/dev/kmem&quot;,O_RDWR);
+&nbsp;&nbsp;if(kmem&lt;0){
+&nbsp;&nbsp;&nbsp;&nbsp;perror(&quot;Error&nbsp;opening&nbsp;kmem&quot;);&nbsp;return&nbsp;0;
+&nbsp;&nbsp;}
+&nbsp;&nbsp;sscanf(argv[1],&nbsp;&quot;%x&quot;,&nbsp;&amp;sys_call_table);&nbsp;sscanf(argv[2],&nbsp;&quot;%d&quot;,&nbsp;&amp;sys_call_number);
+&nbsp;&nbsp;sscanf(argv[3],&nbsp;&quot;%x&quot;,&nbsp;&amp;addr_ptr);&nbsp;char&nbsp;buf[256];
+&nbsp;&nbsp;memset&nbsp;(buf,&nbsp;0,&nbsp;256);&nbsp;read_kmem2(buf,sys_call_table+(sys_call_number*4),4);
+&nbsp;&nbsp;printf(&quot;Original&nbsp;value:&nbsp;%02x%02x%02x%02x\n&quot;,&nbsp;buf[3],&nbsp;buf[2],&nbsp;buf[1],&nbsp;buf[0]);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;write_kmem2((void*)&amp;addr_ptr,sys_call_table+(sys_call_number*4),4);
+&nbsp;&nbsp;read_kmem2(buf,sys_call_table+(sys_call_number*4),4);
+&nbsp;&nbsp;printf(&quot;New&nbsp;value:&nbsp;%02x%02x%02x%02x\n&quot;,&nbsp;buf[3],&nbsp;buf[2],&nbsp;buf[1],&nbsp;buf[0]);
+&nbsp;&nbsp;close(kmem);
+&nbsp;&nbsp;return&nbsp;0;&nbsp;
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">构建kmem_util.c并复制到设备中。注意因为是Android Lollipop，所以所有的可执行文件必须是PIE支持编译的。</span></p><pre class="brush:plain;toolbar:false">$&nbsp;/tmp/my-android-toolchain/bin/arm-linux-androideabi-gcc&nbsp;-pie&nbsp;-fpie&nbsp;-o&nbsp;kmem_util&nbsp;kmem_util.c
+$&nbsp;adb&nbsp;push&nbsp;kmem_util&nbsp;/data/local/tmp/
+$&nbsp;adb&nbsp;shell&nbsp;chmod&nbsp;755&nbsp;/data/local/tmp/kmem_util</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在我们开始修改内核内存前，我们需要知道的是系统调用表正确的偏移位置。这个openat调用在unistd.h中定义：</span></p><pre class="brush:plain;toolbar:false">$&nbsp;grep&nbsp;-r&nbsp;&quot;__NR_openat&quot;&nbsp;arch/arm/include/asm/unistd.h
+#define&nbsp;__NR_openat&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(__NR_SYSCALL_BASE+322)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后一个难题是我们替换openat函数的地址。我们能从/proc/kallsyms得到这个地址：</span></p><pre class="brush:plain;toolbar:false">$&nbsp;adb&nbsp;shell&nbsp;cat&nbsp;/proc/kallsyms&nbsp;|&nbsp;grep&nbsp;new_openat
+bf000000&nbsp;t&nbsp;new_openat&nbsp;&nbsp;&nbsp;&nbsp;[kernel_hook]</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们可以覆盖系统调用表的入口了。Kmem_util语法如下：</span></p><pre class="brush:plain;toolbar:false">./kmem_util&nbsp;&lt;syscall_table_base_address&gt;&nbsp;&lt;offset&gt;&nbsp;&lt;func_addr&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">用下面的命令修改系统调用表指向我们的新函数。</span></p><pre class="brush:plain;toolbar:false">berndt@osboxes:~/Host/Research/SoftToken/Android/Kernel/msm$&nbsp;adb&nbsp;shell&nbsp;su&nbsp;-c&nbsp;/data/local/tmp/kmem_util&nbsp;c000f984&nbsp;322&nbsp;bf000000
+Original&nbsp;value:&nbsp;c017a390
+New&nbsp;value:&nbsp;bf000000</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">假设一切正常，/bin/cat应该不能看见这个文件。</span></p><pre class="brush:plain;toolbar:false">berndt@osboxes:~/Desktop/Module$&nbsp;adb&nbsp;shell&nbsp;su&nbsp;-c&nbsp;cat&nbsp;/data/local/tmp/nowyouseeme
+tmp-mksh:&nbsp;cat:&nbsp;/data/local/tmp/nowyouseeme:&nbsp;No&nbsp;such&nbsp;file&nbsp;or&nbsp;directory</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在通过所有的用户进程已经无法看见隐藏的文件了（但是为了隐藏文件有许多需要做的，包括挂钩stat，access和其他系统调用，还有在文件夹中隐藏）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">文件隐藏的教程只是一个小例子：你可以完成一大堆事，包括绕过启动检测，完整性校验和反调试技巧。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">尽管代码覆盖使用符号执行是一个好的方法，但它是个复杂的任务。路径遍历意味着内存消耗，并且一些情况下要计算的表达式太过复杂。目前，判定器非常慢，判定表达式非常慢。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">0x05 总结</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">hook</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">系统调用对于Android逆向分析是一个有用的技术。为了使用它，需要用自定义内核构建自己的逆向工程沙盒。这个文章介绍了如何在Nexus5运行Lollipop，其他AOSP设备也是类似的。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://www.vantagepoint.sg/blog/82-hooking-android-system-calls-for-pleasure-and-benefit" target="_blank">原文链接：https://www.vantagepoint.sg/blog/82-hooking-android-system-calls-for-pleasure-and-benefit</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】hook Android系统调用的乐趣和好处 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3432" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11492" user-name="Idbgu" href="javascript:;">
+                Idbgu            </a>
+                        <span class="comment-time">2017-01-22 15:21:00</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11492">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11492" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@移动安全_Bert:转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11490" user-name="越南邻国宰相" href="javascript:;">
+                越南邻国宰相            </a>
+                        <span class="comment-time">2017-01-21 20:54:55</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11490">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11490" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">最新技术分享</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="11486">Rj1ng的Ring</a> <span class="comment-time">2017-01-21 00:50:40</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11486">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11486" data-type="comment">点赞</a></span>            </div>
+            <p>//@移动安全_Bert:转发微博</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11486" user-name="Rj1ng的Ring" href="javascript:;">
+                Rj1ng的Ring            </a>
+                        <span class="comment-time">2017-01-21 00:50:40</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11486">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11486" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@移动安全_Bert:转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11483" user-name="夏侯爺當家" href="javascript:;">
+                夏侯爺當家            </a>
+                        <span class="comment-time">2017-01-20 18:50:40</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11483">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11483" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@移动安全_Bert:转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="11482" user-name="vendanner" href="javascript:;">
+                vendanner            </a>
+                        <span class="comment-time">2017-01-20 17:10:44</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="11482">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_11482" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@移动安全_Bert:转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3432" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

@@ -1,0 +1,528 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】使用Netshell执行恶意DLL并实现对目标主机的持久化攻击 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Netshell"/>
+    
+        <meta name="description" content="安全客点评：作者真是细心，从netsh的add参数发现可以载入任意DLL执行，唯一的限制仅仅是需要在注册表的HKLM\SOFTWARE\Microsoft\Netsh具有写权限。并且通过计划任务运行netsh实现持久化的话，默认情况下使用AutoRuns是看不到的。已经有其他研究人员公布了可以持久化利用的POC代码 https://github.com/outflankbv/NetshHelperBeacon，有兴趣的同学可以学习下。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】使用Netshell执行恶意DLL并实现对目标主机的持久化攻击</h2>
+                <div class="article-msg">
+                    <span class="time">2016-09-28 15:48:01</span>
+                    
+                                        <span class="read">阅读：15346次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3071"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3071" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://www.adaptforward.com/2016/09/using-netshell-to-execute-evil-dlls-and-persist-on-a-host/"
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2606963099" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01d4bd8d816ed27ddd.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2606963099" style="color:#848e99;">WisFree</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">安全客点评</span></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;"></span></strong></p><p style="text-indent: 2em; text-align: left;">作者真是细心，从netsh的add参数发现可以载入任意DLL执行，唯一的限制仅仅是需要在注册表的HKLM\SOFTWARE\Microsoft\Netsh具有写权限。<strong><span style="color: rgb(255, 0, 0);">并且通过计划任务运行netsh实现持久化的话，默认情况下使用AutoRuns是看不到的。</span></strong>已经有其他研究人员公布了可以持久化利用的POC代码 https://github.com/outflankbv/NetshHelperBeacon，有兴趣的同学可以学习下<span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 32px;">。</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01e5b6fc7a4c1db7e3.png" title="t019e653e4918c322f9.png" alt="http://p4.qhimg.com/t019e653e4918c322f9.png"/></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;"><br/></span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">写在前面的话</span></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;"></span><span style="text-indent: 2em;">最近我一直都在思考一个问题，我想知道怎么样才能通过“受信任”的方法来在目标系统中执行恶意代码。我喜欢站在攻击者的角度来思考，如果我是攻击者，我会怎么做呢？毫无疑问，第一个浮现在各位脑海中的肯定是PowerShell了，它的确是系统管理员和黑客们心中的“挚爱”。反病毒软件并不会在意你的PowerShell准备干嘛，Virustotal也不会认为你的PowerShell脚本有什么问题。在这篇文章中，我并不打算跟大家讲解关于PowerShell的攻击方法，因为如果我要讲的话，我今晚就可以不用回家了。</span></p><p style="text-indent: 2em; text-align: left;">你要时刻谨记：管理员能使用的资源，攻击者同样可以使用。毕竟，当某人成功入侵了你的网络系统之后，你没有任何方法来区分出某一操作到底是由合法用户完成的， 还是由入侵者完成的，真的一点办法都没有。很多工具都有可能会泄漏你的系统信息，“Ipconfig”看起来是一个无害的命令，但是这个命令将会给攻击者提供很多有价值的信息。除了这个命令之外，还有无数的命令将有可能威胁到系统的安全。</p><p style="text-indent: 2em; text-align: left;">实际上，<strong><span style="color: rgb(255, 0, 0);">Windows操作系统中自带的一些命令和工具对于黑客而言是非常有价值的</span></strong>，因为攻击者不仅可以直接使用这些现成的工具来入侵你的网络，而且还可以避免被安全防护系统检测到。为此，我给大家提供了一份包含有系统本地命令的列表，这些命令都是攻击者在此前的一些网络攻击事件中曾经使用过的命令。［<a href="http://blog.jpcert.or.jp/2016/01/windows-commands-abused-by-attackers.html">点我获取</a>］</p><p style="text-align:center"><img src="http://p2.qhimg.com/t013b3654d374f3a08b.png" title="t01d4b5bc73d92f658d.png" alt="http://p4.qhimg.com/t01d4b5bc73d92f658d.png"/></p><p style="text-indent: 2em; text-align: left;">最令人感到沮丧的是，这份列表中的绝大多数命令基本上都是我们经常会用到的，而且这些都是合法命令。你不可能直接将ipconfig.exe直接丢到黑名单中，因为你的用户肯定会因此而恼羞成怒。这些命令其实并不是可以用来识别攻击活动的入侵指标，但是在某些特殊的环境下，我们也可以通过这些命令来识别攻击活动。</p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;"><br/></span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">言归正传</span></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em;">好了，让我们回到正题。在此之前，我一直在研究Windows防火墙命令行工具－</span><strong><span style="text-indent: 2em; color: rgb(255, 0, 0);">netsh</span></strong><span style="text-indent: 2em;">（NetShell）到底能为攻击者做什么。当我在查阅上面这份列表的时候，我发现了一个非常有意思的参数：“</span><strong><span style="text-indent: 2em; color: rgb(255, 0, 0);">add</span></strong><span style="text-indent: 2em;">”。</span><br/></p><p style="text-align:center"><img src="http://p2.qhimg.com/t014b41a7e4e6c3ed65.png" title="t01af066fc922de6af1.png" alt="http://p1.qhimg.com/t01af066fc922de6af1.png"/></p><p style="text-indent: 2em; text-align: left;">“add”参数有什么用？我们可以添加什么？</p><p style="text-align:center"><img src="http://p8.qhimg.com/t014fcd78a0cfad50cf.png" title="t01a907a3dec00f6638.png" alt="http://p5.qhimg.com/t01a907a3dec00f6638.png"/></p><p style="text-indent: 2em; text-align: left;">安装一个DLL？我不会是眼花了吧？</p><p style="text-indent: 2em; text-align: left;">实践出真知，于是我找出了一个用来运行calc.exe（计算器）的DLL来进行测试。我觉得系统应该不会直接运行它，因为这根本说不通啊。</p><p style="text-align:center"><img src="http://p2.qhimg.com/t016a0302de161c43e9.png" title="t01915350b86c838baf.png" alt="http://p8.qhimg.com/t01915350b86c838baf.png"/></p><p style="text-indent: 2em; text-align: left;">结果如上图所示，系统果然没有直接运行这个DLL。那么问题来了，InitHelperDLL是什么呢？中文问百度，英文问Google，于是我便打开Google搜索了一下。</p><p style="text-indent: 2em; text-align: left;">根据微软公司的描述：InitHelperDLL是一个由NetShell调用的函数，该函数负责执行helper的初始化加载。关于InitHelperDLL的详细内容请参阅微软公司的官方文档［<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms708327(v=vs.85).aspx">点我访问</a>］。</p><p style="text-indent: 2em; text-align: left;"><strong>好的，那么helper又是什么呢？</strong></p><p style="text-indent: 2em; text-align: left;">NetShell的helper其实就是一种可以提供context功能的DLL文件。额外的helper可以扩展NetShell的功能，因为helper还可以提供负责处理网络任务的管理脚本。通常情况下，Helper可以为网络服务、实用工具、或者协议提供配置支持和监控支持。关于NetShell Helper的详细内容请参阅微软公司的官方文档［<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms708347(v=vs.85).aspx">点我访问</a>］。</p><p style="text-indent: 2em; text-align: left;">走到这里，我决定要向Casey Smith（<a href="https://twitter.com/subTee">@subTee</a>）求助了，Casey所擅长的就是使用一些“特殊”的方法来在Windows系统中执行各种命令。他在自己博客的一篇文章中对这一主题进行了非常详细的讲解，感兴趣的同学可以查阅一下［<a href="https://subt0x10.blogspot.com/">点我阅读</a>］。我当时问他是否听说过这种攻击技术，他说他从未听说过。但是几分钟之后，他就弄出了一个可以运行的PoC实例。</p><p style="text-align:center"><img src="http://p4.qhimg.com/t01e64d56ea6e3071d8.png" title="t0110613bb99f721311.png" alt="http://p3.qhimg.com/t0110613bb99f721311.png"/></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01b85fe7e85017b622.png" title="t0193aa33d5946b52c5.png" alt="http://p6.qhimg.com/t0193aa33d5946b52c5.png"/></p><p style="text-indent: 2em; text-align: left;">那么，接下来我们应该做什么呢？思考片刻之后，我打算通过“delete helper &lt;PATH&gt;”命令来 “逆向分析”一下我刚才所做的事情。于是我重新打开了一个命令行窗口，然后删除掉刚才的这个条目。结果如下图所示：</p><p style="text-align:center"><img src="http://p6.qhimg.com/t018d49bae5d8d4213f.png" title="t01948191c263632218.png" alt="http://p0.qhimg.com/t01948191c263632218.png"/></p><p style="text-indent: 2em; text-align: left;">没错，我们的DLL又被执行了，原来这是一种持久化的操作。于是，我又回头仔细查阅了关于NetShell Helper的相关章节，我又发现了下面这段内容。</p><p style="text-indent: 2em; text-align: left;">Helper是一种DLL文件，它可以实现一个NetShell context(NetShell上下文)以及零个或多个subcontext(子上下文)，这些DLL文件都是通过Windows的系统注册表来实现注册的。详细内容请参阅微软的官方文档［<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms708320(v=vs.85).aspx">点我查看</a>］。</p><p style="text-indent: 2em; text-align: left;">通过系统的注册表！系统的注册表！注册表！重要的事情说三遍！现在越来越有意思了，让我们打开注册表，然后搜索一下我刚才提交的那个DLL文件。</p><p style="text-align:center"><img src="http://p9.qhimg.com/t01701a25d7e1280c64.png" title="t01dd4c7d904d2dc6df.png" alt="http://p5.qhimg.com/t01dd4c7d904d2dc6df.png"/></p><p style="text-indent: 2em; text-align: left;">我在注册表的“HKLM\SOFTWARE\Microsoft\Netsh”键中发现了关于这个DLL的条目。所有其他的DLL文件都在System文件夹中，但是你的恶意DLL并不需要满足这一要求，<strong><span style="color: rgb(255, 0, 0);">我们可以直接运行任何来源的DLL。</span></strong>我建议各位可以将恶意DLL文件放置在一个任何用户都可以直接访问到的存储位置，例如System文件夹或者AppData文件夹中，<strong><span style="color: rgb(255, 0, 0);">但是在存放DLL的这个过程中你还是需要使用管理员权限才行。如果你没有管理员权限，那么你至少也要获取注册表条目的写入权限。</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="color: rgb(255, 0, 0);">这里唯一需要注意的是，如果想要保证DLL能够顺利执行，那么netsh.exe必须先运行起来。</span></strong>系统启动之后，默认情况下Netsh并不会自动运行，但是你可以使用计划任务来完成这项操作。除此之外，你也可以通过系统服务或Powershell脚本来实现。</p><p style="text-align:center"><img src="http://p7.qhimg.com/t01aaf914525ae2e420.png" title="t016cb447f56e9ed744.png" alt="http://p2.qhimg.com/t016cb447f56e9ed744.png"/></p><p style="text-indent: 2em; text-align: left;">用户无法在系统的“自动运行”视图中查看到netsh.exe的计划任务。</p><p style="text-align:center"><img src="http://p7.qhimg.com/t01dbe8c83e65048f67.png" title="t015857fb84bdd85fc0.png" alt="http://p0.qhimg.com/t015857fb84bdd85fc0.png"/></p><p style="text-indent: 2em; text-align: left;">如果你想要查看netsh的计划任务，那么就需要勾选掉“隐藏Windows条目”这个选项。你也可以从下图中看到，VirusTotal并没有检测到任何异常。</p><p style="text-align:center"><img src="http://p5.qhimg.com/t01f4ca5090f8c1185d.png" title="t013f644c857644dd18.png" alt="http://p3.qhimg.com/t013f644c857644dd18.png"/></p><p style="text-indent: 2em; text-align: left;"><strong><span style="color: rgb(255, 0, 0);">我知道目前有很多的VPN客户端程序因为各种各样的原因需要经常去使用netsh。通常情况下，他们运行在SYSTEM环境中。所以根据目标系统的运行环境，我们也许根本都不用去强迫netsh运行。</span></strong>这就是为什么黑客在攻击之前往往需要侦查目标环境的原因了，这是一个非常重要的步骤。这样你就可以避免走很多的弯路，并且节省下大量的时间。</p><p style="text-indent: 2em; text-align: left;">从防御端来看，如果你正在使用Sysmon（一款系统监视软件，我强烈建议广大用户使用这款软件）来对系统的运行进程进行实时监控的话，你就可以查看到netsh.exe的所有子进程了。</p><p style="text-align:center"><img src="http://p3.qhimg.com/t01d74c136cd3478ea9.png" title="t01fc0d2ffc96a879ed.png" alt="http://p1.qhimg.com/t01fc0d2ffc96a879ed.png"/></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">如何检测并阻止这类攻击？</span></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;"></span></strong><br/></p><p style="text-indent: 2em; text-align: left;">1.&nbsp;&nbsp;&nbsp;&nbsp; 很明显，我们可以扫描“<strong><span style="color: rgb(255, 0, 0);">HKLM\SOFTWARE\Microsoft\Netsh</span></strong>”注册表键中的新条目，这是最简单的一种方法。</p><p style="text-indent: 2em; text-align: left;">2.&nbsp;&nbsp;&nbsp;&nbsp; 你的团队应该监控注册表的状态，任何通过CMD、Powershell、或者WMI来修改注册表的操作都应该被记录下来。虽然这种情况经常会发生，而且这很有可能需要花费大量的时间。但是如果能够发现异常活动的话，这点投入还是值得的。</p><p style="text-indent: 2em; text-align: left;">3.&nbsp;&nbsp;&nbsp;&nbsp; 用户也可以使用DLL白名单，微软的Applocker可以允许用户配置DLL文件的执行策略。</p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">总结</span></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;"></span></strong><br/></p><p style="text-indent: 2em; text-align: left;">我的这一发现到底有多么重要？我自己也不太清楚。但是，这确实是攻击者可以利用的一种攻击方法。请记住，处于防御端的人必须要想办法检测并阻止所有可能的攻击手段，而攻击者在攻击的过程中只需要使用一种方法即可。<strong><span style="color: rgb(0, 176, 80);">所以信息安全攻防从来就不是一个公平的游戏。</span></strong></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://www.adaptforward.com/2016/09/using-netshell-to-execute-evil-dlls-and-persist-on-a-host/" target="_blank">原文链接：http://www.adaptforward.com/2016/09/using-netshell-to-execute-evil-dlls-and-persist-on-a-host/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】使用Netshell执行恶意DLL并实现对目标主机的持久化攻击 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3071" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

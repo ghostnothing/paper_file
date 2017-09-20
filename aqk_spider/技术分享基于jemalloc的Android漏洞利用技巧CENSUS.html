@@ -1,0 +1,925 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】基于jemalloc的Android漏洞利用技巧----CENSUS - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="jemalloc,android安全,android漏洞利用"/>
+    
+        <meta name="description" content="本文主要介绍的是jemalloc与Android的堆漏洞利用。shadow是CENSUS开发的的一个基于jemalloc的堆漏洞利用框架，用来搭配调试器提供jemalloc分配器的内部结构信息。可以作为插件在GDB，WINDBG，以及lldb中使用。
+"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】基于jemalloc的Android漏洞利用技巧----CENSUS</h2>
+                <div class="article-msg">
+                    <span class="time">2017-04-28 10:58:33</span>
+                    
+                                        <span class="read">阅读：18025次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3786"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3786" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://census-labs.com/media/shadow-infiltrate-2017.pdf"
+                             target="_blank">来源： census-labs.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=941579989" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01847b1f0fc17d6702.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=941579989" style="color:#848e99;">arnow117</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; background-color: rgb(255, 255, 255); text-indent: 0em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;"><img src="http://p4.qhimg.com/t01ef392845ec4a3709.jpg" title="t01ef392845ec4a3709.jpg" alt="http://p4.qhimg.com/t01ef392845ec4a3709.jpg"/></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=941579989" target="_blank" textvalue="arnow117" style="text-decoration: underline; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong>arnow117</strong></span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">预估稿费：300RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">背景介绍</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">jemalloc的相关研究</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">argp与huku在2012年在Phrack上发表的：对jemalloc内存分配器的单独利用(做出了基于FreeBSD上libc的POC)。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">argp与huku在2012年BlackHat上发表的：在Firefo中玩坏jemalloc的元数据。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">argp在2015年INFILTRATE上的jemalloc漏洞利用方法论。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Android堆漏洞利用的相关研究</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Hanan Be&#39;er对CVE-2015-3864这个stagefright中整形溢出导致堆破坏的漏洞利用</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Aaron Adams的对这个漏洞的又一次利用</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Joshua Drake对于stagefright漏洞利用相关工作 向之前的研究者们致谢！（这也是为什么要翻译这一段之必要）</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">配合jemalloc使用的插件：Shadow</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">注，因为本文核心是jemalloc与堆漏洞利用，此章节关于对关于插件shadow的历史部分没有翻译。</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">shadow是CENSUS开发的的一个基于jemalloc的堆漏洞利用框架，开源在Github(</span><a href="https://github.com/CENSUS/shadow" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">传送门</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">)上。用来搭配调试器提供jemalloc分配器的内部结构信息。可以作为插件在GDB，WINDBG，以及lldb中使用。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t0102fc88296aac1e1a.png" title="t018b7e703e32988d51.png" alt="http://p1.qhimg.com/t018b7e703e32988d51.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个框架有几个优点：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">没有多余的要附加的源文件。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">对于Android与Firefox两个平台，使用相同的指令。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">简化的调试引擎。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">提供堆快照支持。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;jeparse&nbsp;-f
+(gdb)&nbsp;jestore&nbsp;/tmp/snapshot1</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">提供单独的脚本，允许进行非运行时的堆排布分析。单独使用时样例：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;python&nbsp;shadow.py&nbsp;/tmp/snapshot1&nbsp;jeruns&nbsp;-c
+listing&nbsp;current&nbsp;runs&nbsp;only
+[arena&nbsp;00&nbsp;(0x0000007f85680180)]&nbsp;[bins&nbsp;36]
+[run&nbsp;0x7f6ef81468]&nbsp;[region&nbsp;size&nbsp;08]&nbsp;[total&nbsp;regions&nbsp;512]&nbsp;[free&nbsp;regions&nbsp;250]
+[run&nbsp;0x7f6e480928]&nbsp;[region&nbsp;size&nbsp;16]&nbsp;[total&nbsp;regions&nbsp;256]&nbsp;[free&nbsp;regions&nbsp;051]
+[run&nbsp;0x7f6db81888]&nbsp;[region&nbsp;size&nbsp;32]&nbsp;[total&nbsp;regions&nbsp;128]&nbsp;[free&nbsp;regions&nbsp;114]
+...</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 176, 80);">提供对于堆中内存排布的解析脚本。作为Python插件包时的使用样例：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">//code
+import&nbsp;jemalloc
+heap&nbsp;=&nbsp;jemalloc.jemalloc(&quot;/tmp/snapshot1&quot;)
+for&nbsp;chunk&nbsp;in&nbsp;heap.chunks:
+print&nbsp;&quot;chunk&nbsp;@&nbsp;0x%x&quot;&nbsp;%&nbsp;chunk.addr
+//run
+$&nbsp;python&nbsp;print_chunks.py
+chunk&nbsp;@&nbsp;0x7f6d240000
+chunk&nbsp;@&nbsp;0x7f6db00000
+chunk&nbsp;@&nbsp;0x7f6db40000
+chunk&nbsp;@&nbsp;0x7f6db80000
+chunk&nbsp;@&nbsp;0x7f6dbc0000
+...</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">jemalloc</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">jemalloc的一些特性</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">jemalloc使用bitmap管理堆分配，而不是通过内存的利用率，这也可能是jemalloc被广泛使用的主要原因。当下FreeBSD libc，Firefox，Android libc，MySQL，Redis以及Facebook内部都在用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">设计原则</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最小化的元数据开销</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">基于每个线程进行缓存，避免了同步问题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">避免了连续分配内存的碎片化问题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">简洁高效（所以就可以预判了哦呵呵）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 16px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Android中的jemalloc</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在Android 6使用的版本实际上是4.0.0，在Android 7 上使用的版本是4.1.0-4-g33184bf69813087bf1885b0993685f9d03320c69</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">jemalloc在Android源码中的修改通过宏定义开关控制的代码块来实现，同时辅以/* Android change */的注释</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#if&nbsp;defined(__ANDROID__)/*&nbsp;ANDROID&nbsp;change&nbsp;*/
+/*&nbsp;…&nbsp;*/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;…&nbsp;*/
+#endif&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;End&nbsp;ANDROID&nbsp;change&nbsp;*/</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在jemalloc的Android.mk中限制了仅使用两个arenas，并且开启了线程缓存(PS：本文的讨论基于64位的架构)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">//part&nbsp;of&nbsp;Android.mk
+jemalloc_common_cflags&nbsp;+=&nbsp;\
+-DANDROID_MAX_ARENAS=2&nbsp;\
+-DJEMALLOC_TCACHE&nbsp;\
+-DANDROID_TCACHE_NSLOTS_SMALL_MAX=8&nbsp;\
+-DANDROID_TCACHE_NSLOTS_LARGE=16&nbsp;\</pre><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">jemalloc内部结构</span></strong></span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01da12bf0eb6282fa6.png" title="t01fd5d0f791863d8d8.png" alt="http://p4.qhimg.com/t01fd5d0f791863d8d8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 16px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">概念：region</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">调用malloc返回给用户的实际内存</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在内存中连续分布</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">不包含元数据</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">根据大小不同，划分为三种类型：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Small，最大0x14336字节</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Large，最大0x38000字节(Android 6上)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Huge，大于0x38000</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以使用shadow中的jebininfo列出当前线程所有的region，或者jesize列出满足给定size的region相关信息</span></p><pre class="brush:plain;toolbar:false">//jebinfo
+(gdb)&nbsp;jebininfo
+[bin&nbsp;00]&nbsp;[region&nbsp;size&nbsp;008]&nbsp;[run&nbsp;size&nbsp;04096]&nbsp;[nregs&nbsp;0512]
+[bin&nbsp;01]&nbsp;[region&nbsp;size&nbsp;016]&nbsp;[run&nbsp;size&nbsp;04096]&nbsp;[nregs&nbsp;0256]
+[bin&nbsp;02]&nbsp;[region&nbsp;size&nbsp;032]&nbsp;[run&nbsp;size&nbsp;04096]&nbsp;[nregs&nbsp;0128]
+[bin&nbsp;03]&nbsp;[region&nbsp;size&nbsp;048]&nbsp;[run&nbsp;size&nbsp;12288]&nbsp;[nregs&nbsp;0256]
+[bin&nbsp;04]&nbsp;[region&nbsp;size&nbsp;064]&nbsp;[run&nbsp;size&nbsp;04096]&nbsp;[nregs&nbsp;0064]
+[bin&nbsp;05]&nbsp;[region&nbsp;size&nbsp;080]&nbsp;[run&nbsp;size&nbsp;20480]&nbsp;[nregs&nbsp;0256]
+[bin&nbsp;06]&nbsp;[region&nbsp;size&nbsp;096]&nbsp;[run&nbsp;size&nbsp;12288]&nbsp;[nregs&nbsp;0128]
+[bin&nbsp;07]&nbsp;[region&nbsp;size&nbsp;112]&nbsp;[run&nbsp;size&nbsp;28672]&nbsp;[nregs&nbsp;0256]
+//jesize
+(gdb)&nbsp;jesize&nbsp;24
+[bin&nbsp;02]&nbsp;[region&nbsp;size&nbsp;032]&nbsp;[run&nbsp;size&nbsp;04096]&nbsp;[nregs&nbsp;0128]</pre><p style="text-align:center"><img src="http://p6.qhimg.com/t012df3d443e81128dc.png" title="t01b42dfc3562d8bcfd.png" alt="http://p1.qhimg.com/t01b42dfc3562d8bcfd.png"/><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">线程申请memory时，与region的对应关系。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">概念：run</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">存放连续的大小相同的region的容器</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一系列连续的页集合</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内部存放small/large类型的region</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">没有元数据</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看给定的地址所属的run中的region信息</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;jerun&nbsp;0x7f931c0628
+[region&nbsp;000]&nbsp;[used]&nbsp;[0x0000007f931cc000]&nbsp;[0x0000000070957cf8]
+[region&nbsp;001]&nbsp;[used]&nbsp;[0x0000007f931cc008]&nbsp;[0x0000000070ea78b0]
+[region&nbsp;002]&nbsp;[used]&nbsp;[0x0000007f931cc010]&nbsp;[0x0000000070ec2868]
+[region&nbsp;003]&nbsp;[used]&nbsp;[0x0000007f931cc018]&nbsp;[0x0000000070f0322c]
+...
+(gdb)&nbsp;x/4gx&nbsp;0x7f931cc000
+0x7f931cc000:&nbsp;0x0000000070957cf8&nbsp;0x0000000070ea78b0
+0x7f931cc010:&nbsp;0x0000000070ec2868&nbsp;0x0000000070f0322c
+...</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01e1e93aa2da9ed146.png" title="t01c6388359291eb449.png" alt="http://p5.qhimg.com/t01c6388359291eb449.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">线程申请memory时，与run的对应关系。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">概念：chunk</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">存放run的容器</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">大小固定相同</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">操作系统返回的内存被划分到chunk中管理</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">存储着关于自身以及它管理的run的元数据</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01dffc6e2ec4f216ce.png" title="t01776a8a0473513afb.png" alt="http://p8.qhimg.com/t01776a8a0473513afb.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">chunks的结构，与run以及元数据的关系。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t0191c6c09019b00992.png" title="t01e11d84a34e4ee5c5.png" alt="http://p4.qhimg.com/t01e11d84a34e4ee5c5.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">chunks中的元数据结构，mapbit[0]与mapmisc[0]指向chunk中的第一个run。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01daefc49132c0e510.png" title="t0199b7a6d03c391e68.png" alt="http://p8.qhimg.com/t0199b7a6d03c391e68.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">chunks元数据中mapmisc中的bitmap结构管理着run中的region的分配使用。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">变化: 不同Android版本下的jemalloc</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Chunk的大小</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01c6fe5456c94fb0b6.png" title="t01152fb580ae4bfff5.png" alt="http://p1.qhimg.com/t01152fb580ae4bfff5.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">元数据的变化</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">增加了mapbias与mapbits flags</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">堆中的jemalloc</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">root@bullhead/:&nbsp;cat&nbsp;/proc/self/maps&nbsp;|&nbsp;grep&nbsp;libc_malloc
+7f81d00000-7f81d80000&nbsp;rw-p&nbsp;00000000&nbsp;00:00&nbsp;0&nbsp;[anon:libc_malloc]
+7f82600000-7f826c0000&nbsp;rw-p&nbsp;00000000&nbsp;00:00&nbsp;0&nbsp;[anon:libc_malloc]
+7f827c0000-7f82a80000&nbsp;rw-p&nbsp;00000000&nbsp;00:00&nbsp;0&nbsp;[anon:libc_malloc]
+7f82dc0000-7f830c0000&nbsp;rw-p&nbsp;00000000&nbsp;00:00&nbsp;0&nbsp;[anon:libc_malloc]
+(gdb)&nbsp;jechunks
+[shadow]&nbsp;[chunk&nbsp;0x0000007f81d00000]&nbsp;[arena&nbsp;0x0000007f996800c0]
+[shadow]&nbsp;[chunk&nbsp;0x0000007f81d40000]&nbsp;[arena&nbsp;0x0000007f996800c0]
+[shadow]&nbsp;[chunk&nbsp;0x0000007f82600000]&nbsp;[arena&nbsp;0x0000007f996800c0]
+[shadow]&nbsp;[chunk&nbsp;0x0000007f82640000]&nbsp;[arena&nbsp;0x0000007f996800c0]
+[shadow]&nbsp;[chunk&nbsp;0x0000007f82680000]&nbsp;[arena&nbsp;0x0000007f996800c0]
+[shadow]&nbsp;[chunk&nbsp;0x0000007f827c0000]&nbsp;[arena&nbsp;0x0000007f996800c0]
+...</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到maps中0x7f81d00000对应的memory，属于两个chunk，分别位于0x7f81d00000以及0x7f81d40000。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 16px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">jemalloc的内存排布</span></strong></span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t012f97cf90ae3c7ae5.png" title="t014b1f9bb7a56d08e4.png" alt="http://p7.qhimg.com/t014b1f9bb7a56d08e4.png"/></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">jemalloc管理下的内存排布</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01a1a7bba36f74962c.png" title="t015df2f67cded44430.png" alt="http://p3.qhimg.com/t015df2f67cded44430.png"/></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">溢出了region的示意图</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01d402203d2c1c4ed7.png" title="t01b7ef92a0bbeaf53e.png" alt="http://p5.qhimg.com/t01b7ef92a0bbeaf53e.png"/></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果溢出了run的示意图</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t01c180a87a54dda326.png" title="t011b2115c9ffac533d.png" alt="http://p5.qhimg.com/t011b2115c9ffac533d.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果溢出了chunk的示意图，注意到，chunk头部有元数据。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">基于jemalloc的堆喷</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Hanan Be&#39;er, Aaron Adams, Mark Brand, Joshua Drake都讨论过</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">region与run都没有元数据</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">堆喷的时候，chunk的第一个与最后一个页是不可喷的</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">chunk的地址是可以预测的</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t0163a6c45334b1f7fc.png" title="t0179cd443bf07d5bf9.png" alt="http://p9.qhimg.com/t0179cd443bf07d5bf9.png"/></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">chunk中可堆喷的区域大小示意图</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">chunk地址可预测？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Google ProjectZero的Mark Brand曾经有说过</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">32位上：大chunk，而地址空间较小</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">mmap()产生多个chunk，而chunk大小固定。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Andorid进程通常加载很多模块</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Android 7的chunk更大</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">同样适用于申请巨大的内存</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可预测的chunk地址意味着</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可预测的run地址</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可预测的region地址</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些可以让我们做更有目的性的，更加精确的堆喷</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">jemalloc的内存管理</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">arena</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">arena内存申请器</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">用来缓解线程间申请memory时的竞争问题</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">每一个arena彼此独立，管理各自的chunk</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">每个线程在第一次malloc时，建立起与各自的arena的联系，一个线程只指向一个arena</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">每个进程中，arena的数量由jemalloc配置决定，在Android上硬编码为两个。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t0172c550faeab623b9.png" title="t0143f28e21373cd6e8.png" alt="http://p5.qhimg.com/t0143f28e21373cd6e8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在malloc申请内存中，arena与线程缓存的关系。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">申请的memory在jemalloc内部实际是通过arena申请的，且在每一个线程中都有一个缓存。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看进程的arena</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">//common
+(gdb)&nbsp;x/2gx&nbsp;arenas
+0x7f99680080:&nbsp;0x0000007f997c0180&nbsp;0x0000007f996800c0
+//using&nbsp;shadow
+(gdb)&nbsp;jearenas
+[jemalloc]&nbsp;[arenas&nbsp;02]&nbsp;[bins&nbsp;36]&nbsp;[runs&nbsp;1408]
+[arena&nbsp;00&nbsp;(0x0000007f997c0180)]&nbsp;[bins&nbsp;36]&nbsp;[threads:&nbsp;1,&nbsp;3,&nbsp;5]
+[arena&nbsp;01&nbsp;(0x0000007f996800c0)]&nbsp;[bins&nbsp;36]&nbsp;[threads:&nbsp;2,&nbsp;4]
+arena&nbsp;bin</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">每个arena都有一个bin数组</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">每一个bin对应着一种small类型，大小固定的region。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">同时bin数组还肩负着用树存储未满的run的职责，并选一个作为当前指向的run</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看arena bin，runcur为对应region所属run的地址</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;jebins
+[arena&nbsp;00&nbsp;(0x7f997c0180)]&nbsp;[bins&nbsp;36]
+[bin&nbsp;00&nbsp;(0x7f997c0688)]&nbsp;[size&nbsp;class&nbsp;08]&nbsp;[runcur&nbsp;0x7f83080fe8]
+[bin&nbsp;01&nbsp;(0x7f997c0768)]&nbsp;[size&nbsp;class&nbsp;16]&nbsp;[runcur&nbsp;0x7f82941168]
+[bin&nbsp;02&nbsp;(0x7f997c0848)]&nbsp;[size&nbsp;class&nbsp;32]&nbsp;[runcur&nbsp;0x7f80ac0808]
+[bin&nbsp;03&nbsp;(0x7f997c0928)]&nbsp;[size&nbsp;class&nbsp;48]&nbsp;[runcur&nbsp;0x7f81cc14c8]
+[bin&nbsp;04&nbsp;(0x7f997c0a08)]&nbsp;[size&nbsp;class&nbsp;64]&nbsp;[runcur&nbsp;0x7f80ac0448]
+...</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看当前run，以及其中region的信息。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;jeruns&nbsp;-c
+[arena&nbsp;00&nbsp;(0x7f997c0180)]&nbsp;[bins&nbsp;36]
+[run&nbsp;0x7f83080fe8]&nbsp;[region&nbsp;size&nbsp;08]&nbsp;[total&nbsp;regions&nbsp;512]&nbsp;[free&nbsp;regions&nbsp;158]
+[run&nbsp;0x7f82941168]&nbsp;[region&nbsp;size&nbsp;16]&nbsp;[total&nbsp;regions&nbsp;256]&nbsp;[free&nbsp;regions&nbsp;218]
+[run&nbsp;0x7f80ac0808]&nbsp;[region&nbsp;size&nbsp;32]&nbsp;[total&nbsp;regions&nbsp;128]&nbsp;[free&nbsp;regions&nbsp;041]
+[run&nbsp;0x7f81cc14c8]&nbsp;[region&nbsp;size&nbsp;48]&nbsp;[total&nbsp;regions&nbsp;256]&nbsp;[free&nbsp;regions&nbsp;093]
+[run&nbsp;0x7f80ac0448]&nbsp;[region&nbsp;size&nbsp;64]&nbsp;[total&nbsp;regions&nbsp;064]&nbsp;[free&nbsp;regions&nbsp;007]
+...</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过arena申请内存流程</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01d9b245ccadf592c3.png" title="t012b249d350a257d9f.png" alt="http://p4.qhimg.com/t012b249d350a257d9f.png"/></p><p style="text-align:center"><img src="http://p3.qhimg.com/t015ab8f0e6710ead8b.png" title="t01bf7a1870614496a0.png" alt="http://p5.qhimg.com/t01bf7a1870614496a0.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">申请size为8字节的memory时，先查bin，发现bin[0]所代表size为8的small region可以装的下，则查找对应存放这个连续region的run，并从中分配一块region返回。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 16px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过arena释放内存流程</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01f544e523f67f1645.png" title="t01a90f0c18eb8e9945.png" alt="http://p7.qhimg.com/t01a90f0c18eb8e9945.png"/></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01e87e645849aabbce.png" title="t01fda9674c59ce3b57.png" alt="http://p4.qhimg.com/t01fda9674c59ce3b57.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">free与申请类似，查找到存放region的run，然后释放这个region。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">arena中的线程缓存</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">什么是线程缓存(tcache)</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01548583e80f3f2ae1.png" title="t01eba46dddec9c7060.png" alt="http://p9.qhimg.com/t01eba46dddec9c7060.png"/></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01388da58d8cc99628.png" title="t0165313ca4bb92e848.png" alt="http://p3.qhimg.com/t0165313ca4bb92e848.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">arena与线程缓存的流程关系。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">每一个线程维护着一个对small/large内存申请的缓存</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对缓存的操作与栈相似</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以申请时间为衡量的增长式“垃圾回收”机制</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01993d75858075ff89.png" title="t012ab8f8507c154859.png" alt="http://p7.qhimg.com/t012ab8f8507c154859.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">线程缓存栈以及其指向的run中region示意图，tbins[0]中存储着对应size的region缓存栈，每一种size的tbin中存储着其size下对应的缓存栈。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">线程缓存在申请内存时候的作用</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01d1d4006087146fb8.png" title="t0151da451628479b42.png" alt="http://p4.qhimg.com/t0151da451628479b42.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">还是刚才malloc的图，加上了tcache，可以看到，没有直接去通过arena要region，而是先去查对应size的tbin缓存栈avail去了。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01223ab5171f7c66b7.png" title="t01334cd08cbddccb0d.png" alt="http://p2.qhimg.com/t01334cd08cbddccb0d.png"/></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01d00f58c9cfa78640.png" title="t0151981e9603dbd296.png" alt="http://p5.qhimg.com/t0151981e9603dbd296.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在缓存栈中，弹出一个最近被free“回收”到缓存栈上的内存地址做新malloc的返回地址。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01df62201ded620e87.png" title="t01a479a69a2ea1d6f2.png" alt="http://p3.qhimg.com/t01a479a69a2ea1d6f2.png"/></p><p style="text-align:center"><img src="http://p2.qhimg.com/t010b84d63de531fcff.png" title="t0147149db38170f1ac.png" alt="http://p9.qhimg.com/t0147149db38170f1ac.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">按照如此大小一直申请，最终栈会弹空。之后arena再通过元数据向run中要对应size的region，申请的数量是lg_fill_div，将返回的内存地址再压入缓存栈。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">线程缓存在释放内存时的作用</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01d4fc867580ac3396.png" title="t01b015caa88736a155.png" alt="http://p6.qhimg.com/t01b015caa88736a155.png"/></p><p style="text-align:center"><img src="http://p0.qhimg.com/t011032913688f66842.png" title="t0172da113fb2068f93.png" alt="http://p6.qhimg.com/t0172da113fb2068f93.png"/></p><p style="text-align:center"><img src="http://p7.qhimg.com/t016282706fc666651c.png" title="t012bce77ee2c9f7bb8.png" alt="http://p4.qhimg.com/t012bce77ee2c9f7bb8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">释放与申请类似，只不过变成了将释放的地址压入缓存栈。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t014fdb27afefeb353c.png" title="t01c2eb0507c2e6348e.png" alt="http://p9.qhimg.com/t01c2eb0507c2e6348e.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">同样，缓存栈满了后arena也会将对应region还回去，但是每次只还一半。申请时间久的先被归还回去。缓存栈的容量在结构体tcache_bin_info中有定义。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">tcache中的数据结构</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">struct&nbsp;tcache_s&nbsp;{
+...
+tcache_bin_t&nbsp;tbins[];
+/*&nbsp;cached&nbsp;allocation
+pointers&nbsp;(stacks)&nbsp;*/
+};
+struct&nbsp;tcache_bin_s&nbsp;{
+...
+unsigned&nbsp;lg_fill_div;
+unsigned&nbsp;ncached;
+void&nbsp;**avail;
+};
+//tcache_bin_s&nbsp;就是&nbsp;tcache_bin_t</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以上这些结构体的内存，是通过arenas[0]分配得到的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">每个线程的TSD中也会存着指向这些结构的指针。</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t016a7e413e03247346.png" title="t01d5e3c5d286e064af.png" alt="http://p2.qhimg.com/t01d5e3c5d286e064af.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内存中的tbin与其avail指针</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t010dc7cc83ffd48b6e.png" title="t011de845f9e67539c1.png" alt="http://p0.qhimg.com/t011de845f9e67539c1.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如何从线程中找到tcache，x0就是线程结构体的地址，其中key_data就是线程特有数据（也叫TSD）的指针，所以这里存放的就包含了tcache的地址。从shadow中可以看到TSD是在size类型为0x80的run中的。</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01d3e285460071410d.png" title="t01f2770e0f916a614e.png" alt="http://p2.qhimg.com/t01f2770e0f916a614e.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">TSD中存放的tcache与arena的示意。从shadow中可以看到tcache是在size类型为0x1c00的run中的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果把tcache溢出了？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些信息在arenas[0]中存放</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">tcache在size类型为0x1c00的run里分配，很难去找对并操作</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">但是这种情况有可能的</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">需要创建或者销毁线程</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t011b1d716ec5633308.png" title="t01885e9a9cc45eced7.png" alt="http://p7.qhimg.com/t01885e9a9cc45eced7.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">那如果吧TSD溢出了呢？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">TSD在size类型为0x80的run里分配，很难去找对并操作</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这种情况有可能，但是也难达到</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">需要创建或者破坏线程相关信息</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01007d3ea340454ab1.png" title="t01696af51224ee822f.png" alt="http://p7.qhimg.com/t01696af51224ee822f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">小结：jemalloc内部结构在堆中的布局</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">jemalloc中固定的部分有</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">arena的大小</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">tcache的大小</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">arena与线程的关联部分(比如TSD)的大小</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">结构地址随机化</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">但是有一点值得注意，线程缓存使得访问相邻的region更加容易</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">利用shadow搞事情！</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">基于double free的利用姿势</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为什么要用这个呢，是因为之前我们没有在jemalloc里实践过这样的姿势</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">而且这个姿势在Android和Firefox都有通用的代码模式</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以很通用的使用</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在第一次free对象后，控制之后的两次申请</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">只要申请相同大小就可以进行利用</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01b76f5970e1f814c9.png" title="t01cc3ad6d6a0e6661d.png" alt="http://p0.qhimg.com/t01cc3ad6d6a0e6661d.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">double free的示例代码</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01c17abd24dc70291b.png" title="t01e686bde47ba910bf.png" alt="http://p4.qhimg.com/t01e686bde47ba910bf.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">申请到了0x7f8fed1000，看看此时的tcache。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t0122bd911669bf7da4.png" title="t019cacb121157450d2.png" alt="http://p3.qhimg.com/t019cacb121157450d2.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x7f8fed1000压入tcache</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01fb383266e6eda845.png" title="t01b5c8c6e2faafde01.png" alt="http://p1.qhimg.com/t01b5c8c6e2faafde01.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">受我们控制的第二次申请，又拿到了0x7f8fed1000</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t01fbded892b44005f6.png" title="t017cc92bf7b50cd359.png" alt="http://p7.qhimg.com/t017cc92bf7b50cd359.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">地址还回去，但是指针你留下来。最后我们用这个函数指针跳向我们想去的地方</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01777a2ca20d7cb877.png" title="t01d7b6f29987cb2a58.png" alt="http://p5.qhimg.com/t01d7b6f29987cb2a58.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">给函数指针赋值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">任意地址free的利用前提</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">不是简单的原型，通常是有缺陷的清理逻辑（比如对树中节点的移除）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">jemalloc对于free传入的地址没有很好的检查</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Android加入的检查可以被绕过</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">释放后会把地址压入对应的线程缓存栈</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">释放时候页索引检查代码段：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">chunk&nbsp;=&nbsp;(arena_chunk_t&nbsp;*)CHUNK_ADDR2BASE(ptr);
+if&nbsp;(likely(chunk&nbsp;!=&nbsp;ptr))&nbsp;{
+pageind&nbsp;=&nbsp;((uintptr_t)ptr&nbsp;-&nbsp;(uintptr_t)chunk)&nbsp;&gt;&gt;&nbsp;LG_PAGE;
+#if&nbsp;defined(__ANDROID__)
+/*&nbsp;Verify&nbsp;the&nbsp;ptr&nbsp;is&nbsp;actually&nbsp;in&nbsp;the&nbsp;chunk.&nbsp;*/
+if&nbsp;(unlikely(pageind&nbsp;&lt;&nbsp;map_bias&nbsp;||&nbsp;pageind&nbsp;&gt;=&nbsp;chunk_npages))&nbsp;{
+__libc_fatal_no_abort(...)
+return;
+}
+#endif
+/*&nbsp;chunksize_mask&nbsp;=&nbsp;chunksize&nbsp;-&nbsp;1&nbsp;*/
+#define&nbsp;LG_PAGE&nbsp;12
+#define&nbsp;CHUNK_ADDR2BASE(a)&nbsp;((void&nbsp;*)((uintptr_t)(a)&nbsp;&amp;&nbsp;~chunksize_mask))</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">再来看看chunk的排布&nbsp;</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t0193ad3ab613795189.png" title="t01ea5afdcd60d062dd.png" alt="http://p1.qhimg.com/t01ea5afdcd60d062dd.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">chunk中对于mapbits的检查</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">mapbits&nbsp;=&nbsp;arena_mapbits_get(chunk,&nbsp;pageind);
+assert(arena_mapbits_allocated_get(chunk,&nbsp;pageind)&nbsp;!=&nbsp;0);
+#if&nbsp;defined(__ANDROID__)
+/*&nbsp;Verify&nbsp;the&nbsp;ptr&nbsp;has&nbsp;been&nbsp;allocated.&nbsp;*/
+if&nbsp;(unlikely((mapbits&nbsp;&amp;&nbsp;CHUNK_MAP_ALLOCATED)&nbsp;==&nbsp;0))&nbsp;{
+__libc_fatal(...);
+}
+#endif
+if&nbsp;(likely((mapbits&nbsp;&amp;&nbsp;CHUNK_MAP_LARGE)&nbsp;==&nbsp;0))&nbsp;{
+/*&nbsp;Small&nbsp;allocation.&nbsp;*/
+/*&nbsp;...&nbsp;*/
+#define&nbsp;CHUNK_MAP_ALLOCATED&nbsp;((size_t)0x1U)
+#define&nbsp;CHUNK_MAP_LARGE&nbsp;((size_t)0x2U)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">把这两个检查绕过，就可以任意地址进行free了，当然我们就可以传入一个从run中拿到的地址。也就是说，我们可以释放并往tcache里面压栈一个非对齐的region指针，但是有一个字节会被破坏。最后重新申请被free的region就会导致溢出到下一个region，如下图所示。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t012aec6674ab14ae69.png" title="t012aec6674ab14ae69.png" alt="http://p4.qhimg.com/t012aec6674ab14ae69.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">利用案例</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">boot.oat 里面有Android框架层的所有编译的native代码，在启动时候随机化加载。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">boot.art 装载着一系列栈初始化类信息，以及相关的对象。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">加载地址对每一个设备来说地址固定，由第一次启动时决定</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">包含着指向boot.oat的指针</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t0114e77b86054e122e.png" title="t0114e77b86054e122e.png" alt="http://p6.qhimg.com/t0114e77b86054e122e.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在boot.art中我们找到一个函数指针0x713b6c40，我们先来分别计算mapbits，以及pagind，可以看到其绕过了这两个检查，注意64bit下的一些常量。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">利用流程</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	把这个在boot.art中指向boot.oat的地址通过free压入缓存栈</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.	malloc后从缓存栈中弹出这个地址</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.	把想要控制的PC的值写进新申请的memory里面，覆盖某个当前的函数指针</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.	等风来，调用这个函数指针。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">如何找boot.art中的地址</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">用shadow的jefreecheck找到可以被free的地址</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">确保这个地址中存储的函数指针会被调用</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;jefreecheck&nbsp;-b&nbsp;0&nbsp;boot.art
+searching&nbsp;system@framework@boot.art&nbsp;(0x708ce000&nbsp;-0x715c2000)
+[page&nbsp;0x712cf000]
++&nbsp;0x712cf000
++&nbsp;0x712cf028
++&nbsp;0x712cf038
++&nbsp;0x712cf060
++&nbsp;0x712cf070
+...</pre><p style="text-align:center"><img src="http://p7.qhimg.com/t0133d745eeeacd3a8a.png" title="t0133d745eeeacd3a8a.png" alt="http://p7.qhimg.com/t0133d745eeeacd3a8a.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了举例方便，在这里面我们用gdb直接向malloc得到后的问题地址0x713b6c40写入非法值。可以看到0x713b6c40这个地址存储的是一个函数指针。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t019c2d3c132e6d291a.png" title="t019c2d3c132e6d291a.png" alt="http://p1.qhimg.com/t019c2d3c132e6d291a.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">free这个地址后，通过malloc再获得这个地址，然后向这个地址所指向的内存写一些值，比如AAAAA，我们便成功的控制了PC。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://census-labs.com/media/shadow-infiltrate-2017.pdf" target="_blank">原文链接：https://census-labs.com/media/shadow-infiltrate-2017.pdf</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】基于jemalloc的Android漏洞利用技巧----CENSUS - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3786" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/6x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13662" user-name="__st4r__" href="javascript:;">
+                __st4r__            </a>
+                        <span class="comment-time">2017-04-30 12:20:51</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13662">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13662" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@0xseven:转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13660" user-name="船指沈岛滔" href="javascript:;">
+                船指沈岛滔            </a>
+                        <span class="comment-time">2017-04-30 03:00:48</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13660">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13660" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">@alan伟伟- //@IceColor不疯魔不成活:给老翔涨点粉子//@在路上_arnow:</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13647" user-name="孤城守夜人" href="javascript:;">
+                孤城守夜人            </a>
+                        <span class="comment-time">2017-04-29 10:30:49</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13647">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13647" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@0xseven: 转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13643" user-name="followboy" href="javascript:;">
+                followboy            </a>
+                        <span class="comment-time">2017-04-28 23:20:50</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13643">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13643" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@0xseven:转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13641" user-name="小禾才露尖尖角54" href="javascript:;">
+                小禾才露尖尖角54            </a>
+                        <span class="comment-time">2017-04-28 21:40:49</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13641">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13641" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@ele7enxxh://@少仲://@在路上_arnow:</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13639" user-name="jsf_exp" href="javascript:;">
+                jsf_exp            </a>
+                        <span class="comment-time">2017-04-28 18:50:48</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13639">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13639" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@ele7enxxh://@少仲://@在路上_arnow:</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/6x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13636" user-name="ele7enxxh" href="javascript:;">
+                ele7enxxh            </a>
+                        <span class="comment-time">2017-04-28 15:10:49</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13636">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13636" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@少仲://@在路上_arnow:</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13633" user-name="少仲" href="javascript:;">
+                少仲            </a>
+                        <span class="comment-time">2017-04-28 13:40:49</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13633">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13633" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@在路上_arnow:</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13631" user-name="IceColor不疯魔不成活" href="javascript:;">
+                IceColor不疯魔不成活            </a>
+                        <span class="comment-time">2017-04-28 13:10:48</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13631">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13631" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">给老翔涨点粉子//@在路上_arnow:</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13630" user-name="学渣bypass" href="javascript:;">
+                学渣bypass            </a>
+                        <span class="comment-time">2017-04-28 13:00:49</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13630">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13630" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">Repost</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3786" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

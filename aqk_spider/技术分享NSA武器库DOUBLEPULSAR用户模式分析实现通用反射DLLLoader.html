@@ -1,0 +1,556 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】NSA武器库：DOUBLEPULSAR用户模式分析实现通用反射DLL Loader - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="DOUBLEPULSAR,影子经纪人"/>
+    
+        <meta name="description" content="内核payload不能加载DLL，但是可以设置包含用户模式shellcode的APC调用来实现加载DLL。本文的技术细节使用用户模式的DOUBLEPULSAR，且提供了一个测试工具，其充分利用了独立的shellcode，因此很容易看到行为和检测。该工具不使用内核代码，只有用户层的loader来注入任意DLL。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】NSA武器库：DOUBLEPULSAR用户模式分析实现通用反射DLL Loader</h2>
+                <div class="article-msg">
+                    <span class="time">2017-05-22 14:26:12</span>
+                    
+                                        <span class="read">阅读：14592次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3883"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3883" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://countercept.com/our-thinking/doublepulsar-usermode-analysis-generic-reflective-dll-loader/"
+                             target="_blank">来源： countercept.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2775084127" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2775084127" style="color:#848e99;">myswsun</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p2.qhimg.com/t012bba6df9412e9f1e.png" alt="http://p7.qhimg.com/t0140d3569451a770ee.png"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2775084127" target="_blank" textvalue="myswsun"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>myswsun</strong></span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; word-break: break-all; text-indent: 2em; background-color: rgb(255, 255, 255);"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">稿费：200RMB</span></strong></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x00 前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们之前分析发布了一篇文章“<a href="http://bobao.360.cn/learning/detail/3881.html" target="_self">DOUBLEPULSAR payload的内核payload的分析</a>”，其细节是关于内核模式shellcode如何使用异步APC注入DLL。然而，实际上内核payload不能做到加载DLL，但是可以设置包含用户模式shellcode的APC调用来实现加载DLL。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们感兴趣的是这个payload能适用任意DLL，但是没有使用LoadLibrary。避免使用LoadLibrary可以更隐蔽的加载，因为它避免了需要写入文件到磁盘，还能避免LoadLibrary被监控，同时也能避免在PEB（通常包含所有加载的DLL的列表）中留有痕迹。虽然这种方式现在遍地可见，但是目前为止，我们还没注意到任何公开的代码可以用这种方式加载任意DLL的（现有代码需要的自定义构建支持加载的DLL）。DOUBLEPULSAR是不同的，它的实现非常完美，几乎能加载任何DLL。另外，几乎支持任何版本的Windows。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本文的技术细节使用用户模式的DOUBLEPULSAR，且提供了一个测试工具，其充分利用了独立的shellcode，因此很容易看到行为和检测。该工具不使用内核代码，只有用户层的loader来注入任意DLL。尽管这个shellcode有32位的版本，但是目前我们只分析了64位的版本。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x01 细节</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">下面是shellcode的步骤的详细描述。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. call-pop被用来自定位，因此shellcode能使用静态偏移</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. 通过匹配哈希模块名定位需要的API函数，通过哈希函数名匹配导出函数</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. 解析DLL头得到关键元数据</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4. 如果可能，在优选的基址上分配合适大小的内存。任何以该基址的偏移都被保存，以供后用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5. DLL的每个节被拷贝到内存中合适的位置</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6. 处理导入函数，加载依赖库（使用LoadLibrary），填充IAT</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">7. 重定位，修复偏移</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">8. 使用RtlAddFunctionTable设置异常处理（SEH）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">9. 基于DLL头，设置每个节的内存保护属性为合适的值</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">10. 使用DLL_PROCESS_ATTACH为参数调用DLL入口点</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">11. 解析需要的序号函数并调用</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">12. 得到需要的函数后，使用DLL_PROCESS_DETACH为参数调用DLL入口点</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">13. 使用RtlDeleteFunction移除异常处理</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">14. 将整个DLL内存设为可写，并清零</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">15. 释放DLL内存</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">16. shellcode清0自己，除了函数末端，其保证APC优雅的返回</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在shellcode开头能看到call-pop组合，下个指令被调用，返回地址立即被移出到寄存器中。这使得代码能找到它自己的地址，并使用该地址的静态偏移来找到它自己的缓冲区。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t016ff4bbff2b89c6a6.png" title="t01851f3f69bf4bc857.png" alt="http://p6.qhimg.com/t01851f3f69bf4bc857.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当进入到一个循环，得到shellcode中偏移0xF0C的值，通过rdx和rcx传入到一个函数中。这个函数将调用find_func，定位shellcode需要的Windows API函数。得到一个模块名的哈希值（在RDX中）和一个函数名的哈希（rcx中）。因为这些只是名字，他们可以被硬编码，且在不同版本的Windows中不会改变。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从TEB的PebLdr字段中定位到加载的模块，循环搜索模块哈希值。注意模块名哈希通过rdx压入栈，作为一个正常函数的序言，shellcode能从栈中访问它。</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01e257c092e1050a3e.png" title="t01e4a87ff7796a4762.png" alt="http://p5.qhimg.com/t01e4a87ff7796a4762.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当匹配到后，转到函数搜索循环中，和上述方式相同，但是使用的是模块导出表的导出函数名。通过解析内存中的模块头，找到包含各种映像目录入口的RVA的IMAGE_DIRECTORY_ENTRY_ARRAY，其中包含存有导出函数的IMAGE_DIRECTORY_ENTRY_EXPORT。通过加上模块基址，RVA能够转化为真实的地址。PE头的解析在shellcode非常常见。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">IMAGE_DIRECTORY_ENTRY_EXPORT结构包含了各种数组的RVA。AddressOfFunctions是导出函数的RVA数组。AddressOfNames这些函数的ASCII名字的平行数组。AddressOfNameOrdinals是另一个包含函数序号信息的平行数组。迭代这些数组能得到需要的函数地址，保存这些函数地址。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01f71a542fb9e4c3d5.png" title="t016dab6b321891f723.png" alt="http://p0.qhimg.com/t016dab6b321891f723.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">函数地址保存在栈中结构中。这个结构用来保存各种东西，如shellcode执行需要的函数指针。通常使用rsi访问它。结构的格式如下，也显示了循环解析的函数（其他值稍后会初始化）。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t016257082626153b99.png" title="t01bd5bcc777b852c31.png" alt="http://p2.qhimg.com/t01bd5bcc777b852c31.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">函数指针在每次调用find_func后被写入这个结构：</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t011b5d55231a586a07.png" title="t01225f22c30673ecd8.png" alt="http://p7.qhimg.com/t01225f22c30673ecd8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你也能通过rbp看见另一个引用结构，在shellcode缓冲区的一个空白内存块中，初始值为0。这个结构显示如下，在shellcode的偏移0x368处。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t011931bb0dc099d850.png" title="t013d8101672a13ad31.png" alt="http://p3.qhimg.com/t013d8101672a13ad31.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在定位到shellcode需要的函数后，DLL被复制到新创建的内存中，并清0 shellcode缓冲区。这将导致不能定位到DLL的位置，但是有个临时的位置保存了DLL的原始数据。这充分利用了之前定位的一个函数，kernel32!VirtualAllocStub（VirtualAlloc的一个简单包装）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">DLL的大小来自shellcode末尾写入的值，在shellcode和shellcode缓冲区中的DLL的中间。这是shellcode中仅有的2个自定义的值之一，另个加载DLL后应该调用的函数序号。Shellcode缓冲区的布局如下：</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01582d0e33c68c822c.png" title="t0172ba6bb0b52a33e3.png" alt="http://p8.qhimg.com/t0172ba6bb0b52a33e3.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些值通过开头的pop-call指令来得到相关地址引用，将shellcode缓冲区偏移0x25的地址写入到rbp中。因此我们能在shellcode缓冲区内存中通过[rbp+0xF5D]获取到DLL的大小。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t0176addd928a9f147d.png" title="t01767689bd8a130001.png" alt="http://p5.qhimg.com/t01767689bd8a130001.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">解析DLL头以判断DLL的架构（32位还是64位）。如果是错误的架构，shellcode将停止运行，避免有任何错误。一些有用的值会被保存以供后用，如Section头和IMAGE_DATA_DIRECTORY_ARRAY的指针。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01c8016446b77af671.png" title="t01f25ce7df39e19260.png" alt="http://p3.qhimg.com/t01f25ce7df39e19260.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">分配加载DLL的空间。这个区域的大小不是DLL的大小，因为它会占用磁盘，但是能从DLL头中的SizeOfImage中获得，以便能正确加载进内存。使用头中优选基址调用VirtualAlloc，但是如果这个不可靠，会在其他地方分配空间。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01063c8a7122d93b14.png" title="t01f20ed349103b020c.png" alt="http://p1.qhimg.com/t01f20ed349103b020c.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">保存优选基址的偏移，用于重定位。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t019b1eb05d0336b721.png" title="t01fd821ecf0f6ded83.png" alt="http://p5.qhimg.com/t01fd821ecf0f6ded83.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">根据DLL的SizeOfImage字段，将DLL头拷贝到新创建的内存区域。之后，在一个循环中将每个节拷贝到正确的位置。这使用头中的字段NumberOfSections来循环遍历所有的节头，从每个节头中的PointerToRawData、SizeOfRawData和VirtualAddress，定位DLL节的原始数据，并拷贝到加载的DLL中的正确位置。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01547fe208b0bd6316.png" title="t0100b3455be20c0fe6.png" alt="http://p4.qhimg.com/t0100b3455be20c0fe6.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">导入函数现在加载了。在进程的开头，分配另一个内存，但是这只用来给函数用，但是貌似从没使用过。这可能是历史功能，不再需要了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">解析导入表，使用LoadLibrary加载每个库。这个不太隐蔽，但是我么假设用户能避免依赖库，或者只使用Windows库（更可能被忽略，认为是合法库）。使用IMAGE_DIRECTORY_ENTRY_ARRAY中的IMAGE_DIRECTORY_ENTRY_IMPORT定位导入表，其指针早前在解析DLL头时已经保存了。遍历导入表，解析每个库名的偏移并调用LoadLibrary加载它。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">每个库的导入函数使用导入表的FirstThunk来确定，其在IMAGE_IMPORT_BY_NAME结构中有个偏移，或者依赖序号。FirstThunk的值是针对位掩码0x8000000000000000（IMAGE_ORDINAL_FLAG64）做检查的；如果设置了这个值，在地位包含序号，否则，是通过名字导入的，且能定位到函数字符串的偏移。然后调用GetProcAddress得到函数地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这个处理过程中，rbp引用的空间被用于临时保存确定的东西，如最新的FirstThunk值和IMAGE_IMPORT_BY_NAME的偏移。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t014a1d53d49e49c67a.png" title="t01d5b75f1d1acbe340.png" alt="http://p8.qhimg.com/t01d5b75f1d1acbe340.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后再写回地址到FirstThunk中，作为绑定导入。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们也能看到一个函数调用充分利用了早前分配的神秘的内存。然而，这个调用不可达，因为在这个调用前rax被设为1才调用，如果为0就跳过调用。这很奇怪，因为它似乎是个永远不会用到的函数。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01d04e064863d41dba.png" title="t01c468eb94653f3d27.png" alt="http://p7.qhimg.com/t01c468eb94653f3d27.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在处理导入函数后，加载的DLL的头中的基地址被更新，以用来我们最终加载真实的基址。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t01bb504d0be31153bb.png" title="t01f5821ae90d7dc507.png" alt="http://p1.qhimg.com/t01f5821ae90d7dc507.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在处理重定位，以解决关于DLL基址的任何偏移。IMAGE_DIRECTORY_ENTRY_BASERELOC从头中可以找到，用于遍历所有的重定位项，必要时进行重定向。只处理IMAGE_REL_AMD64_ADDR32NB, IMAGE_REL_AMD64_SECTION 和 IMAGE_REL_AMD64_ABSOLUTE的重定位。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">遍历每个重定位表，得到每块的入口，检查头4个字节以判断重定位的类型。根据类型，后12字节作为重定位的值，并且将重定位值用于更新基于优选基址的偏移。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01808b5bdb8063bd01.png" title="t0112596d00d90d6b16.png" alt="http://p3.qhimg.com/t0112596d00d90d6b16.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用IMAGE_DIRECTORY_ENRTY_EXCEPTION和调用RtlAddFunctionTable设置异常处理。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t017ac9827bbd670630.png" title="t018da43ed14f5ece61.png" alt="http://p0.qhimg.com/t018da43ed14f5ece61.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">根据Section头，调用VirtualProtect将每个节的内存保护属性设为合适的值。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t0146385e4c7efa844e.png" title="t011e1918c276010343.png" alt="http://p7.qhimg.com/t011e1918c276010343.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用头中的AddressOfEntryPoint定位到DLL的入口点，然后以DLL_PROCESS_ATTACH（值为1）为参数调用函数入口点让DLL知道被加载了。完成过程如下：</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t0136ea6e442eed6f3c.png" title="t014b72344111ee5c60.png" alt="http://p9.qhimg.com/t014b72344111ee5c60.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在DLL被加载了，需要调用的函数的序号也得到了，调用该函数。使用从自定位的call-pop指令中的地址获得序号值，和之前的DLL大小一样，但是这是在shellcode缓冲区偏移0xF86处。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从DLL头中得到序号基值，这是库中的序号的起始值。将所需要的序号减去起始值能得到位于导出函数数组AddressOfFunctions中的任意函数的索引。这提供了函数的RVA，加上基址就得到了函数的真实地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">函数有一些栈空间和寄存器rcx，rdx和r8中的参数。当然如果函数不需要任何参数，这些参数的存在和栈空间将会不同，但是任何自定义的DLL可能希望利用这些。Shellcode返回值保存在栈中，即使它从不被使用。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t015a54d54ca89ba4d7.png" title="t01da4f491f68d9b982.png" alt="http://p7.qhimg.com/t01da4f491f68d9b982.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在函数返回后，清理。卸载dll，并清零内存。首先使用DLL_PROCESS_DETACH(值0)为参数调用函数入口点。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01d122bfc32333b778.png" title="t019d92777a5724ad14.png" alt="http://p1.qhimg.com/t019d92777a5724ad14.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用RtlDeleteFunctionTable清理异常处理。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t012839a0e9c84eb649.png" title="t013a077608635214cc.png" alt="http://p7.qhimg.com/t013a077608635214cc.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将DLL内存设为可写，以便清零，然后释放内存。VirtualProtectStub需要一个指向lpflOldProtect参数的可写指针，即使我们不关心它的值，但是必须提供，因此使用rbp引用的空间。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01a8391c5b80f9ff39.png" title="t0173599f7d77cf0a79.png" alt="http://p3.qhimg.com/t0173599f7d77cf0a79.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后shellcode清零自身，除了一个允许函数正确返回的函数结语。这是这种方式的一个小缺陷。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t0137858f81a6e2e2c8.png" title="t01b5b83169703dc098.png" alt="http://p8.qhimg.com/t01b5b83169703dc098.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x02 内存痕迹</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在使用DOUBLEPULSAR执行DLL加载后，有大量的内存痕迹能用于检测。首先在开头分配的内存中，从shellcode缓冲区中拷贝DLL从来没被清零或释放。这有点不同寻常，因为只要稍微处理下就能做到清除内存，甚至这块内存区域的权限还保留了PAGE_EXECUTE_READWRITE，和整块DLL的拷贝。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">事实上，这块内存区域不需要执行权限，因为它只用于读写。这非常奇怪，因为可读可写可执行的全些是非常值得怀疑的，在合法进程中很少需要这个。通常只在漏洞利用中使用。同时未修改的MZ头更加让人怀疑。而且，这块内存似乎并不一定需要，因为只需使用自定位的call-pop指令就足够从shellcode缓冲区中直接加载DLL。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">也可能这块内存区域是由一个老的不复杂的反射加载器遗留的，使用新技术后它没有被重构。不管怎样，在内存中你将得到一个可以的包含DLL拷贝的内存区域。如果payload执行多次后你将看见几个这种内存区域、</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">另一种内存痕迹更加难于避免。就是通过APC调用执行的shellcode的主函数的结语。因为需要确保函数返回清理，且要避免进程崩溃。尽管有方法使它更小，但是完全避免还是很有挑战性。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当你看到具有PAGE_EXECUTE_READWRITE权限的几乎包含全是0的内存区域时，在偏移0xF70处的内容如下：</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t013745ad596477a47d.png" title="t01809e6057510c5ad8.png" alt="http://p0.qhimg.com/t01809e6057510c5ad8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这之后，是两个32位的整数，第一个是注入的dll的大小，第二个是DLL中执行的序号。当然这两个值每次都会不同，不能作为静态特征。但是可以用来处理执行的DLL（一直在RWX的内存块中）和DLL中执行的函数。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x03 测试用户模式的DOUBLEPULSAR注入器的payload</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们发布了小的测试工具以用于调用DOUBLEPULSAR payload的用户模式的DLL加载机制。将使用shellcode注入一个DLL到你选择的进程中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">有趣的是，shellcode足够通用，能以各种方式触发。举个例子，该工具使用相似的方式插入一个用户模式的APC到内核payload中，但是也可以使用CreateRemoteThread等更常见的DLL注入方式触发shellcode（但是不能避免使用LoadLibrary）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面截图是工具的使用，注入DLL到calc.exe进程中弹出对话框。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01b8549afd06df0f41.png" title="t01ef0591fa18240cf8.png" alt="http://p5.qhimg.com/t01ef0591fa18240cf8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">执行后，能看到两块PAGE_EXECUTE_READWRITE属性的内存区域。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t0133b598768e58f00c.png" title="t01138f15131ebbedb8.png" alt="http://p6.qhimg.com/t01138f15131ebbedb8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些区域中的一个是几乎都是0，但是在0xF70处有个小的结语。另一个包含了原始的DLL。</span></p><p style="text-align: center;"><img src="http://p2.qhimg.com/t017791ed26c5512807.png" title="t0186ea5af4c2f6d986.png" alt="http://p9.qhimg.com/t0186ea5af4c2f6d986.png"/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://countercept.com/our-thinking/doublepulsar-usermode-analysis-generic-reflective-dll-loader/" target="_blank">原文链接：https://countercept.com/our-thinking/doublepulsar-usermode-analysis-generic-reflective-dll-loader/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】NSA武器库：DOUBLEPULSAR用户模式分析实现通用反射DLL Loader - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3883" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15560" user-name="带头大哥" href="javascript:;">
+                带头大哥            </a>
+                        <span class="comment-time">2017-07-30 23:48:49</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15560">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15560" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">g o o d !</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3883" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

@@ -1,0 +1,560 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】如何在PE文件中手动植入一个后门 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="PE文件,后门,windows后门,shellcode"/>
+    
+        <meta name="description" content="在本文中，后门植入指的是使看似无害的可执行文件（即PE文件，Portable Executable）执行恶意载荷的一种技术。包括启动calc.exe、添加用户账户以及获取远程shell等都可以算是恶意载荷。任何能够自给自足的代码都可称为shellcode。本篇文章主要向大家分享如何在PE文件中手动植入一个后门。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】如何在PE文件中手动植入一个后门</h2>
+                <div class="article-msg">
+                    <span class="time">2017-06-02 10:10:58</span>
+                    
+                                        <span class="read">阅读：21534次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3931"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3931" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://www.exploit-db.com/docs/42061.pdf"
+                             target="_blank">来源： exploit-db.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2819002922" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t0104d1b8b4ca36e961.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2819002922" style="color:#848e99;">興趣使然的小胃</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; background-color: rgb(255, 255, 255); text-indent: 0em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;"><img src="http://p8.qhimg.com/t0151d729502dcc8448.jpg" title="t0151d729502dcc8448.jpg" alt="http://p8.qhimg.com/t0151d729502dcc8448.jpg"/></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2819002922" target="_blank" textvalue="興趣使然的小胃" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>興趣使然的小胃</strong></span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一、简介</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">1.1 什么是后门</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在本文中，后门植入指的是使看似无害的可执行文件（即PE文件，Portable Executable）执行恶意载荷的一种技术。包括启动calc.exe、添加用户账户以及获取远程shell等都可以算是恶意载荷。任何能够自给自足的代码都可称为shellcode。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虽然杀毒软件的绕过技术并不是本文的重点，但本文也会通过迭代分析来证明这种后门植入手段在绕过杀毒软件方面的有效性。虽然这一主题已经被人反复提起，但之前的分析没有涉及ASLR以及已有代码洞（code cave）的利用，而本文刚好覆盖了这两方面内容。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Josh Pitts开发了</span><a href="https://github.com/secretsquirrel/the-backdoor-factory" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline; color: rgb(227, 108, 9);"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">The Backdoor Factory</span></strong></span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个工具，可对可执行文件进行自动化地后门部署。感谢他帮我做了一些分析，然而，不要过度依赖这个工具，毕竟知道如何手动部署后门并不是一件坏事。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">那么，什么是后门植入的最佳目标呢？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于我们希望可执行文件最终创建反弹型（或者绑定型）shell，因此当用户发现程序产生网络流量或者请求添加防火墙例外时，程序不应该引起他们的警觉。因此，这种情况下后门的最佳目标可以是NetCat、SSH/Telnet客户端以及其他程序。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">另外一类目标可以是软件破解工具，肯定有用户想在不付费的前提下玩某些游戏，因此他们会下载经过破解的.exe文件。他们对这类文件比较信任，认为游戏破解版除了不需要付费意外，并不会有其他可疑行为。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们会在本文中以PsExec（</span><a href="https://technet.microsoft.com/en-ca/sysinternals/bb897553.aspx" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline; color: rgb(227, 108, 9);"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Sysinternal</span></strong></span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">工具集中的一个工具）这个工具作为目标。之所以将它作为目标，原因有几点，比如系统管理员经常使用这个工具、该工具的确有网络流量，也会与其他机器通信。它最初的目的也是加载和执行二进制程序，因此当使用它创建绑定/反弹型shell时也不会那么可疑。最有趣的是，Sophos杀毒软件将PsExec检测为</span><a href="https://www.virustotal.com/en/file/3337e3875b05e0bfba69ab926532e3f179e8cfbf162ebb60ce58a0281437a7ef/analysis/" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline; color: rgb(227, 108, 9);"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">恶意软件</span></strong></span></a><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（这是什么鬼？），因此我们不会将Sophos杀软的检测结果考虑在内。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">读懂本文需要事先掌握哪些知识？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其实这些知识都是我自学的，因此可能读者也不需要掌握太多背景知识。但如果读者想要掌握本文的全部知识点，复现所有实验，我建议可以先掌握有关x86汇编、shellcode编写、调试器（特别是OllyDbg/Immunity）的使用以及驻留技术等相关知识。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.2 实验环境</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了保护我们的系统，我们在修改和执行载荷的时候应该使用虚拟机。读者可以根据自己的喜好使用任何工具，我在本文中使用的系统及工具如下所示：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虚拟机1：Windows 7 SP1（x86）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Immunity Debugger	(<a href="http://debugger.immunityinc.com/ID_register.py" _src="http://debugger.immunityinc.com/ID_register.py">http://debugger.immunityinc.com/ID_register.py</a>&nbsp;)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">LordPE	(<a href="http://www.malware-analyzer.com/pe-tools" _src="http://www.malware-analyzer.com/pe-tools">http://www.malware-analyzer.com/pe-tools</a>)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">XVI32	(<a href="http://www.chmaas.handshake.de/delphi/freeware/xvi32/xvi32.htm" _src="http://www.chmaas.handshake.de/delphi/freeware/xvi32/xvi32.htm">http://www.chmaas.handshake.de/delphi/freeware/xvi32/xvi32.htm</a>&nbsp;)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Stud_PE	(<a href="http://www.cgsoftlabs.ro/dl.html" _src="http://www.cgsoftlabs.ro/dl.html">http://www.cgsoftlabs.ro/dl.html</a>&nbsp;)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Netcat	(可以在Kali系统的/usr/share/windows-binaries/目录中找到)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PsExec	(<a href="https://technet.microsoft.com/en-ca/sysinternals/bb897553.aspx" _src="https://technet.microsoft.com/en-ca/sysinternals/bb897553.aspx">https://technet.microsoft.com/en-ca/sysinternals/bb897553.aspx</a>&nbsp;&nbsp;)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虚拟机2：Kali Linux（2016.2 32位版本已通过实验验证，但其他版本应该也可以）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">该系统已经自带了我们需要的所有工具</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.3 PE结构简介</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本节会重点介绍PE文件的某些字段，这些字段在下文讨论的后门植入中会有所涉及。读者可以参考</span><a href="https://en.wikibooks.org/wiki/X86_Disassembly/Windows_Executable_Files" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline; color: rgb(227, 108, 9);"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">此处资料</span></strong></span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">了解更多细节，但这里我们会重点介绍与后门植入有关的那些字段。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在Windows 7虚拟机中，使用LordPE载入PsExec.exe，可以看到如下界面：</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t0124a33eebeea171fe.png" title="t010f0601c554dc5e1f.png" alt="http://p7.qhimg.com/t010f0601c554dc5e1f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">相关字段为：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">入口点（EntryPoint）：距离基址的虚拟偏移量，指向需要运行的第一条指令。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">镜像基址（ImageBase）：用于映射可执行文件的首选基址，默认值为0x00400000，但可以被覆盖。如果使用ASLR编译，该值会被忽略。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">块对齐（SectionAlignment）：内存中区块的对齐值，这个值不能小于内存页面大小（4096字节）。内存中的块大小必须是该值的整数倍。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">文件块对齐（FileAlignment）：原始文件中区块的对齐值，通常为512字节。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">标志字（Magic）：文件特征的另一种说法（这里并没有什么魔法（magical））。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">区段数目（NumberOfSections）：在文件头之后定义的区段数目，稍后再讨论这个值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">校验和（Checksum）：镜像文件的校验和。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可选头部大小（SizeOfOptionalHeader）：正如字面含义所言。可选头部中包含某些数据，如首选镜像基址、入口点、校验和以及其他字段。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">点击“区段（Sections）”按钮，如下所示：</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t0115fa514715774805.png" title="t018c2407fdc3086b83.png" alt="http://p5.qhimg.com/t018c2407fdc3086b83.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">正如“区段数目”中所显示的数值，该文件有5个区段。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">.text段包含可执行代码，因此默认情况下该区段需要为可读以及可执行。.data段以及.rdata段包含只读数据，设置可执行标识就可以执行这个区段中的数据。.rsrc段包含资源数据，.reloc段通常不是必需区段，除非内存中的基址存在冲突。</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t010b9f625d86833d06.png" title="t01d604c3ad06731541.png" alt="http://p8.qhimg.com/t01d604c3ad06731541.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在来看一下其他字段：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">VOffset：载入内存后，区段距离镜像基址的偏移量。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">VSize：载入内存后，区段的大小。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ROffset：磁盘中文件的实际偏移量，你可以使用二进制编辑器工具查看这个值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Flags：包含定义区段“权限”的那些标志。为了便于查看，你可以右键点击某个选定的区段，选择“编辑区段头部”，然后再点击“Flags”文本框右侧的小按钮。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.4 代码洞（Code Caves）</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Drew Benton写过一篇介绍</span><a href="https://www.codeproject.com/Articles/20240/The-Beginners-Guide-to-Codecaves" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">代码洞（code caves）</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的非常好的文章，在这篇文章中，他将代码洞定义为“一种重定向机制，程序执行流程会被重定向到另一个位置，然后再返回到之前离开的那个区域”。对于后门植入而言，代码洞指的就是一个全新的或者没被使用过的死亡空间，我们可以将自定义代码放在这段空间中，然后在没有破坏可执行文件的前提下，将程序执行流程重定向到这个位置。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们将回顾几种技术：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、添加全新的区段</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">优点：可用空间很大</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">缺点：增加二进制文件的大小，更为可疑。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、使用现有的死亡空间</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">优点：文件大小没有改变，不是那么可疑。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">缺点：空间可能非常小，可能需要改变区段权限，才能执行代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这篇文章中没有涉及以下两个技术点：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、拓展最后一个区段</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">优点：区段数目没有改变</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">缺点：二进制文件大小增加，文件更为可疑，严重依赖最后一个区段。与添加新区段相比没有优势。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、代码洞跳转</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">优点：更为灵活，可以单独或混合使用现有的技术，隐蔽性可能更好。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">缺点：需要将载荷切割成更小的单元，可能需要更改多个区段的权限。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.5 地址空间布局随机化（ASLR）</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">地址空间布局随机化（Address Space Layout Randomization，ASLR）是一种安全机制，可以将可执行文件/DLL文件以及其他内存段（如栈或者堆）的位置随机化处理。这种机制可以避免基于固定函数/代码段跳转的漏洞利用技术。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当在支持ASLR的操作系统上使用/DYNAMICBASE选项编译PE或者DLL时，程序不需要考虑.reloc段（前文提到过）。当修改程序指令时，我们不能使用固定跳转方式，相反我们必须使用在当前指令和下一条指令之间的相对偏移量（后文会详细介绍）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果你想查看ASLR，你可以使用Immunity工具加载PsExec，然后查看“内存（Memory）”选项卡（ALT+M）：</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t0162fe6c0fa22b3d89.png" title="t015ccba52caa89f4de.png" alt="http://p3.qhimg.com/t015ccba52caa89f4de.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">基址为0113 0000。重新启动程序（你需要关闭Immunity）：</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t0117befb20fb37293c.png" title="t0120724deb599e552a.png" alt="http://p0.qhimg.com/t0120724deb599e552a.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">基址变成了0016 0000。目前关于ASLR你只需要了解这些信息就可以。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.6 文件偏移量及RVA</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">正如前文讨论过的，当某个PE文件被载入到内存中时，它在内存中的映射方式与在硬盘中的映射方式有所不同，我们需要记住这几个名词，下文会涉及到这几个词：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">文件偏移量（File Offset）：当前文件中的位置，可以使用十六进制编辑器查看这个值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">基址（Base Address）：载入内存中的起始地址。默认首选值为0x00400000，但如果开启了ASLR，每次加载时这个值都会发生变化。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虚拟地址（Virtual Address）：载入内存中的段地址，虚拟地址包含程序的起始基址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">相对虚拟地址（Relative Virtual Address，RVA）：与虚拟地址含义相同，不过需要减去基址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">入口点位于9DE6，不过这是一个RVA地址，因此映射到内存中后，这个地址应该为：𝐼𝑚𝑎𝑔𝑒𝐵𝑎𝑠𝑒 + 𝐸𝑛𝑡𝑟𝑦𝑃𝑜𝑖𝑛𝑡。类似地，我们看到的ImageBase是一个首选值，如果该值被占用，PE加载器会去查找另一个可用的地址。如果启用了ASLR，这个值会被完全忽略掉。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用Immunity加载PsExec，你会看到如下信息;</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t0152479db8336fc989.png" title="t016c53a4df46f0f328.png" alt="http://p8.qhimg.com/t016c53a4df46f0f328.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来，转到内存窗口（ALT+M）：</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t012ec4b3728a0a75a8.png" title="t01d64aa895f5965f8f.png" alt="http://p7.qhimg.com/t01d64aa895f5965f8f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当程序被载入内存后，内存中区段的映射方式与文件中的区段映射方式有所不同。如果你查看Size这一列，你会发现所有区段的大小都是4096的倍数（读者是否还记得SectionAlignment这个字段？）。BaseAddress为0x00F0000，我们可以查看PE头部中的起始地址，也可以查看Owner列中的值来获取BaseAddress。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们还可以看一下SizeOfHeader字段，这个字段位于400h处，然而它被映射到1000h字节处，因此.text段的FileOffset字段与它的RVA地址之间存在600h字节的偏移量。附录中的公式2会告诉你如何计算这个值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">二、手动植入后门</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">2.1 控制执行流程</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一个最基本的后门可以按照如下步骤实现：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、劫持代码执行：执行后门的最简单的方法就是使用JMP代码洞替换ModuleEntryPoint处的指令。JMP代码洞可能会覆盖不止一处指令，因此需要将这些指令以及紧随其后的指令保存下来。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、保存当前状态：二进制程序的执行对后门隐藏来说至关重要，我们需要保存所有位于寄存器和标志中的值。我们可以使用PUSHAD和PUSHFD完成这一任务，注意观察ESP寄存器的值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、执行恶意载荷：现在我们可以安全地执行shellcode。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4、对齐栈：shellcode可能会将数据推送到栈中。由于我们需要恢复寄存器以及标志的值，因此ESP可能需要对齐。我们需要将该值与步骤3之后的ESP值进行对比，然后再对齐（ADD ESP，对齐）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5、恢复状态：使用POPFD/POPAD恢复状态。需要以相反顺序完成这个操作，因为栈是LIFO（后进先出）结构。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6、执行被覆盖的代码：我们在步骤1覆盖了某些指令，是时候恢复这些指令了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">7、继续执行流程：最后一个步骤是跳转到程序正常执行流程中的下一条指令，执行该指令，恢复程序的正常执行流程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">后门植入前后的程序结构如以下两图所示：</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01565425d44062a756.png" title="t01cb5dc6928439f3b8.png" alt="http://p4.qhimg.com/t01cb5dc6928439f3b8.png"/></p><p style="text-align:center"><img src="http://p2.qhimg.com/t019dd52076d2f18b73.png" title="t0148c08d52c92f6652.png" alt="http://p5.qhimg.com/t0148c08d52c92f6652.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.2 典型的后门植入方法</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一种方法是在原始PE文件的末尾添加一个全新的区段，通常一个Meterpreter载荷大约为350个字节，我们可以使用Stud_PE工具来创建一个新的区段。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">请注意：我之所以使用Stud_PE，而不使用LordPE+十六进制编辑器，原因在于后者对我来说有时候会出错，你可以按照自己的喜好选择合适的工具。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">打开Stud_PE，将PsExec.exe拖到窗口中，转到Sections标签页，右键选择“New Section“，按照下图所示填入对应字段：</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01128172b836c804b7.png" title="t01e13c4a7e5ce9563e.png" alt="http://p0.qhimg.com/t01e13c4a7e5ce9563e.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">区段添加完毕后，你可以看到如下信息：</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t01ebd4ac0b716e6234.png" title="t01e6dcacd47acf5c2e.png" alt="http://p7.qhimg.com/t01e6dcacd47acf5c2e.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">该区段的默认标志为RWX，因为区段应该为可读且可执行的，如果在内存中修改这个区段，我们还需要设置区段的可写标志。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01b2f72b01412ee72c.png" title="t01fc0f8c81fd555049.png" alt="http://p6.qhimg.com/t01fc0f8c81fd555049.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">非常好，区段添加成功，双击这个区段，你会看到一堆null值。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01785bf0db7d7ad40e.png" title="t0195d4929c0f73147c.png" alt="http://p3.qhimg.com/t0195d4929c0f73147c.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们的载荷应该存放在这个区域。在继续下一步之前，我们需要看检查这个文件的可疑程度。我们可以使用VirusTotal.com这个网站，探测常用杀软厂商对这个文件的扫描结果。虽然这个网站会共享样本数据，但不共享样本的另一个网（NoDistribute.com）貌似发生了故障，认为这个文件不可疑（0/35的检出率）。此外，我不介意分享这个文件，因此这样做对我来说没有什么损失。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t015536219ec784faef.png" title="t01c5e2fcba87b2a75c.png" alt="http://p4.qhimg.com/t01c5e2fcba87b2a75c.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">请注意：Sophos反病毒软件默认情况下会将PsExec标记为恶意软件，因此我会忽略Sophos的检测结果。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">添加一个额外的区段后，3/59的杀毒软件认为它是可疑的。现在让我们继续往前走。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来，我们需要劫持第一条指令，跳转到我们新创建的区段，为此，我们需要.test段、第一条CALL指令以及下一跳指令的RVA地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">001C9DE6&nbsp;&gt;&nbsp;$&nbsp;E8&nbsp;15770000&nbsp;CALL&nbsp;PsExec_b.001D1500
+001C9DEB&nbsp;.^E9&nbsp;7BFEFFFF&nbsp;JMP&nbsp;PsExec_b.001C9C6B</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">001D1500的RVA地址为RVA_11500。001C9DEB的RVA地址为RVA_9DEB，.test的RVA地址为RVA_7D0000。</span><br/><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">请注意：如果JMP代码洞覆盖了不止一条指令，你同样需要考虑其他情况。幸运的是，CALL PsExec_b.001D1500操作码的大小满足JMP代码洞的需求。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们将使用nasm_shell.rb（属于Metasploit框架的一部分）来获取正确的指令。如果你使用“JMP .test_section_start“的方式，程序可能会正常工作一次，但待跳转的地址会被硬编码到文件中，重启后就不能正常工作。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了能从9DE6跳转到7 D000，我们需要使用的偏移量是7 321A。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t0155445c6bd8cfaa9d.png" title="t013843c31327f82a59.png" alt="http://p0.qhimg.com/t013843c31327f82a59.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">复制生成的操作码（E915320700），回到Immunity。在第一条指令上右键，依次选择“Binary“、”Binary Paste“。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01d9140a19c011ef72.png" title="t0101a55ea7a5d680dd.png" alt="http://p9.qhimg.com/t0101a55ea7a5d680dd.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">单步执行（F7），你会跳转到.test区段的起始地址：</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t016006197111617de9.png" title="t018f20a97279628986.png" alt="http://p3.qhimg.com/t018f20a97279628986.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">重启调试器（CTRL+F2），粘贴新的操作码，右键依次选择“Copy To Executable“、”All Modification“。在新窗口中，右键选择”Save File“。将文件保存为PsExec_bkdr1.exe。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">打开新创建的可执行文件，你可以看到新的覆盖后的指令（你认为指令变了？再仔细看看）。接下来，转到新创建的区段，让我们添加一些代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、使用PUSHFD/PUSHAD将值存放到寄存器/标志中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、填充大约400个NOP指令（为shellcode和栈对齐预留的空间）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、使用POPAD/POPFD。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4、覆盖（多条）指令（也就是劫持ModuleEntryPoint）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5、JMP到下一条指令。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01c1cb632bac7b4f09.png" title="t01e500d3f54b8a80c7.png" alt="http://p9.qhimg.com/t01e500d3f54b8a80c7.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，你需要恢复寄存器/标志的值。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01399e1ed2a022d388.png" title="t013a7a6f8924d46969.png" alt="http://p2.qhimg.com/t013a7a6f8924d46969.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内存看起来应该如下所示：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">RVA_7D000&nbsp;-&nbsp;RVA_7D001:&nbsp;PUSHAD/PUSHFD
+RVA_7D002&nbsp;-&nbsp;RVA_7D1FD:&nbsp;NOP指令&nbsp;(为shellcode和栈对齐预留的空间)
+RVA_7D1FE&nbsp;-&nbsp;RVA_7D1FF:&nbsp;POPFD/POPAD&nbsp;(栈为后进先出结构)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">从011D D200（RVA_7D200）开始，我们希望添加如下几条指令：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">CALL&nbsp;RVA_11500
+JMP&nbsp;RVA_9DEB</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们需要使用 “CALL RVA_11500“指令，通过nasm_shell很容易就能做到：</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01042d18b108373471.png" title="t0161dbe1ca4119c103.png" alt="http://p7.qhimg.com/t0161dbe1ca4119c103.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">复制操作码，确保你已经为新的指令选择了足够大的空间。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t01e57e6c75257a2cd8.png" title="t01cef89fc2416ef2d7.png" alt="http://p6.qhimg.com/t01cef89fc2416ef2d7.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从RVA_7D205跳转到RVA_9DEB的情况与之类似：</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t010031222b2db5f68e.png" title="t01da53a16732345080.png" alt="http://p4.qhimg.com/t01da53a16732345080.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后的改动应该与下图类似：</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01157e93862330d098.png" title="t0105553e33fd367197.png" alt="http://p6.qhimg.com/t0105553e33fd367197.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将改动保存到PsExec_bkdr2.exe中。可执行文件运行起来应该与原始文件一样，因为代码洞正确处理了程序的执行流程。快速扫描后，我们发现该文件的检出率为9/66。需要注意的是，此时此刻，这个可执行文件还没有包含任何恶意载荷。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t0123a90a38e3355716.png" title="t01a57fde5429aabf6f.png" alt="http://p3.qhimg.com/t01a57fde5429aabf6f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们可以使用msfvenom生成我们的载荷，我们使用的是windows/shell_reverse_tcp这个载荷。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">非常需要注意的是：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、程序如果执行默认的EXITFUNC，那么关闭shell后进程就会退出，我们不希望这种情况发生。我们可以使用“EXITFUNC=none“，这样执行流程就不会被暂停。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、我们需要修改生成的载荷，因为它会以-1这个参数调用</span><a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms687032(v=vs.85).aspx" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">WaitForSingleObject</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（即无限等待）。我们也不希望这种情况发生。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t017fcfbd241a9322f0.png" title="t019f25966fc0c7ad39.png" alt="http://p4.qhimg.com/t019f25966fc0c7ad39.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在PUSHAD/PUSHFD命令后选择足够大的空间，将生成的载荷粘贴进去。在载荷结尾附近，修改这些命令，避免程序执行被暂停[WaitForSingleObject(-1)]：</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01edb44f7792dbd511.png" title="t01a32a75dbf28e1ad7.png" alt="http://p6.qhimg.com/t01a32a75dbf28e1ad7.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">请在PUSHFD/PUSHAD执行后以及载荷执行后关注ESP的状态，确保栈对齐。对我而言，我需要添加一条“ADD ESP, 1FC“指令。保存所有的修改，避免前功尽弃。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在Windows主机上启动一个netcat监听端，执行这个程序。你会获得一个shell。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01dc36e15832f76c86.png" title="t019364a69c7d7486fb.png" alt="http://p6.qhimg.com/t019364a69c7d7486fb.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">成功了！虽然检测率已经提高到了17/60。</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01127ff34385c3f88a.png" title="t01782a2a7aff6454df.png" alt="http://p6.qhimg.com/t01782a2a7aff6454df.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了降低检测率，我们需要经过不断尝试，经历各种错误。我尝试了以下几种方法：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、使用MSF对载荷进行编码（之前我们使用的是原始载荷）：结果不妙，大多数杀软已经熟悉MSF编码处理技巧。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、修改校验和：额，大多数杀软直接忽视了这个值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、压缩二进制程序（使用UPX加壳）：很好，检测率降到了11/60。</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01dc27582700f787f7.png" title="t010a874973a79c3c45.png" alt="http://p2.qhimg.com/t010a874973a79c3c45.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">目标快完成了，让我们尝试略有不同的另一种方法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">三、劫持已有的代码洞</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">之前的方法有几个缺点：1）文件大小发生明显的改变，2）刚开始已经有3个杀软把它标为可疑程序，即使只添加了最基本的逻辑处理流程（还没有添加载荷时），这个数量变成了9。让我们使用二进制文件中已经存在的一个空的代码洞来解决这个问题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">需要注意的是，代码洞的查找工作必须在文件形态时完成，不能等到文件被加载到内存中再开始查找。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们会使用如下命令完成这一任务：</span></p><pre class="brush:plain;toolbar:false">root@kali:~/Desktop#&nbsp;backdoor-factory&nbsp;-f&nbsp;PsExec.exe&nbsp;-c&nbsp;-l&nbsp;500&nbsp;-q</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">-f: 输入文件</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">-c: 查找代码洞</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">-l: 最小的代码洞大小值</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">-q: 静默模式</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01a658b56af6eee0b4.png" title="t01cb98cc087dc4b4fb.png" alt="http://p4.qhimg.com/t01cb98cc087dc4b4fb.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">额，我看到的到底是什么鬼？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、BDFactory至少找到了3个代码洞，可以存放我们的后门。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、这3个代码洞都位于.data段。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、代码洞的开始和结束地址都是原始的文件偏移地址，为了使用这些代码洞，我们必须获取它们的RVA地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4、PointerToRawData/End of Raw Data：代表.data段开始/结尾的原始文件偏移值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们试一下第一个代码洞，因为它位于.data区域，我们需要设置.data区域的可执行标志（使用LoadPE即可）。仅仅将.data区域设为X标志后，这个文件的检出率就变为2/60：</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01c73f4ac6e7d64789.png" title="t01f4cb4e2446c6fd6c.png" alt="http://p1.qhimg.com/t01f4cb4e2446c6fd6c.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来，我们需要使用公式3，计算代码洞1偏移地址的RVA地址：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">RVA = 代码洞所在区段的VOffset + 代码段的ROffset − 代码洞所在区段的ROffset − 当前地址 = 0x29000 + 0x272e5 – 0x27200 = RVA_290E5</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用RVA_290E8这个值：</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01424d65c6222d2937.png" title="t01e3f8f4bd3ed6b2d4.png" alt="http://p6.qhimg.com/t01e3f8f4bd3ed6b2d4.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将第一条指令替换为载荷：</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01d720480f999fbc57.png" title="t014255ff76ed036d6d.png" alt="http://p2.qhimg.com/t014255ff76ed036d6d.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将改动保存到PsExec2_bkdr.exe中，重新运行并单步执行。</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01f49eb5b1fc8db2ba.png" title="t01c8314415e24fb8e0.png" alt="http://p3.qhimg.com/t01c8314415e24fb8e0.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在，让我们重复相同的步骤，即PUSHFD/POPFD、添加大约400个NOP指令、POPFD/POPAD、CALL RVA_11500然后JMP RVA_9DEB。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01564079d31134cca8.png" title="t01894ed1402d58e9bc.png" alt="http://p9.qhimg.com/t01894ed1402d58e9bc.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这次修改后检测率变为5/58，与上次同一阶段的检测率相比少了4个检测结果。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01d7811dd89867a5be.png" title="t0165dbe3e616567f0b.png" alt="http://p4.qhimg.com/t0165dbe3e616567f0b.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来，我们重复之前的工作，粘贴MSF载荷，调整栈。保存更改后，再次扫描。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t010160b167361c066d.png" title="t0162d9c43399ad1263.png" alt="http://p0.qhimg.com/t0162d9c43399ad1263.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虽然13/60不是一个特别好的结果，但结果至少优于之前添加新区段的17/60的检测率。需要注意的是，我们并没有使用任何方式对MSF载荷进行编码、加密或者混淆。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">四、人为因素</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在我们已经弃用了添加新区段的方法，我们还可以做些什么吗？我们在前面两种方法中都在入口点使用了JMP代码洞方法，这是一个好方法，能确保载荷被执行，但杀软同样也会跟踪代码的执行流程，导致检测率明显提高。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们通过与用户交互来触发代码洞呢？毕竟杀毒软件不像人类那样可以充分地与可执行程序进行交互或传递参数（可能永远也达不到这个高度）。毕竟对于PsExec来说，这个程序需要传入参数，否则就会打印程序使用说明。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们看一下，PsExec在常规输入下的行为：</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01f79ec65eb989f675.png" title="t0174078ee02439d711.png" alt="http://p3.qhimg.com/t0174078ee02439d711.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们的后门hook某个字符串的打印动作会怎么样？我们可以在某个字符串被载入内存时设置断点，触发我们的后门。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Immumity这个工具支持传入命令行参数。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01b5245a64082e5325.png" title="t01c425e0b5ed27e0cd.png" alt="http://p7.qhimg.com/t01c425e0b5ed27e0cd.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查找程序中所有引用的文本字符串。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01529eabc5fa5d1dae.png" title="t0116ac133bc656f732.png" alt="http://p8.qhimg.com/t0116ac133bc656f732.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">右键，选择“Follow in Disassembly“，跳转到汇编代码的相应位置。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t01decf858147d13b98.png" title="t01a115ddafefadfe12.png" alt="http://p9.qhimg.com/t01a115ddafefadfe12.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你可能会碰到某个异常，忽略它即可。让我们跟进第二个CALL（即CALL PsExec2_.003182AF）。在RET之前有某些未使用的空间可以利用，我们为什么不让程序在这里跳转到我们的载荷呢？</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01ea664c77b73d8669.png" title="t0171b936fdb0a513fe.png" alt="http://p3.qhimg.com/t0171b936fdb0a513fe.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在RVA_8334处，我们可以跳转到我们的代码洞中（RVA_290E8）。劫持RETN指令有什么好处呢？我们可以直接使用它，而不用去在意下一跳指令是什么。</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t0137e9873bb0b5d2d9.png" title="t014ac6b6595ff96634.png" alt="http://p6.qhimg.com/t014ac6b6595ff96634.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">请注意：不要忘记修补入口点指令，我们再也不需要从那个位置跳转到我们的代码段。保存更改，然后启动监听器。</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01bea0a3472b3b0033.png" title="t0102c0af1619cda3ea.png" alt="http://p3.qhimg.com/t0102c0af1619cda3ea.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">杀软检测结果如何？</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01da2bb1c8fbc435f3.png" title="t01da2bb1c8fbc435f3.png" alt="http://p5.qhimg.com/t01da2bb1c8fbc435f3.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">只有9/60，这是目前最低的检测率！可能是静态分析还有点问题，且知名的杀软还是会检测出MSF载荷。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.1 更多的杀软绕过方法</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">根据前文的内容，我们来思考下还有什么方法能够降低检测率。我尝试了以下方法：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、使用strip函数处理二进制文件：结果没变化（9/60）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、去掉损坏的证书信息：结果不好，检测率提升到了18/60。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、使用自定义的</span><a href="https://github.com/abatchy17/SLAE" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">异或算法</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">处理一个最小的MSF载荷。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">所使用的载荷：</span></p><pre class="brush:plain;toolbar:false">msfvenom&nbsp;-p&nbsp;windows/shell_reverse_tcp&nbsp;-b&nbsp;&quot;\x00&quot;&nbsp;–smallest</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">检测率：5/60，这是目前为止最低的检测率！</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t0193575073a7ba21be.png" title="t0193575073a7ba21be.png" alt="http://p4.qhimg.com/t0193575073a7ba21be.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们弃用MSF载荷，使用不是那么可疑的exploit-db的</span><a href="https://www.exploit-db.com/exploits/40352/" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">载荷</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">呢？我使用的是这个载荷，没有进行编码处理。</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01ec9aa032e9969803.png" title="t01ec9aa032e9969803.png" alt="http://p0.qhimg.com/t01ec9aa032e9969803.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">结果非常好，只有3/59的检测率！当然我们可能还有提升的空间（比如使用加密方法？），但现在结果已经足够好了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.2 如何保护自己</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我建议我们自己编译源码，编写自己的工具，不要信任任何人。否则，还是放弃保护自己的念头吧。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当然，现实点的建议是：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、只从信任的源上下载程序。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、检查校验和/哈希值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、给自己的系统打补丁，经常更新自己的病毒库。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4、注意提示信息，正常情况下calc.exe肯定不会请求添加防火墙例外的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5、希望一切顺利，不要无脑单击到底。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">感谢读者阅读本文。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">五、附录</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">5.1 公式</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、𝑀𝑜𝑑𝑢𝑙𝑒𝐸𝑛𝑡𝑟𝑦𝑃𝑜𝑖𝑛𝑡（模块入口点） = 𝐵𝑎𝑠𝑒𝐴𝑑𝑑𝑟𝑒𝑠𝑠（基址） + 𝐸𝑛𝑡𝑟𝑦𝑃𝑜𝑖𝑛𝑡（入口点）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、EntryPoint在文件中的偏移 = EntryPoint – (𝑉𝑖𝑟𝑡𝑢𝑎𝑙𝑆𝑖𝑧𝑒𝑂𝑓𝐻𝑒𝑎𝑑𝑒𝑟 − 𝑆𝑖𝑧𝑒𝑂𝑓𝐻𝑒𝑎𝑑𝑒𝑟𝑠)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3、代码洞的RVA地址 = 代码洞所在区段的虚拟偏移 + 代码洞的原始偏移 – 代码洞所在区段的原始偏移</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5.2 代码仓库</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1、https://github.com/abatchy17/Introduction-To-Backdooring</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2、https://github.com/abatchy17/SLAE</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">六、参考资料</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">[1] <a href="https://en.wikibooks.org/wiki/X86_Disassembly/Windows_Executable_Files" _src="https://en.wikibooks.org/wiki/X86_Disassembly/Windows_Executable_Files">https://en.wikibooks.org/wiki/X86_Disassembly/Windows_Executable_Files</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">[2] <a href="https://sector876.blogspot.com/2013/03/backdooring-pe-files-part-1.html" _src="https://sector876.blogspot.com/2013/03/backdooring-pe-files-part-1.html">https://sector876.blogspot.com/2013/03/backdooring-pe-files-part-1.html</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">[3] <a href="https://pentest.blog/art-of-anti-detection-2-pe-backdoor-manufacturing/" _src="https://pentest.blog/art-of-anti-detection-2-pe-backdoor-manufacturing/">https://pentest.blog/art-of-anti-detection-2-pe-backdoor-manufacturing/</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">[4] <a href="https://github.com/secretsquirrel/the-backdoor-factory" _src="https://github.com/secretsquirrel/the-backdoor-factory">https://github.com/secretsquirrel/the-backdoor-factory</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">[5] <a href="http://blog.sevagas.com/IMG/pdf/BypassAVDynamics.pdf" _src="http://blog.sevagas.com/IMG/pdf/BypassAVDynamics.pdf">http://blog.sevagas.com/IMG/pdf/BypassAVDynamics.pdf</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">[6] <a href="https://www.codeproject.com/Articles/20240/The-Beginners-Guide-to-Codecaves" _src="https://www.codeproject.com/Articles/20240/The-Beginners-Guide-to-Codecaves">https://www.codeproject.com/Articles/20240/The-Beginners-Guide-to-Codecaves</a>&nbsp;</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://www.exploit-db.com/docs/42061.pdf" target="_blank">原文链接：https://www.exploit-db.com/docs/42061.pdf</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】如何在PE文件中手动植入一个后门 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3931" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2870230440" class="response" data-bind-id="2870230440" data-target="14480" user-name="binlmmhc" href="javascript:;">
+                binlmmhc            </a>
+                        <span class="comment-time">2017-06-04 18:45:25</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2870230440" data-target="14480">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14480" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">学习学习</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3931" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

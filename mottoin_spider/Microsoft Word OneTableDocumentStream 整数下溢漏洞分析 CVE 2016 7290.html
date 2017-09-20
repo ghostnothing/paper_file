@@ -1,0 +1,976 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+    <meta name="renderer" content="webkit">
+    <meta name="viewport" content="initial-scale=1.0,user-scalable=no,maximum-scale=1,width=device-width">
+    <title>Microsoft Word OneTableDocumentStream 整数下溢漏洞分析（CVE-2016-7290） | MottoIN</title>
+    <link rel='dns-prefetch' href='//www.mottoin.com' />
+<link rel='dns-prefetch' href='//s.w.org' />
+<link rel="alternate" type="application/rss+xml" title="MottoIN &raquo; Microsoft Word OneTableDocumentStream 整数下溢漏洞分析（CVE-2016-7290）评论Feed" href="http://www.mottoin.com/93865.html/feed" />
+<link rel='stylesheet' id='stylesheet-css'  href='http://www.mottoin.com/wp-content/themes/JustNews/css/style.css?ver=2.3.2' type='text/css' media='all' />
+<link rel='stylesheet' id='wpcom-qa-css'  href='http://www.mottoin.com/wp-content/plugins/wpcom-qa/css/style.css?ver=1.0' type='text/css' media='all' />
+<style id='wpcom-qa-inline-css' type='text/css'>
+
+        .q-content .topic-tab,.q-content .q-answer .as-user,.q-content .q-answer .as-comment-name{color: #1471CA;}
+        .q-content .q-topic-wrap a:hover,.q-content .q-answer .as-action a:hover,.q-content .topic-tab:hover{color:#0D62B3;}
+        .q-content .put-top,.q-content .topic-tab.current-tab,.q-content .q-answer .as-submit .btn-submit,.q-content .q-answer .as-comments-submit,.q-content .q-add-header .btn-post,.q-content .q-pagination .current{background-color:#1471CA;}
+        .q-content .q-answer .as-submit .btn-submit:hover,.q-content .q-answer .as-comments-submit:hover,.q-content .q-add-header .btn-post:hover,.q-content .topic-tab.current-tab:hover,.q-content .q-pagination a:hover{background-color:#0D62B3;}
+        .q-content .q-answer .as-comments-input:focus{border-color: #1471CA;}
+        
+</style>
+<link rel='stylesheet' id='um_minified-css'  href='http://www.mottoin.com/wp-content/plugins/ultimate-member/assets/css/um.min.css?ver=10.3.88' type='text/css' media='all' />
+<script type='text/javascript' src='http://www.mottoin.com/wp-content/themes/JustNews/js/jquery.min.js?ver=1.12.4'></script>
+<link rel="EditURI" type="application/rsd+xml" title="RSD" href="http://www.mottoin.com/xmlrpc.php?rsd" />
+<link rel="wlwmanifest" type="application/wlwmanifest+xml" href="http://www.mottoin.com/wp-includes/wlwmanifest.xml" /> 
+<link rel='prev' title='俄罗斯重要网络服务门户yandex.ru 13505910条用户数据泄露' href='http://www.mottoin.com/93910.html' />
+<link rel='next' title='凌晨网络科技两款新品重磅发布，帮助企业以最高效的方式解决安全问题' href='http://www.mottoin.com/93942.html' />
+<link rel='shortlink' href='http://www.mottoin.com/?p=93865' />
+<!--  WPCOM主题相关信息开始 -->
+<meta name="applicable-device" content="pc,mobile">
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta name="keywords" content="CVE-2016-7290,Offviz,OneTableDocumentStream,整数下溢,缓冲区溢出">
+<meta name="description" content="简介微软发布了CVE-2016-7290的补丁MS16-148，它解决了一个整数下溢问题。下溢将在复制操作期间触发超出范围读取，这可能导致在处理特制二进制文档文件时基于堆栈的缓冲区溢出在保护模式winword.exe进程之外。虽然所有这一切听起来很引人注目，但在现实中，POC只触发了一个潜在的信息披露越界阅读的条件，然而在这篇文章中，将进一步详细说明漏洞。影响版本MicrosoftWord2007">
+<!--  WPCOM主题相关信息结束 -->
+ 
+		<script type="text/javascript">
+
+		var ultimatemember_image_upload_url = 'http://www.mottoin.com/wp-content/plugins/ultimate-member/core/lib/upload/um-image-upload.php';
+		var ultimatemember_file_upload_url = 'http://www.mottoin.com/wp-content/plugins/ultimate-member/core/lib/upload/um-file-upload.php';
+		var ultimatemember_ajax_url = 'http://www.mottoin.com/wp-admin/admin-ajax.php';
+
+		</script>
+
+	
+		<style type="text/css">.request_name { display: none !important; }</style>
+
+	<link rel="icon" href="http://www.mottoin.com/wp-content/uploads/2016/12/cropped-Avatar-32x32.jpg" sizes="32x32" />
+<link rel="icon" href="http://www.mottoin.com/wp-content/uploads/2016/12/cropped-Avatar-192x192.jpg" sizes="192x192" />
+<link rel="apple-touch-icon-precomposed" href="http://www.mottoin.com/wp-content/uploads/2016/12/cropped-Avatar-180x180.jpg" />
+<meta name="msapplication-TileImage" content="http://www.mottoin.com/wp-content/uploads/2016/12/cropped-Avatar-270x270.jpg" />
+    <style>
+                a,.sec-panel-head span,.list.tabs .tab.active a,.header .nav>li.active>a,.header .dropdown-menu>.active>a,.entry .entry-info .nickname,.entry-bar-inner .author-title,.entry-action .btn-zan,.entry-action .btn-dashang,.comment-body .nickname,.form-submit-text span,.widget_profile .author-title,.um .um-profile-body .um-item-meta a,.login-modal-body .btn-register{color: #08c;}
+        .header .dropdown-menu>li>a:hover,.header .dropdown-menu>.active>a:hover,.header .dropdown-menu>.active>a:focus,.navbar-action .publish,.pagination .current,.flex-control-paging li a.flex-active,.form-submit .submit,.sidebar .widget_nav_menu ul li.current-menu-item a,.sidebar .widget_nav_menu ul li.current-post-parent a,.search-form input.submit,.action .contact-title,.pf-submit,.tagHandler ul.tagHandlerContainer li.tagItem,.login-modal-body .btn-login,.woocommerce a.button,.woocommerce button.button,.woocommerce input.button,.woocommerce a.button.alt,.woocommerce button.button.alt,.woocommerce input.button.alt,.woocommerce a.button.alt.disabled,.woocommerce a.button.alt.disabled:hover,.woocommerce a.button.alt:disabled,.woocommerce a.button.alt:disabled:hover,.woocommerce a.button.alt:disabled[disabled],.woocommerce a.button.alt:disabled[disabled]:hover,.woocommerce button.button.alt.disabled,.woocommerce button.button.alt.disabled:hover,.woocommerce button.button.alt:disabled,.woocommerce button.button.alt:disabled:hover,.woocommerce button.button.alt:disabled[disabled],.woocommerce button.button.alt:disabled[disabled]:hover,.woocommerce input.button.alt.disabled,.woocommerce input.button.alt.disabled:hover,.woocommerce input.button.alt:disabled,.woocommerce input.button.alt:disabled:hover,.woocommerce input.button.alt:disabled[disabled],.woocommerce input.button.alt:disabled[disabled]:hover,.woocommerce .widget_price_filter .ui-slider .ui-slider-handle,.woocommerce .widget_price_filter .ui-slider .ui-slider-range,.shopping-count,.social-login-form .sl-input-submit{background-color: #08c;}
+        .entry .entry-content h3,.entry .entry-content .h3,.widget-title{border-left-color: #08c;}
+        .entry-bar-inner .author-title,.entry-action .btn-zan,.entry-action .btn-dashang,.search-form input.keyword:focus,.widget_profile .author-title,.login-modal-body .btn-login,.login-modal-body .btn-register{border-color: #08c;}
+        .entry-bar-inner .author-title:before,.widget_profile .author-title:before{border-right-color: #08c;}
+        .list.tabs .tab.active a{border-bottom-color: #08c;}
+
+        a:hover,.header .nav>li>a:hover,.header .nav>li.active>a,.navbar-action .login:hover,.navbar-action .login:focus,.navbar-action .profile a:hover,.navbar-search-icon:hover,.navbar-search-icon:focus,.entry .entry-info a:hover,.entry .entry-info a:focus,.entry-bar .info-item a:hover,.p-item-wrap:hover .title a,.special-item-title a:hover,.special-item-bottom a:hover,.widget ul a:hover,.widget ol a:hover,.sec-panel-head .more:hover,.topic-list .topic-wrap:hover span,.tabs .tab a:hover,
+        .article-list .item-title a:hover,.article-list .item-meta a:hover,.article-list .item-meta a:focus,.list-links a:hover,.list-links a:focus,.um .um-profile-body .um-item-meta a:hover,.um .um-profile-body .um-item-link a:hover,.load-more:hover,.login-modal-body .btn-register:hover{color: #07c;}
+        .navbar-action .publish:hover,.navbar-action .publish:focus,.entry-tag a:hover,.entry-tag a:focus,.entry-action .btn-zan:hover,.entry-action .btn-dashang:hover,.entry-action .btn-zan.liked,.pagination a:hover,.flex-control-paging li a:hover,.form-submit .submit:hover,.widget .tagcloud a:hover,.sidebar .widget_nav_menu ul li.current-menu-item .sub-menu a:hover,.sidebar .widget_nav_menu ul li.current-post-parent .sub-menu a:hover,.sidebar .widget_nav_menu ul li a:hover,.search-form input.submit:hover,.action .a-box:hover,.footer-sns .fa:after,.article-list .item-category:hover,.pf-submit:hover,.tagHandler ul.tagHandlerContainer li.tagItem:hover,.login-modal-body .btn-login:hover,.woocommerce a.button:hover,.woocommerce button.button:hover,.woocommerce input.button:hover,.woocommerce a.button.alt:hover,.woocommerce button.button.alt:hover,.woocommerce input.button.alt:hover,.woocommerce .widget_price_filter .price_slider_wrapper .ui-widget-content,.social-login-form .sl-input-submit:hover{background-color: #07c;}
+        .entry-tag a:hover,.entry-tag a:focus,.entry-action .btn-zan:hover,.entry-action .btn-dashang:hover,.entry-action .btn-zan.liked,.widget .tagcloud a:hover,.load-more:hover,.login-modal-body .btn-login:hover,.login-modal-body .btn-register:hover{border-color: #07c;}
+        .special-item-bottom a:hover:before{border-left-color: #07c;}
+        .list.tabs .tab.active a:hover{border-bottom-color: #07c;}
+        @media (max-width: 991px){
+            .header .navbar-nav>li.active>a,.header .navbar-nav .dropdown-menu .active a,.header .navbar-nav .dropdown-menu .active .dropdown-menu .active a{color: #08c;}
+            .navbar-collapse{background-color: #08c;}
+            .dropdown-menu>li a{border-color: #07c;}
+            .header .navbar-nav>li.active>a:hover,.header .navbar-nav>li a:hover,.header .navbar-nav .dropdown-menu .active a:hover,.header .navbar-nav .dropdown-menu .active .dropdown-menu a:hover,.header .navbar-nav .dropdown-menu li a:hover{color: #07c;}
+        }
+        .j-share{position: fixed!important;top: 50%!important;}
+                .header .logo img{max-height: 32px;}
+                @media (max-width: 767px){
+            .header .logo img{max-height: 26px;}
+        }
+                        .btn-post{
+    display: block;
+    margin: 0 auto;
+    padding: 15px 20px;
+    font-size: 16px;
+    text-align: center;
+    color: #fff !important;
+    line-height: 1;
+    background: #1471CA;
+    -webkit-border-radius: 3px;
+    border-radius: 3px;
+    text-decoration: none;
+    border: 0;
+    outline: 0;
+}    </style>
+    <script> (function() {if (!/*@cc_on!@*/0) return;var e = "abbr, article, aside, audio, canvas, datalist, details, dialog, eventsource, figure, footer, header, hgroup, mark, menu, meter, nav, output, progress, section, time, video".split(', ');var i= e.length; while (i--){ document.createElement(e[i]) } })()</script>
+    <!--[if lte IE 8]><script src="http://www.mottoin.com/wp-content/themes/JustNews/js/respond.min.js"></script><![endif]-->
+</head>
+<body class="post-template-default single single-post postid-93865 single-format-standard">
+<header class="header">
+    <div class="container clearfix">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar icon-bar-1"></span>
+                <span class="icon-bar icon-bar-2"></span>
+                <span class="icon-bar icon-bar-3"></span>
+            </button>
+            <a class="logo" href="http://www.mottoin.com"><img src="http://www.mottoin.com/img/mottoin/logo.png" alt="MottoIN"></a>
+        </div>
+        <div class="collapse navbar-collapse">
+            <nav class="navbar-left primary-menu"><ul id="menu-%e5%af%bc%e8%88%aa" class="nav navbar-nav"><li class="menu-item menu-item-home"><a href="http://www.mottoin.com/">首页</a></li>
+<li class="menu-item"><a href="http://www.mottoin.com/category/news">资讯</a></li>
+<li class="menu-item current-post-ancestor dropdown"><a href="http://www.mottoin.com/category/article" class="dropdown-toggle">文章</a>
+<ul role="menu" class=" dropdown-menu">
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/web">Web安全</a></li>
+	<li class="menu-item current-post-ancestor current-menu-parent current-post-parent"><a href="http://www.mottoin.com/category/article/system">系统安全</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/network">网络安全</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/terminal">终端安全</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/database">数据安全</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/wireless">无线安全</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/social">社会工程</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/intranet">内网渗透</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/code">代码审计</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/article/reverse">逆向破解</a></li>
+</ul>
+</li>
+<li class="menu-item"><a href="http://www.mottoin.com/category/tools">工具</a></li>
+<li class="menu-item"><a href="http://www.mottoin.com/category/geek">极客</a></li>
+<li class="menu-item dropdown"><a href="http://www.mottoin.com/category/sole" class="dropdown-toggle">独家</a>
+<ul role="menu" class=" dropdown-menu">
+	<li class="menu-item"><a href="http://www.mottoin.com/category/sole/topic">专题</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/sole/people">人物</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/sole/view">观点</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/sole/events">活动</a></li>
+	<li class="menu-item"><a href="http://www.mottoin.com/category/sole/video">视频</a></li>
+</ul>
+</li>
+<li class="menu-item"><a href="http://www.mottoin.com/category/hr">招聘</a></li>
+<li class="menu-item"><a href="http://www.mottoin.com/forum">社区</a></li>
+</ul></nav>            <div class="navbar-action pull-right">
+
+                                    <form class="navbar-search" action="http://www.mottoin.com" method="get" role="search">
+                        <input type="text" name="s" class="navbar-search-input" autocomplete="off" placeholder="输入关键词搜索..." value="">
+                        <a class="navbar-search-icon j-navbar-search" href="javascript:;"></a>
+                    </form>
+
+                    
+                    <div id="j-user-wrap">
+                        <a class="login" href="http://www.mottoin.com/login">登录</a>
+                        <a class="login" href="http://www.mottoin.com/register">注册</a>
+                    </div>
+                    <a class="publish" href="http://www.mottoin.com/post">
+                        投稿</a>
+                                                </div>
+        </div><!-- /.navbar-collapse -->
+    </div><!-- /.container -->
+</header>
+<div id="wrap">    <div class="main container">
+        <div class="content">
+                            <article id="post-93865" class="post-93865 post type-post status-publish format-standard has-post-thumbnail hentry category-system tag-cve-2016-7290 tag-offviz tag-onetabledocumentstream tag-2232 tag-818">
+                    <div class="entry">
+                        <div class="entry-head">
+                            <h1 class="entry-title">Microsoft Word OneTableDocumentStream 整数下溢漏洞分析（CVE-2016-7290）</h1>
+                            <div class="entry-info">
+                                                                <a class="nickname" href="http://www.mottoin.com/user/lycxk/">Sam</a>
+                                <span class="dot">•</span>
+                                <span>2016年12月14日</span>
+                                <span class="dot">•</span>
+                                <a href="http://www.mottoin.com/category/article/system" rel="category tag">系统安全</a>                                                                    <span class="dot">•</span>
+                                    <span>阅读 1400</span>
+                                                            </div>
+                        </div>
+                                                                        <div class="entry-content clearfix">
+                            <h2>简介</h2>
+<p>微软发布了CVE-2016-7290的补丁MS16-148，它解决了一个整数下溢问题。下溢将在复制操作期间触发超出范围读取，这可能导致在处理特制二进制文档文件时基于堆栈的缓冲区溢出在保护模式winword.exe进程之外。</p>
+<p>虽然所有这一切听起来很引人注目，但在现实中，POC只触发了一个潜在的信息披露越界阅读的条件，然而在这篇文章中，将进一步详细说明漏洞。</p>
+<h2>影响版本</h2>
+<ul>
+<li>Microsoft Word 2007 Service Pack 3</li>
+<li>Microsoft Office 2010 Service Pack 2（32位版本）</li>
+<li>Microsoft Office 2010 Service Pack 2（64位版本）</li>
+<li>Microsoft Office Compatibility Pack Service Pack 3</li>
+</ul>
+<p>有关详细信息，请参阅 <a href="http://srcincite.io/advisories/src-2016-0042/">SRC-2016-0042</a>咨询。 所有分析都是在Microsoft Office 2010 Professional WinWord.exe v14.0.4734.1000上执行的</p>
+<p>首先，让我们使用二进制编辑器来看看样本和poc文件的差异。</p>
+<p style="text-align: center;"><a href="http://www.mottoin.com/93865.html/compare" rel="attachment wp-att-93875"><img class="alignnone wp-image-93875 size-full j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/12/compare.png" alt="compare" width="712" height="415" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/12/compare.png 712w, http://www.mottoin.com/wp-content/uploads/2016/12/compare-300x175.png 300w" sizes="(max-width: 712px) 100vw, 712px" /></a><strong>比较poc.doc和sample.doc</strong></p>
+<p>可能注意到的是，文件只有一个字节增量修改。 使用Offviz，我们可以看看哪个块包含修改。</p>
+<p style="text-align: center;"><a href="http://www.mottoin.com/93865.html/offvis-word" rel="attachment wp-att-93877"><img class="alignnone size-full wp-image-93877 aligncenter j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2016/12/offvis-word.png" alt="offvis-word" width="1434" height="661" data-srcset="http://www.mottoin.com/wp-content/uploads/2016/12/offvis-word.png 1434w, http://www.mottoin.com/wp-content/uploads/2016/12/offvis-word-300x138.png 300w, http://www.mottoin.com/wp-content/uploads/2016/12/offvis-word-768x354.png 768w, http://www.mottoin.com/wp-content/uploads/2016/12/offvis-word-1024x472.png 1024w" sizes="(max-width: 1434px) 100vw, 1434px" /></a><strong>分析poc.doc的结构</strong></p>
+<p>修改字节在OneTableDocumentStream块的数据字段内。 该示例包含字节值0x68，然而poc使用0xfa来触发下溢。</p>
+<h2>0x0 触发漏洞</h2>
+<p>为了进行调试，我启用了page heap和usermode stack跟踪：</p>
+<pre>c:\Program Files\Debugging Tools for Windows (x86)&gt;gflags.exe -i winword.exe +hpa +ust
+Current Registry Settings for winword.exe executable are: 02001000
+    ust - Create user mode stack trace database
+    hpa - Enable page heap
+
+c:\Program Files\Debugging Tools for Windows (x86)&gt;</pre>
+<p>运行poc.doc文件导致以下访问突破保护模式：</p>
+<pre>(880.ac4): Access violation - code c0000005 (first chance)
+First chance exceptions are reported before any exception handling.
+This exception may be expected and handled.
+eax=00000000 ebx=00000000 ecx=00000033 edx=00000002 esi=22870ffd edi=002513c4
+eip=744fb40c esp=0024c694 ebp=0024c69c iopl=0         nv up ei pl nz ac po nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00210212
+MSVCR90!memmove+0xfc:
+744fb40c f3a5            rep movs dword ptr es:[edi],dword ptr [esi]
+
+0:000&gt; kvn
+ # ChildEBP RetAddr  Args to Child              
+00 0024c69c 5e3f9b36 002513bf 22870ff8 000000d3 MSVCR90!memmove+0xfc
+WARNING: Stack unwind information not available. Following frames may be wrong.
+01 0024c6b0 5e413843 22870ff8 002513bf 000000d3 wwlib!DllGetClassObject+0x455a
+02 0024c744 5e413223 002513ac 002513a0 00004ab8 wwlib!GetAllocCounters+0xcadb
+03 00251230 5e4131c6 002513ac 002513a0 00004ab8 wwlib!GetAllocCounters+0xc4bb
+04 00251264 5e45f414 002513ac 002513a0 00004ab8 wwlib!GetAllocCounters+0xc45e
+05 00251280 5e8da8a7 002513a0 22872fe4 00000000 wwlib!GetAllocCounters+0x586ac
+06 002512b8 5e89fdcb 04760520 002513a0 ffffffff wwlib!DllGetLCID+0x2d4521
+07 002567f4 5e66e957 1b132948 04760098 00000000 wwlib!DllGetLCID+0x299a45
+08 002580e0 5e671d5b 04760098 00258928 00000001 wwlib!DllGetLCID+0x685d1
+09 00258584 5e671489 04760098 00258928 1b132948 wwlib!DllGetLCID+0x6b9d5
+0a 0025894c 5e675c10 04760098 00002490 00000000 wwlib!DllGetLCID+0x6b103
+0b 00258998 5e4a6ad4 04760098 1b132948 0000056e wwlib!DllGetLCID+0x6f88a
+0c 002589d4 64270be6 22562f10 0000056e 00000000 wwlib!GetAllocCounters+0x9fd6c
+0d 002589f8 64270ebd 18bea880 18bea998 00258aa8 MSPTLS!FsTransformBbox+0x279b3
+0e 00258a4c 64270f2c 22798de8 00258d40 00000000 MSPTLS!FsTransformBbox+0x27c8a
+0f 00258aec 64271196 00258d40 00000000 00000000 MSPTLS!FsTransformBbox+0x27cf9
+10 00258ca0 6425736a 22798de8 227f0ca0 00000000 MSPTLS!FsTransformBbox+0x27f63
+11 00258db4 6428aa6f 22826fd0 00000000 00000000 MSPTLS!FsTransformBbox+0xe137
+12 00258eac 6426fbb9 22798de8 227f0ca0 00000000 MSPTLS!FsTransformBbox+0x4183c
+13 00259000 6425684e 22798de8 00000000 00000000 MSPTLS!FsTransformBbox+0x26986</pre>
+<h2>0x1 检查内存</h2>
+<p>我做的第一件事是开始检查在越界的时候被访问的内存。</p>
+<pre>0:000&gt; !heap -p -a @esi
+    address 22870ffd found in
+    _DPH_HEAP_ROOT @ 61000
+    in busy allocation (  DPH_HEAP_BLOCK:         UserAddr         UserSize -         VirtAddr         VirtSize)
+                                227a13a8:         22870fe0               19 -         22870000             2000
+    67be8e89 verifier!AVrfDebugPageHeapAllocate+0x00000229
+    77126206 ntdll!RtlDebugAllocateHeap+0x00000030
+    770ea127 ntdll!RtlpAllocateHeap+0x000000c4
+    770b5950 ntdll!RtlAllocateHeap+0x0000023a
+    5de2d804 mso!Ordinal149+0x000074b0
+    5e6a754d wwlib!DllGetLCID+0x000a11c7
+    5e7debc2 wwlib!DllGetLCID+0x001d883c
+    5e41f313 wwlib!GetAllocCounters+0x000185ab
+    5e41ec32 wwlib!GetAllocCounters+0x00017eca
+    5e41eb57 wwlib!GetAllocCounters+0x00017def
+    5e41e72a wwlib!GetAllocCounters+0x000179c2
+    5e423d89 wwlib!GetAllocCounters+0x0001d021
+    5e6acca5 wwlib!DllGetLCID+0x000a691f
+    5e422aa0 wwlib!GetAllocCounters+0x0001bd38
+    5e43ed59 wwlib!GetAllocCounters+0x00037ff1
+    5e43ec61 wwlib!GetAllocCounters+0x00037ef9
+    5e48f0c3 wwlib!GetAllocCounters+0x0008835b
+    5e48f050 wwlib!GetAllocCounters+0x000882e8
+    5e4a6aba wwlib!GetAllocCounters+0x0009fd52
+    64270be6 MSPTLS!FsTransformBbox+0x000279b3
+    64270ebd MSPTLS!FsTransformBbox+0x00027c8a
+    64270f2c MSPTLS!FsTransformBbox+0x00027cf9
+    64271196 MSPTLS!FsTransformBbox+0x00027f63
+    6425736a MSPTLS!FsTransformBbox+0x0000e137
+    6428aa6f MSPTLS!FsTransformBbox+0x0004183c
+    6426fbb9 MSPTLS!FsTransformBbox+0x00026986
+    6425684e MSPTLS!FsTransformBbox+0x0000d61b
+    6426ad48 MSPTLS!FsTransformBbox+0x00021b15
+    6428573e MSPTLS!FsTransformBbox+0x0003c50b
+    64285910 MSPTLS!FsTransformBbox+0x0003c6dd
+    64285c7b MSPTLS!FsTransformBbox+0x0003ca48
+    6426b17a MSPTLS!FsTransformBbox+0x00021f47
+ 
+0:000&gt; !address @edi
+ ProcessParametrs 00069738 in range 00069000 0006a000
+ Environment 02b233d8 in range 02b23000 02b24000
+    00160000 : 0023d000 - 00023000
+                    Type     00020000 MEM_PRIVATE
+                    Protect  00000004 PAGE_READWRITE
+                    State    00001000 MEM_COMMIT
+                    Usage    RegionUsageStack
+                    Pid.Tid  880.ac4    
+
+0:000&gt; dd @esi
+22870ffd  ???????? ???????? ???????? ????????
+2287100d  ???????? ???????? ???????? ????????
+2287101d  ???????? ???????? ???????? ????????
+2287102d  ???????? ???????? ???????? ????????
+2287103d  ???????? ???????? ???????? ????????
+2287104d  ???????? ???????? ???????? ????????
+2287105d  ???????? ???????? ???????? ????????
+2287106d  ???????? ???????? ???????? ????????
+
+0:000&gt; ?@ecx*4
+Evaluate expression: 204 = 000000cc</pre>
+<p>可以看到这是一个超过0x19字节大小的堆缓冲区读取，试图将另外204个字节复制到一个基于堆栈的地址。有人会问，堆栈变量大小是多少？</p>
+<p>事实证明，该栈变量向上传递的堆栈6帧向下，似乎动态计算一些其他变量和偏移量。因为没有符号令人难以跟踪。</p>
+<h2>0x2 写内存</h2>
+<p>如果我们可以继续从esi读取，那么我们可以安全地假设我们可以继续写入。但随着<a href="https://www.greyhathacker.net/?p=911">OLE spray</a> heap或使用EPS堆增益精度的能力，这可能是我们可以在偏移控制数据。但是，我们可以覆盖什么？让我们看一看目标堆栈地址：</p>
+<pre>0:000&gt; !py mona do -a 002513c4 -s 0xcc
+Hold on...
+[+] Command used:
+!py mona.py do -a 002513c4 -s 0xcc
+
+----------------------------------------------------
+[+] Dumping object at 0x002513c4, 0xcc bytes
+
+[+] Preparing output file 'dumpobj.txt'
+    - (Re)setting logfile dumpobj.txt
+[+] Generating module info table, hang on...
+    - Processing modules
+    - Done. Let's rock 'n roll.
+
+&gt;&gt; Object at 0x002513c4 (0xcc bytes):
+Offset  Address      Contents    Info
+------  -------      --------    -----
++00     0x002513c4 | 0x00000000  
++04     0x002513c8 | 0x000bd62f  
++08     0x002513cc | 0x00002001  
++0c     0x002513d0 | 0x0000ff00  
++10     0x002513d4 | 0xd63b0000  
++14     0x002513d8 | 0x8001000c  
++18     0x002513dc | 0xff000000  
++1c     0x002513e0 | 0x0100ffff  
++20     0x002513e4 | 0x00000000  
++24     0x002513e8 | 0x00000000  
++28     0x002513ec | 0xffffffff  
++2c     0x002513f0 | 0x00000000  
++30     0x002513f4 | 0x00000000  
++34     0x002513f8 | 0x00000000  
++38     0x002513fc | 0x00000000  
++3c     0x00251400 | 0x00000000  
++40     0x00251404 | 0xff000000  
++44     0x00251408 | 0x00000000  
++48     0x0025140c | 0xff000000  
++4c     0x00251410 | 0x00000000  
++50     0x00251414 | 0xff000000  
++54     0x00251418 | 0x00000c48  
++58     0x0025141c | 0xffffffff  
++5c     0x00251420 | 0x00000000  
++60     0x00251424 | 0xff000000  
++64     0x00251428 | 0x00000000  
++68     0x0025142c | 0xff000000  
++6c     0x00251430 | 0x00000000  
++70     0x00251434 | 0x1b132948  ptr to 0x5e52ee80 : wwlib!GetAllocCounters+0x128118
++74     0x00251438 | 0xff000000  
++78     0x0025143c | 0x00000000  
++7c     0x00251440 | 0x00000000  
++80     0x00251444 | 0x00000000  
++84     0x00251448 | 0x00000000  
++88     0x0025144c | 0x00000000  
++8c     0x00251450 | 0xff000000  
++90     0x00251454 | 0x00000000  
++94     0x00251458 | 0x00000000  
++98     0x0025145c | 0x00000000  
++9c     0x00251460 | 0x00000000  
++a0     0x00251464 | 0x00000000  
++a4     0x00251468 | 0x00000000  
++a8     0x0025146c | 0x00000000  
++ac     0x00251470 | 0x00000000  
++b0     0x00251474 | 0x00000000  
++b4     0x00251478 | 0x00000000  
++b8     0x0025147c | 0x00000000  
++bc     0x00251480 | 0x00000000  
++c0     0x00251484 | 0x00000000  
++c4     0x00251488 | 0x00000000  
++c8     0x0025148c | 0x00000000</pre>
+<p>使用corelanc0d3r的<a href="https://github.com/corelan/mona">mona插件</a>，们可以使用剩余的大小转储目标堆栈地址，可以看到我们有一个指向.text（wwlib!GetAllocCounters+0x128118）的指针。</p>
+<p>我们是喜欢溢出堆栈缓冲区，如果我们想要的返回地址不会发生，直到目的地址+ 0x1e8。 你可能会好奇位于那里：</p>
+<pre>...
+
++cc     0x00251490 | 0xff700000  
++d0     0x00251494 | 0x00ffffff  
++d4     0x00251498 | 0x00000000  
++d8     0x0025149c | 0x00000000  
+
+... 
+
++1dc    0x002515a0 | 0x1b132be0  
++1e0    0x002515a4 | 0x0000005e  
++1e4    0x002515a8 | 0x002515c4  ptr to self+0x00000200
++1e8    0x002515ac | 0x5e415bc1  wwlib!GetAllocCounters+0xee59
+
+[+] This mona.py action took 0:00:01.669000
+
+0:000&gt; ub 0x5e415bc1  
+wwlib!GetAllocCounters+0xee41:
+5e415ba9 5e              pop     esi
+5e415baa 81fbffffff7f    cmp     ebx,7FFFFFFFh
+5e415bb0 0f873e393c00    ja      wwlib!DllGetLCID+0x1d316e (5e7d94f4)
+5e415bb6 8b5508          mov     edx,dword ptr [ebp+8]
+5e415bb9 53              push    ebx
+5e415bba 50              push    eax
+5e415bbb 52              push    edx
+5e415bbc e8b9e9fdff      call    wwlib+0x457a (5e3f457a)</pre>
+<p>我们不会在调用堆栈中看到它，因为它的框架在堆栈中：</p>
+<pre>0:000&gt; ?0x002515ac-@esp
+Evaluate expression: 20248 = 00004f18</pre>
+<p>下一个问题是，我们将如何模拟继续下一步？</p>
+<p>bannedit写了另一个插件<a href="https://github.com/bannedit/windbg">counterfeit</a>，我们可以使用这个插件在windbg中分配一个块（使用VirtualAlloc），并用标记的数据填充它。 然后，我们可以使用此值替换esi并继续复制操作。</p>
+<pre>0:000&gt; !py cf -a 2000 -f
+                           __                 _____      .__  __   
+  ____  ____  __ __  _____/  |_  ____________/ ____\____ |__|/  |_ 
+_/ ___\/  _ \|  |  \/    \   __\/ __ \_  __ \   __\/ __ \|  \   __\
+\  \__(  &lt;_&gt; )  |  /   |  \  | \  ___/|  | \/|  | \  ___/|  ||  |  
+ \___  &gt;____/|____/|___|  /__|  \___  &gt;__|   |__|  \___  &gt;__||__|  
+     \/                 \/          \/                 \/
+            version 1.0 - bannedit
+
+
+Allocated memory @ 0x14130000 with RWX permissions.
+Filling memory...
+Finished filling memory.
+
+0:000&gt; dd 0x14130000
+14130000  41414141 41414142 41414143 41414144
+14130010  41414145 41414146 41414147 41414148
+14130020  41414149 4141414a 4141414b 4141414c
+14130030  4141414d 4141414e 4141414f 41414150
+14130040  41414151 41414152 41414153 41414154
+14130050  41414155 41414156 41414157 41414158
+14130060  41414159 4141415a 4141415b 4141415c
+14130070  4141415d 4141415e 4141415f 41414160</pre>
+<p>现在，我们设置esi为0x14130000：</p>
+<pre>0:000&gt; g
+(880.ac4): Access violation - code c0000005 (!!! second chance !!!)
+eax=00000000 ebx=00000000 ecx=00000033 edx=00000002 esi=22870ffd edi=002513c4
+eip=744fb40c esp=0024c694 ebp=0024c69c iopl=0         nv up ei pl nz ac po nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00210212
+MSVCR90!memmove+0xfc:
+744fb40c f3a5            rep movs dword ptr es:[edi],dword ptr [esi]
+
+0:000&gt; r @esi=0x14130000
+
+...
+
+0:000&gt; t
+eax=00000000 ebx=00000000 ecx=00000017 edx=00000002 esi=14130070 edi=00251434
+eip=744fb40c esp=0024c694 ebp=0024c69c iopl=0         nv up ei pl nz ac po nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00210212
+MSVCR90!memmove+0xfc:
+744fb40c f3a5            rep movs dword ptr es:[edi],dword ptr [esi]
+
+0:000&gt; dd @edi L1
+00251434  1b132948
+
+0:000&gt; dds poi(@edi) L1
+1b132948  5e52ee80 wwlib!GetAllocCounters+0x128118
+
+0:000&gt; u poi(poi(@edi))
+wwlib!GetAllocCounters+0x6e3b0:
+5e475118 55              push    ebp
+5e475119 8bec            mov     ebp,esp
+5e47511b 56              push    esi
+5e47511c 8bf1            mov     esi,ecx
+5e47511e e814000000      call    wwlib!GetAllocCounters+0x6e3cf (5e475137)
+5e475123 f6450801        test    byte ptr [ebp+8],1
+5e475127 7407            je      wwlib!GetAllocCounters+0x6e3c8 (5e475130)
+5e475129 56              push    esi
+
+0:000&gt; t
+eax=00000000 ebx=00000000 ecx=00000016 edx=00000002 esi=14130074 edi=00251438
+eip=744fb40c esp=0024c694 ebp=0024c69c iopl=0         nv up ei pl nz ac po nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00210212
+MSVCR90!memmove+0xfc:
+744fb40c f3a5            rep movs dword ptr es:[edi],dword ptr [esi]
+
+0:000&gt; dds poi(@edi-4) L1
+4141415d  ????????</pre>
+<p>我们可以看到，我们覆盖了指向一个具有来自esi的潜在受控值函数的数据指针。 由于esi包含标记数据，因此我们知道esi中使用了什么偏移量来覆盖指针。</p>
+<pre>0:000&gt; ?0x5d-0x41
+
+Evaluate expression: 28 = 0000001c
+0:000&gt; !py mona do -a 002513c4 -s 0x78
+Hold on...
+[+] Command used:
+!py mona.py do -a 002513c4 -s 0x78
+
+----------------------------------------------------
+[+] Dumping object at 0x002513c4, 0x78 bytes
+
+[+] Preparing output file 'dumpobj.txt'
+    - (Re)setting logfile dumpobj.txt
+[+] Generating module info table, hang on...
+    - Processing modules
+    - Done. Let's rock 'n roll.
+
+&gt;&gt; Object at 0x002513c4 (0x78 bytes):
+Offset  Address      Contents    Info
+------  -------      --------    -----
++00     0x002513c4 | 0x41414141  = ASCII 'AAAA' 
++04     0x002513c8 | 0x41414142  = ASCII 'AAAB' 
++08     0x002513cc | 0x41414143  = ASCII 'AAAC' 
++0c     0x002513d0 | 0x41414144  = ASCII 'AAAD' 
++10     0x002513d4 | 0x41414145  = ASCII 'AAAE' 
++14     0x002513d8 | 0x41414146  = ASCII 'AAAF' 
++18     0x002513dc | 0x41414147  = ASCII 'AAAG' 
++1c     0x002513e0 | 0x41414148  = ASCII 'AAAH' 
++20     0x002513e4 | 0x41414149  = ASCII 'AAAI' 
++24     0x002513e8 | 0x4141414a  = ASCII 'AAAJ' 
++28     0x002513ec | 0x4141414b  = ASCII 'AAAK' 
++2c     0x002513f0 | 0x4141414c  = ASCII 'AAAL' 
++30     0x002513f4 | 0x4141414d  = ASCII 'AAAM' 
++34     0x002513f8 | 0x4141414e  = ASCII 'AAAN' 
++38     0x002513fc | 0x4141414f  = ASCII 'AAAO' 
++3c     0x00251400 | 0x41414150  = ASCII 'AAAP' 
++40     0x00251404 | 0x41414151  = ASCII 'AAAQ' 
++44     0x00251408 | 0x41414152  = ASCII 'AAAR' 
++48     0x0025140c | 0x41414153  = ASCII 'AAAS' 
++4c     0x00251410 | 0x41414154  = ASCII 'AAAT' 
++50     0x00251414 | 0x41414155  = ASCII 'AAAU' 
++54     0x00251418 | 0x41414156  = ASCII 'AAAV' 
++58     0x0025141c | 0x41414157  = ASCII 'AAAW' 
++5c     0x00251420 | 0x41414158  = ASCII 'AAAX' 
++60     0x00251424 | 0x41414159  = ASCII 'AAAY' 
++64     0x00251428 | 0x4141415a  = ASCII 'AAAZ' 
++68     0x0025142c | 0x4141415b  = ASCII 'AAA[' 
++6c     0x00251430 | 0x4141415c  = ASCII 'AAA\' 
++70     0x00251434 | 0x4141415d  = ASCII 'AAA]' 
++74     0x00251438 | 0xff000000</pre>
+<h2 id="x3-exposure">0x3 Exposure</h2>
+<p>再次查看调用堆栈，关注对memmove（）的调用者：</p>
+<pre>0:000&gt; kvn L2
+ # ChildEBP RetAddr  Args to Child              
+00 0024c69c 5e3f9b36 002513bf 22870ff8 000000d3 MSVCR90!memmove+0xfc
+WARNING: Stack unwind information not available. Following frames may be wrong.
+01 0024c6b0 5e413843 22870ff8 002513bf 000000d3 wwlib!DllGetClassObject+0x455a</pre>
+<p>使用Hex-Rays反编译器，我们可以看到这个函数只是一个memmove（）的包装器，在wwwlib中被多次调用。为了简洁，我将sub_316d9b16重命名为memmove_wrapper_1。</p>
+<pre>int __stdcall memmove_wrapper_1(void *Src, void *Dst, size_t Size)
+{
+  int result; // eax@2
+
+  if ( Size &gt; 0x7FFFFFFF )
+    result = MSO_1511(1647603307, 0);
+  else
+    result = (int)memmove(Dst, Src, Size);
+  return result;
+}</pre>
+<p>如果大小大于MAX_INT，则会产生int溢出异常。 此外，没有对大小值进行正确性的检查，以验证它是否小于目标缓冲区。</p>
+<p>出于开发目的，我们通常想知道memmove（）如何访问或调用&#8230;</p>
+<p>为了确定这一点，我们设置一个断点（bp wwlib!DllGetClassObject+0x4554 &#8220;.printf \&#8221;calling memmove(%x, %x, %x);\\n\&#8221;, poi(@esp), poi(@esp+4), poi(@esp+8); gc&#8221;）并重新运行poc。</p>
+<pre>calling memmove(271164, 26fb3c, e);
+calling memmove(271172, 26fb4a, f);
+calling memmove(271148, 2266efe0, 3);
+calling memmove(27114b, 2266efe3, 3);
+calling memmove(27114e, 2266efe6, 3);
+calling memmove(271151, 2266efe9, 3);
+calling memmove(271154, 2266efec, 3);
+calling memmove(271157, 2266efef, 4);
+calling memmove(27115b, 2266eff3, 5);
+calling memmove(27122e, 27115b, 5);
+calling memmove(27115b, 2266eff8, d3);
+(5f0.59c): Access violation - code c0000005 (first chance)
+First chance exceptions are reported before any exception handling.
+This exception may be expected and handled.
+eax=00000000 ebx=00000000 ecx=00000033 edx=00000002 esi=2266effd edi=00271160
+eip=744fb40c esp=0026c430 ebp=0026c438 iopl=0         nv up ei pl nz ac po nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00210212
+MSVCR90!memmove+0xfc:
+744fb40c f3a5            rep movs dword ptr es:[edi],dword ptr [esi]</pre>
+<p>源缓冲区存在许多调用，有许多调用使用源缓冲区，从0x2266efXX开始，目的地似乎是一致的，都是0x002711YY。怀疑这是一个错误的循环，多次调用memmove（）。</p>
+<p>我确定这一点的方式是分析每次堆栈调用，以确定它是否唯一。在windbg中执行&#8217;k&#8217;命令是不会中断它的，因为我们准备上述断点减慢执行。我选择使用一个快速的windbg插件，将返回的地址合并在一起：</p>
+<pre>from pykd import *
+mashed = 0
+for frame in getStack():
+    mashed += frame.returnOffset
+print "stack hash: 0x%x" % mashed</pre>
+<pre>0:000&gt; !py sh
+stack hash: 0x199a6804c9</pre>
+<p>现在，我们将其添加到断点，取出新行并在末尾添加一个空格，最后重新运行它：</p>
+<pre>0:010&gt; bu wwlib!DllGetClassObject+0x4554 ".printf \"calling memmove(%x, %x, %x); \", poi(@esp), poi(@esp+4), poi(@esp+8); !py sh; gc"
+0:010&gt; g
+
+...
+
+calling memmove(190fa4, 18f97c, e); stack hash: 0x18a96a3a98
+calling memmove(190fb2, 18f98a, f); stack hash: 0x18a96a3a98
+calling memmove(190f88, 49d7fe0, 3); stack hash: 0x1847ab6993
+calling memmove(190f8b, 49d7fe3, 3); stack hash: 0x1847ab6993
+calling memmove(190f8e, 49d7fe6, 3); stack hash: 0x1847ab6993
+calling memmove(190f91, 49d7fe9, 3); stack hash: 0x1847ab6993
+calling memmove(190f94, 49d7fec, 3); stack hash: 0x1847ab6993
+calling memmove(190f97, 49d7fef, 4); stack hash: 0x1847ab6993
+calling memmove(190f9b, 49d7ff3, 5); stack hash: 0x1847ab6993
+calling memmove(19106e, 190f9b, 5); stack hash: 0x1847ad8b4c
+calling memmove(190f9b, 49d7ff8, d3); stack hash: 0x1847ab6993
+(7dc.71c): Access violation - code c0000005 (first chance)
+First chance exceptions are reported before any exception handling.
+This exception may be expected and handled.
+eax=00000000 ebx=00000000 ecx=00000033 edx=00000002 esi=049d7ffd edi=00190fa0
+eip=744fb40c esp=0018c270 ebp=0018c278 iopl=0         nv up ei pl nz ac po nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00210212
+MSVCR90!memmove+0xfc:
+744fb40c f3a5            rep movs dword ptr es:[edi],dword ptr [esi]</pre>
+<p>现在可以假定调用memmove（）和堆栈散列0x1847ab6993是在一个循环内！</p>
+<h2>0x4 影响</h2>
+<p>由于poc不会溢出返回地址或随后在写入或复制操作期间访问和使用的任何内容，因此可以得出结论，该漏洞的影响非常小。</p>
+<p>Microsoft将此漏洞修补为“Microsoft Office信息泄露漏洞”，然而，因为我们可以覆盖指向堆栈上的.text的指针，表明这个漏洞有的更多潜在的影响，如果它使用替代代码路径触发。</p>
+<h2>0x5 结论</h2>
+<p>Office代码库中仍然存在许多复杂的漏洞，但很难找到。通常，根本原因分析和开发利用更难以确定。</p>
+<p>&nbsp;</p>
+<p style="text-align: center;"><span style="color: #ff0000;"><strong>*转载请注明来自MottoIN</strong></span></p>
+                                                        <div class="entry-copyright"><p>原创文章，作者：Sam，如若转载，请注明出处：http://www.mottoin.com/93865.html</p></div>                        </div>
+                        <div class="entry-footer">
+                            <div class="entry-tag"><a href="http://www.mottoin.com/tag/cve-2016-7290" rel="tag">CVE-2016-7290</a><a href="http://www.mottoin.com/tag/offviz" rel="tag">Offviz</a><a href="http://www.mottoin.com/tag/onetabledocumentstream" rel="tag">OneTableDocumentStream</a><a href="http://www.mottoin.com/tag/%e6%95%b4%e6%95%b0%e4%b8%8b%e6%ba%a2" rel="tag">整数下溢</a><a href="http://www.mottoin.com/tag/%e7%bc%93%e5%86%b2%e5%8c%ba%e6%ba%a2%e5%87%ba" rel="tag">缓冲区溢出</a></div>
+                            <div class="entry-action">
+                                <div class="btn-zan" data-id="93865"><i class="fa fa-thumbs-up"></i> 赞 <span class="entry-action-num">(0)</span></div>
+
+                                
+                            </div>
+                            <div class="entry-bar">
+                                <div class="entry-bar-inner clearfix">
+                                                                            <div class="author pull-left">
+                                            <a data-user="11" target="_blank" href="http://www.mottoin.com/user/lycxk/" class="avatar">
+                                                <img src="http://gravatar.com/avatar/?s=400&d=mm" class="func-um_user gravatar avatar avatar-60 um-avatar um-avatar-gravatar" width="60" height="60" alt="Sam" />                                                Sam                                            </a>
+                                            <span class="author-title">普通用户</span>                                         </div>
+                                                                        <div class="info pull-right">
+                                        <div class="info-item meta">
+                                            <a class="meta-item j-heart" href="javascript:;" data-id="93865"><i class="fa fa-heart"></i> <span class="data">0</span></a>
+                                            <a class="meta-item" href="#comments"><i class="fa fa-comment"></i> <span class="data">1</span></a>
+                                                                                    </div>
+                                        <div class="info-item share">
+                                            <a class="meta-item" href="javascript:;">
+                                                <i class="fa fa-wechat"></i>
+                                                <span class="wx-wrap">
+                                                    <img src="//pan.baidu.com/share/qrcode?w=320&h=320&url=http://www.mottoin.com/93865.html">
+                                                    <span>扫码分享到微信</span>
+                                                </span>
+                                            </a>
+                                            <a class="meta-item" href="http://share.baidu.com/s?type=text&searchPic=1&sign=on&to=tsina&key=&url=http%3A%2F%2Fwww.mottoin.com%2F93865.html&title=Microsoft+Word+OneTableDocumentStream+%E6%95%B4%E6%95%B0%E4%B8%8B%E6%BA%A2%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90%EF%BC%88CVE-2016-7290%EF%BC%89" target="_blank"><i class="fa fa-weibo"></i></a>
+                                            <a class="meta-item" href="http://share.baidu.com/s?type=text&searchPic=1&sign=on&to=qzone&key=&url=http%3A%2F%2Fwww.mottoin.com%2F93865.html&title=Microsoft+Word+OneTableDocumentStream+%E6%95%B4%E6%95%B0%E4%B8%8B%E6%BA%A2%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90%EF%BC%88CVE-2016-7290%EF%BC%89" target="_blank"><i class="fa fa-qq"></i></a>
+                                        </div>
+                                        <div class="info-item act">
+                                            <a href="javascript:;" id="j-reading"><i class="fa fa-file-text"></i></a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                                                        <h3 class="entry-related-title">相关推荐</h3><ul class="entry-related clearfix"><li><a href="http://www.mottoin.com/89888.html" title="从恶意文档中发现的虚拟机检测绕过技巧">从恶意文档中发现的虚拟机检测绕过技巧</a></li><li><a href="http://www.mottoin.com/98011.html" title="Linux系统安全需要注意的一些问题">Linux系统安全需要注意的一些问题</a></li><li><a href="http://www.mottoin.com/89636.html" title="Bypassing Applocker with MSBuild.exe">Bypassing Applocker with MSBuild.exe</a></li><li><a href="http://www.mottoin.com/89491.html" title="AppLocker Bypass Techniques">AppLocker Bypass Techniques</a></li><li><a href="http://www.mottoin.com/94676.html" title="Hack With XSLT">Hack With XSLT</a></li><li><a href="http://www.mottoin.com/88856.html" title="Userland registry hijacking">Userland registry hijacking</a></li><li><a href="http://www.mottoin.com/93615.html" title="Safari浏览器JavaScript引擎JavaScriptCore的漏洞技术分析">Safari浏览器JavaScript引擎JavaScriptCore的漏洞技术分析</a></li><li><a href="http://www.mottoin.com/99247.html" title="漏洞分析：CVE-2017-0497 via ele7enxxh">漏洞分析：CVE-2017-0497 via ele7enxxh</a></li><li><a href="http://www.mottoin.com/101137.html" title="[CVE-2015-7547]GLIBC GETADDRINFO栈溢出漏洞">[CVE-2015-7547]GLIBC GETADDRINFO栈溢出漏洞</a></li><li><a href="http://www.mottoin.com/100856.html" title="NSA Eternalblue SMB 漏洞分析">NSA Eternalblue SMB 漏洞分析</a></li></ul>                        </div>
+                        
+<div id="comments" class="entry-comments">
+    	<div id="respond" class="comment-respond">
+		<h3 id="reply-title" class="comment-reply-title">发表评论 <small><a rel="nofollow" id="cancel-comment-reply-link" href="/93865.html#respond" style="display:none;">取消回复</a></small></h3><div class="comment-form"><div class="comment-must-login">请登录后评论...</div><div class="form-submit"><div class="form-submit-text pull-left"><a href="http://www.mottoin.com/login">登录</a>后才能评论</div> <input name="submit" type="submit" id="must-submit" class="submit" value="发表"></div></div>	</div><!-- #respond -->
+				<h3 class="comments-title">
+			评论列表（1条）		</h3>
+
+		<ul class="comments-list">
+					</ul><!-- .comment-list -->
+        <div class="pagination clearfix">
+                    </div>
+	</div><!-- .comments-area -->                    </div>
+                </article>
+                    </div>
+        <aside class="sidebar">
+            <div id="profile-3" class="widget widget_profile">                <div class="cover_photo"></div>
+                        <div class="avatar-wrap">
+                <a target="_blank" href="http://www.mottoin.com/user/lycxk/" class="avatar-link"><img src="http://gravatar.com/avatar/?s=400&d=mm" class="func-um_user gravatar avatar avatar-120 um-avatar um-avatar-gravatar" width="120" height="120" alt="Sam" /></a></div>
+            <div class="profile-info">
+                <p><span class="author-name">Sam</span><span class="author-title">普通用户</span></p>
+                <p class="author-description"></p>
+            </div>
+            <div class="profile-posts">
+                <h3 class="widget-title"><span>最近文章</span></h3>
+                <ul>                    <li><a href="http://www.mottoin.com/97590.html" title="金融行业企业安全运营之路">金融行业企业安全运营之路</a></li>
+                                    <li><a href="http://www.mottoin.com/96325.html" title="维基解密发布秘密“CIA间谍订单”">维基解密发布秘密“CIA间谍订单”</a></li>
+                                    <li><a href="http://www.mottoin.com/95972.html" title="Tater：一个基于powershell的windows渗透测试工具">Tater：一个基于powershell的windows渗透测试工具</a></li>
+                                    <li><a href="http://www.mottoin.com/95911.html" title="Invoke-Vnc：powershell vnc inject工具">Invoke-Vnc：powershell vnc inject工具</a></li>
+                                    <li><a href="http://www.mottoin.com/95401.html" title="Windows DLL注入基础分析与防护">Windows DLL注入基础分析与防护</a></li>
+                </ul>            </div>
+            </div><div id="custom_html-3" class="widget_text widget widget_custom_html"><div class="textwidget custom-html-widget"><a class="btn-post" href="/question"><i class="fa fa-edit"></i> 我要提问</a></div></div><div id="post-thumb-3" class="widget widget_post_thumb">            <ul>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105921.html" title="“黑客反击”的合法化之争">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/170918-Cox-The-Hackers-Hitting-Back-At-Cybercriminals-hero_vkcor5-480x300.gif" width="480" height="300" alt="“黑客反击”的合法化之争">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105921.html" title="“黑客反击”的合法化之争">“黑客反击”的合法化之争</a></p>
+                            <p class="item-date">2017年9月20日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105917.html" title="美参议员要求电信巨头们回应SS7信令系统的安全问题">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG929-480x300.jpeg" width="480" height="300" alt="美参议员要求电信巨头们回应SS7信令系统的安全问题">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105917.html" title="美参议员要求电信巨头们回应SS7信令系统的安全问题">美参议员要求电信巨头们回应SS7信令系统的安全问题</a></p>
+                            <p class="item-date">2017年9月19日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105914.html" title="美国国土安全部发布禁止使用卡巴斯基产品的明细">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG928-480x300.jpeg" width="480" height="300" alt="美国国土安全部发布禁止使用卡巴斯基产品的明细">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105914.html" title="美国国土安全部发布禁止使用卡巴斯基产品的明细">美国国土安全部发布禁止使用卡巴斯基产品的明细</a></p>
+                            <p class="item-date">2017年9月19日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105885.html" title="【威胁预警】供应链攻击：CCleaner 5.33官方下载被植入恶意代码（附技术详解）">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG906-480x300.jpeg" width="480" height="300" alt="【威胁预警】供应链攻击：CCleaner 5.33官方下载被植入恶意代码（附技术详解）">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105885.html" title="【威胁预警】供应链攻击：CCleaner 5.33官方下载被植入恶意代码（附技术详解）">【威胁预警】供应链攻击：CCleaner 5.33官方下载被植入恶意代码（附技术详解）</a></p>
+                            <p class="item-date">2017年9月19日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105879.html" title="全球首款网络安全概念车驶入上海滩">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/15057198871-480x300.png" width="480" height="300" alt="全球首款网络安全概念车驶入上海滩">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105879.html" title="全球首款网络安全概念车驶入上海滩">全球首款网络安全概念车驶入上海滩</a></p>
+                            <p class="item-date">2017年9月18日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105872.html" title="暗网市场上开始兜售Equifax的数据，数据泄漏后常见的诈骗招数1、2、3">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG897-480x300.jpeg" width="480" height="300" alt="暗网市场上开始兜售Equifax的数据，数据泄漏后常见的诈骗招数1、2、3">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105872.html" title="暗网市场上开始兜售Equifax的数据，数据泄漏后常见的诈骗招数1、2、3">暗网市场上开始兜售Equifax的数据，数据泄漏后常见的诈骗招数1、2、3</a></p>
+                            <p class="item-date">2017年9月18日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105865.html" title="美国财政部确认伊朗11个实体的恶意网络活动，宣布对它们实施制裁">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG896-480x300.jpeg" width="480" height="300" alt="美国财政部确认伊朗11个实体的恶意网络活动，宣布对它们实施制裁">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105865.html" title="美国财政部确认伊朗11个实体的恶意网络活动，宣布对它们实施制裁">美国财政部确认伊朗11个实体的恶意网络活动，宣布对它们实施制裁</a></p>
+                            <p class="item-date">2017年9月18日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105858.html" title="DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG150-480x300.jpeg" width="480" height="300" alt="DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105858.html" title="DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护">DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护</a></p>
+                            <p class="item-date">2017年9月17日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105847.html" title="国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG141-480x300.jpeg" width="480" height="300" alt="国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105847.html" title="国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场">国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场</a></p>
+                            <p class="item-date">2017年9月16日</p>
+                        </div>
+                    </li>
+                                    <li class="item">
+                                                    <div class="item-img">
+                                <a href="http://www.mottoin.com/105837.html" title="黑客组织OurMine窃取Vevo约3.12TB数据，疑似后者已妥协">
+                                    <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG132-480x300.jpeg" width="480" height="300" alt="黑客组织OurMine窃取Vevo约3.12TB数据，疑似后者已妥协">                                </a>
+                            </div>
+                                                <div class="item-content">
+                            <p class="item-title"><a href="http://www.mottoin.com/105837.html" title="黑客组织OurMine窃取Vevo约3.12TB数据，疑似后者已妥协">黑客组织OurMine窃取Vevo约3.12TB数据，疑似后者已妥协</a></p>
+                            <p class="item-date">2017年9月16日</p>
+                        </div>
+                    </li>
+                            </ul>
+        </div><div id="lastest-products-4" class="widget widget_lastest_products">            <ul class="p-list clearfix">
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105921.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/170918-Cox-The-Hackers-Hitting-Back-At-Cybercriminals-hero_vkcor5-480x300.gif" width="480" height="300" alt="“黑客反击”的合法化之争">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105921.html" title="“黑客反击”的合法化之争">
+                                    “黑客反击”的合法化之争                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105858.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG150-480x300.jpeg" width="480" height="300" alt="DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105858.html" title="DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护">
+                                    DHS称美国政府不能正确评估 WannaCry 和NotPetya的影响，对企业缺乏适当的保护                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105847.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG141-480x300.jpeg" width="480" height="300" alt="国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105847.html" title="国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场">
+                                    国家网络安全周开幕 大安全时代360前沿“黑科技”震撼登场                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105799.html">
+                                <img width="480" height="300" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" class="attachment-post-thumbnail size-post-thumbnail j-lazy wp-post-image" alt="暗网系列之：“入店行窃者”的工具、战术和克星" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/15054708381-150x150-480x300.png" />                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105799.html" title="暗网系列之：“入店行窃者”的工具、战术和克星">
+                                    暗网系列之：“入店行窃者”的工具、战术和克星                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105703.html">
+                                <img width="480" height="300" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" class="attachment-post-thumbnail size-post-thumbnail j-lazy wp-post-image" alt="【现场还原】补天漏洞情报发布会记事" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG82-150x150-480x300.jpeg" />                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105703.html" title="【现场还原】补天漏洞情报发布会记事">
+                                    【现场还原】补天漏洞情报发布会记事                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105692.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG75-480x300.jpeg" width="480" height="300" alt="SyScan360看点回顾：中美德俄等七国黑客专家神技大比拼">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105692.html" title="SyScan360看点回顾：中美德俄等七国黑客专家神技大比拼">
+                                    SyScan360看点回顾：中美德俄等七国黑客专家神技大比拼                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105642.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG58-480x300.jpeg" width="480" height="300" alt="大安全时代序幕开启！ 中国互联网安全大会重新定义网络安全">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105642.html" title="大安全时代序幕开启！ 中国互联网安全大会重新定义网络安全">
+                                    大安全时代序幕开启！ 中国互联网安全大会重新定义网络安全                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105621.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG512-480x300.jpeg" width="480" height="300" alt="【重磅推出】ISC大会补天漏洞情报服务发布会：英雄，你准备好了吗？">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105621.html" title="【重磅推出】ISC大会补天漏洞情报服务发布会：英雄，你准备好了吗？">
+                                    【重磅推出】ISC大会补天漏洞情报服务发布会：英雄，你准备好了吗？                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105629.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG49-480x300.jpeg" width="480" height="300" alt="ISC直击：360守护者计划登陆ISC 最强白帽挑战黑客马拉松大奖赛">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105629.html" title="ISC直击：360守护者计划登陆ISC 最强白帽挑战黑客马拉松大奖赛">
+                                    ISC直击：360守护者计划登陆ISC 最强白帽挑战黑客马拉松大奖赛                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                                    <li class="col-xs-12 col-md-6 p-item">
+                        <div class="p-item-wrap">
+                            <a class="thumb" href="http://www.mottoin.com/105603.html">
+                                <img class="j-lazy" src="http://www.mottoin.com/wp-content/themes/JustNews/themer/assets/images/lazy.png" data-original="http://www.mottoin.com/wp-content/uploads/2017/09/WechatIMG42-480x300.jpeg" width="480" height="300" alt="【ISC2017精彩剪辑】周鸿祎：大安全时代 网络空间防御刻不容缓">                            </a>
+                            <h4 class="title">
+                                <a href="http://www.mottoin.com/105603.html" title="【ISC2017精彩剪辑】周鸿祎：大安全时代 网络空间防御刻不容缓">
+                                    【ISC2017精彩剪辑】周鸿祎：大安全时代 网络空间防御刻不容缓                                </a>
+                            </h4>
+                        </div>
+                    </li>
+                            </ul>
+        </div>        </aside>
+    </div>
+<div class="modal" id="login-modal">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+                <h4 class="modal-title">请登录</h4>
+            </div>
+            <div class="modal-body login-modal-body">
+                <p>您还未登录，请登录后再进行相关操作！</p>
+                <div class="login-btn">
+                    <a class="btn btn-login" href="http://www.mottoin.com/login">登 录</a>
+                    <a class="btn btn-register" href="http://www.mottoin.com/register">注 册</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+<footer class="footer">
+    <div class="container">
+        <div class="clearfix">
+                        <div class="footer-col footer-col-logo">
+                <img src="http://www.mottoin.com/img/mottoin/tmxk.png" alt="MottoIN">
+            </div>
+                        <div class="footer-col footer-col-copy">
+                <ul class="footer-nav hidden-xs"><li id="menu-item-104182" class="menu-item menu-item-104182"><a href="http://www.mottoin.com/about">关于我们</a></li>
+<li id="menu-item-104181" class="menu-item menu-item-104181"><a href="http://www.mottoin.com/dis">免责声明</a></li>
+<li id="menu-item-104183" class="menu-item menu-item-104183"><a href="http://www.mottoin.com/joinus">加入我们</a></li>
+<li id="menu-item-105509" class="menu-item menu-item-105509"><a href="http://www.mottoin.com/contact">联系我们</a></li>
+<li id="menu-item-104184" class="menu-item menu-item-104184"><a href="http://www.mottoin.com/report">寻求报道</a></li>
+<li id="menu-item-104185" class="menu-item menu-item-104185"><a href="http://www.mottoin.com/contribute">我要投稿</a></li>
+</ul>                <div class="copyright">
+                    Copyright © 2017 MottoIN 版权所有 <a href="http://www.miibeian.gov.cn/">沪ICP备16010654号-5</a>  <img class="alignnone " src="http://www.mottoin.com/img/mottoin/ga.png" width="16" height="16" /> <a href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=31010402001331">沪公网安备31010402001331号</a>                 </div>
+            </div>
+            <div class="footer-col footer-col-sns">
+                <div class="footer-sns">
+                                                                                    <a class="sns-wx" href="javascript:;">
+                            <i class="fa fa-weixin"></i>
+                            <span style="background-image:url(http://www.mottoin.com/img/mottoin/weixin.jpg);"></span>
+                        </a>
+                                                                <a target="_blank" href="http://weibo.com/mottoin" rel="nofollow"><i class="fa fa-weibo"></i></a>
+                                                                <a target="_blank" href="http://weibo.com/mottoin" rel="nofollow"><i class="fa fa-tencent-weibo"></i></a>
+                                                                                                                                                                                </div>
+            </div>
+        </div>
+    </div>
+</footer>
+<div class="action" style="top:50%;">
+            <div class="a-box contact">
+            <div class="contact-wrap">
+                <h3 class="contact-title">联系我们</h3>
+                <h4 style="text-align: center;"><span style="color: #2d6ded;"><strong>021-62666911</strong></span></h4>
+<p>在线咨询：<a href="http://wpa.qq.com/msgrd?uin=19539638" target="_blank" rel="noopener"><img class="alignnone" title="点击这里给我发消息" src="http://wpa.qq.com/pa?p=2:1666839010:51" alt="点击这里给我发消息" border="0" /></a></p>
+<p>邮件：root@mottoin.com</p>
+<p>工作时间：周一至周五，9:30-18:30，节假日休息</p>
+            </div>
+        </div>
+                <div class="a-box wechat">
+            <div class="wechat-wrap">
+                <img src="http://www.mottoin.com/img/mottoin/weixin.jpg" alt="QR code">
+            </div>
+        </div>
+            <div class="a-box gotop" id="j-top" style="display: none;"></div>
+</div>
+<style>.footer{padding-bottom: 35px;}</style><div id="um_upload_single" style="display:none">
+	
+</div><div id="um_view_photo" style="display:none">
+
+	<a href="#" data-action="um_remove_modal" class="um-modal-close"><i class="um-faicon-times"></i></a>
+	
+	<div class="um-modal-body photo">
+	
+		<div class="um-modal-photo">
+
+		</div>
+
+	</div>
+	
+</div><script type='text/javascript'>
+/* <![CDATA[ */
+var _wpcom_js = {"ajaxurl":"http:\/\/www.mottoin.com\/wp-admin\/admin-ajax.php"};
+/* ]]> */
+</script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-content/themes/JustNews/js/main.js?ver=2.3.2'></script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-includes/js/comment-reply.min.js?ver=4.8.1'></script>
+<script type='text/javascript'>
+/* <![CDATA[ */
+var wpcom_qa_js = {"ajaxurl":"http:\/\/www.mottoin.com\/wp-admin\/admin-ajax.php","ajaxloading":"http:\/\/www.mottoin.com\/wp-content\/plugins\/wpcom-qa\/images\/loading.gif"};
+/* ]]> */
+</script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-content/plugins/wpcom-qa/js/scripts.min.js?ver=1.0'></script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-includes/js/imagesloaded.min.js?ver=3.2.0'></script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-includes/js/masonry.min.js?ver=3.3.2'></script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-includes/js/jquery/jquery.masonry.min.js?ver=3.1.2b'></script>
+<script type='text/javascript'>
+/* <![CDATA[ */
+var um_scripts = {"ajaxurl":"http:\/\/www.mottoin.com\/wp-admin\/admin-ajax.php","fileupload":"http:\/\/www.mottoin.com\/wp-content\/plugins\/ultimate-member\/core\/lib\/upload\/um-file-upload.php","imageupload":"http:\/\/www.mottoin.com\/wp-content\/plugins\/ultimate-member\/core\/lib\/upload\/um-image-upload.php"};
+/* ]]> */
+</script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-content/plugins/ultimate-member/assets/js/um.min.js?ver=10.3.88'></script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-content/plugins/ultimate-member/assets/js/pickadate/translations/zh_CN.js?ver=10.3.88'></script>
+<script type='text/javascript' src='http://www.mottoin.com/wp-includes/js/wp-embed.min.js?ver=4.8.1'></script>
+
+		<script type="text/javascript">jQuery( '#request' ).val( '' );</script>
+
+	    <script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":["mshare","tsina","weixin","qzone","sqq","douban","fbook","twi","bdhome","tqq","tieba","mail","youdao","print"],"bdPic":"","bdStyle":"1","bdSize":"16"},"share":[{"tag" : "single", "bdSize" : 16}, {"tag" : "global","bdSize" : 16,bdPopupOffsetLeft:-227}],url:'http://www.mottoin.com/wp-content/themes/JustNews'};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://www.mottoin.com/wp-content/themes/JustNews/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>
+</body>
+</html>

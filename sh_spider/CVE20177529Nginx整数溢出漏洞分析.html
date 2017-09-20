@@ -1,0 +1,765 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <title>CVE-2017-7529 Nginx整数溢出漏洞分析 - 嘶吼 RoarTalk &#8211; 回归最本质的信息安全,互联网安全新媒体,4hou.com</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="renderer" content="webkit">
+    <meta property="wb:webmaster" content="4517e8fe39b18975" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,Chrome=1" />
+    <meta name="description" content="1、漏洞描述在Nginx的range filter中存在整数溢出漏洞，可以通过带有特殊构造的range的HTTP头的恶意请求引发这个整数溢出漏洞，并导致信息泄露。2、影响程度攻击成本低危害程度低影响范围Nginx 0.5.6 - 1.13.23 、…" />
+    <meta name="keywords" content="nginx" />
+        <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon.ico" rel="shortcut icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_114.png" rel="apple-touch-icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_76.png" sizes="76x76" rel="apple-touch-icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_120.png" sizes="120x120" rel="apple-touch-icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_152.png" sizes="152x152" rel="apple-touch-icon">
+
+    <!-- 引入 lib -->
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/jquery.min.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/swiper.jquery.min.js"></script>
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/lib/swiper.min.css">
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/lib/allmin.css">
+    <!--[if lt IE 11]>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/html5shiv.min.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/respond.js"></script>
+    <![endif]-->
+    <!-- 引入 css js -->
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/css/style.css">
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/lib/allmin.css">
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/js/public.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/js/main.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/js/index-more.js"></script>
+    </head>
+<body>
+<style type="text/css">
+.memberlistanimate{width: 122px}
+.memberlistanimateleave{width: 122px}
+.nameheader{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width: 78px;display: block;}
+</style>
+
+<header class="header">
+            <article class="header_center">
+                <div class="logowrap">
+            <a href="http://www.4hou.com"><div class="logo icons"></div></a>
+            <h1>回归最本质的信息安全</h1>
+        </div>
+        <div class="login">
+            <form action="/" class="navbar-form inSearch " name="searchform" onsubmit="return checksubmit()">
+                <div class="br">
+                    <span class="in-btn icons"></span>
+                    <input type="text" name="s" id="search" class="animated">
+                    <div class="clear icons"></div>
+                </div>
+                <div id="submitBtnplace" class="icons animated" value=""></div>
+                <!--<input type="submit" id="submitBtn" class="icons animated" value="">-->
+            </form>
+                            <!--登录注册按钮-->
+                 <div id="register">
+                     <a href="http://www.4hou.com/register" data-event-category="Referral to Signup" data-event-action="click" data-event-label="Signup Menu button / Header">注册</a>
+                 </div>
+                 <div id="sing">
+                      <a href="http://www.4hou.com/login" class="pzh_login">登录</a>
+                 </div>
+
+                 <div class="burger2 menu" id="burger">
+                  <div class="icon"></div>
+                 </div>
+
+            
+           <!-- <div id="register">注册</div>
+            <div id="sing">登录</div>
+            <div class="burger2 menu" id="burger">
+                <div class="icon"></div>
+            </div>-->
+        </div>
+    </article>
+</header>
+<nav class="navbox animated">
+    <section class="navbox_cen">
+        <article class="navboxleft">
+            <ul class="nav navbar-nav index-nav" id="inNav">
+					<li>
+							<li class="cat-item cat-item-18"><a href="http://www.4hou.com/category/info" >资讯</a>
+</li>
+	<li class="cat-item cat-item-19"><a href="http://www.4hou.com/category/technology" >技术</a>
+</li>
+	<li class="cat-item cat-item-20"><a href="http://www.4hou.com/category/xactivity" >活动</a>
+</li>
+	<li class="cat-item cat-item-29"><a href="http://www.4hou.com/category/vulnerable" >漏洞</a>
+</li>
+					</li>
+                    <li class="cat-item cat-item-29"><a href="http://www.4hou.com/piao" >嘶票</a>
+                    </li>
+            </ul>
+        </article>
+        <article class="navboxright">
+            <div class="contrib"> <a href="http://www.4hou.com/contribute" class="tougao" data-event-category="Referral to Signup" data-event-action="click" data-event-label="Signup Menu button / Header">投稿</a></div>
+        </article>
+    </section>
+</nav>
+<div id="modelbg"></div>
+    <style>
+
+
+    ::selection {
+    background:#fea283;
+    color:#fff;
+}
+::-moz-selection {
+    background:#fea283;
+    color:#fff;
+}
+::-webkit-selection {
+    background:#fea283;
+    color:#fff;
+}
+
+
+        .article_cen p img{height: auto !important;}
+        .commentlist .children{width: 90%; padding-right: 15px; border-color: transparent ;}
+        .commentname,.commenteml{width: 60%; margin-left:5% ;margin-bottom: 30px;border-bottom: 1px solid #dbdbdb;}
+        .article_cen ol li{list-style-type: decimal;}
+         .article_cen ol li p{overflow: inherit;}
+        .commentname label{font-size: 16px;color: #666; margin-right: 10px;line-height: 32px;}
+        .commentname input{width: 50%;border: none; outline: none;}
+        .commenteml label{font-size: 16px;color: #666; margin-right: 10px;line-height: 32px;}
+        .commenteml input{width: 50%;border: none; outline: none;}
+        #zooming{display: none;width: 100%;height: 100%; position: fixed;z-index: 999;left: 0px; top: 0px; background-color: rgba(0,0,0,.6);}
+        .zoomaniatae{display: block !important;}
+        .imgcon{}
+        #imgcon{position: absolute;left: 50%; top: 20%;max-width: 80%}
+        .article_cen img{cursor: pointer;}
+        #zooming{cursor: pointer;}
+        .imgconadimate{animation:imgcon 0.5s 1 forwards;
+        -webkit-animation:imgcon 0.5s 1 forwards;}
+        .article_authorbox{    width: 222px;min-height: 214px;
+        padding-bottom: 20px;
+        float: right;
+        position: relative;}
+        .interested{position: relative;}
+        .interested>h1{font-size: 18px; font-weight: 900; position: absolute; top: -36px;color: #5e5e5e}
+       .user-comment span{font-size: 13px; position: relative; top: 2px;}
+        .article_authoradd{position: fixed;}
+        .stratend{background:url(http://www.4hou.com/wp-content/themes/4houv2/img/starend.png); !important;background-size: contain !important;}
+        .wpfp-span{opacity: 0;width:100%; height: 100%;display: block; left: 0px; top: 0px; }
+        .wpfp-link{width:100%; height: 100%;display: block; left: 0px; top: 0px; }
+        .wpfp-span img{display: none;}
+        .interested{width: 222px;padding-bottom: 20px;background-color: #fff;margin-top: 70px; padding-bottom: 10px; padding-top: 10px;border: 1px solid #f5c2b1}
+        .interested li{width: 100%;position: relative;padding-top: 8px; padding-bottom: 8px;  line-height: 24px; padding-left: 20px;padding-right: 14px}
+        .interested li i{width: 6px;height: 6px;border-radius: 50%; background-color: #f63;position: absolute; left: 8px; top: 18px;}
+        .interested li a{color: #666;font-size: 14px; line-height: 18px;}
+        .interested li:hover{background-color: #f9e7e3;-moz-transition: all 0.4s ease-in-out;
+        .footer{position: relative;z-index: 99}   
+        .article_authorbox_top{position: relative;} 
+        
+
+        -o-transition: all 0.4s ease-in-out; -webkit-transition: all 0.4s ease-in-out; transition: all 0.4s ease-in-out;}
+    
+        @-webkit-keyframes imgcon{
+            0%{ opacity:0; -webkit-transform:scale3d(.3, .3, .3); transform:scale3d(.3, .3, .3) }
+            50%{ opacity:1 }
+        }
+        @keyframes imgcon{
+            0%{ opacity:0; -webkit-transform:scale3d(.3, .3, .3); transform:scale3d(.3, .3, .3) }
+            50%{ opacity:1 }
+        }
+        .asideanimate{animation:asideanimate 1s 1 forwards;
+        -webkit-animation:asideanimate 1s 1 forwards; position: fixed;}
+        @-webkit-keyframes asideanimate{
+            0%{ opacity:0; -webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+            50%{ opacity:1 }
+        }
+        @keyframes asideanimate{
+            0%{ opacity:0; -webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+            50%{ opacity:1 }
+        }
+        .asideanimateleave{animation:asideanimateleave 1s 1 forwards;
+        -webkit-animation:asideanimateleave 1s 1 forwards;}
+        @-webkit-keyframes asideanimateleave{
+            0%{ opacity:1; -webkit-transform:translate3d(0,0, 0); transform:translate3d(0, 0, 0) }
+            50%{ opacity:0;-webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+        }
+        @keyframes asideanimateleave{
+            0%{ opacity:1; -webkit-transform:translate3d(0,0, 0); transform:translate3d(0, 0, 0) }
+            50%{ opacity:0;-webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+        }
+        @media screen and (max-width:650px) {
+            .member_list{right: -30px !important;top: 34px !important;}
+            .article_authorbox{display: none;}
+            .nameheader{display: none;}
+            .shang_box{width: 90%; margin-left:-45% }
+            #imgcon{width: 90% !important; margin-left: -45% !important;max-width: inherit !important}
+            .dy{padding: 12px 15px!important;font-size: 14px !important; line-height: 22px !important;}
+        }
+        .article_author{float:none !important;padding-top: 1px;}
+        .article_cen pre{color: #666 !important; line-height: 26px; background-color: #f1f1f1}
+        .articlecontent blockquote>p{ color: #666; font-size: 16px; }
+    </style>
+    <section class="articlewrap">
+        <article class="articlecontent">
+            <div class="article_top">
+                <h1 class="art_title">CVE-2017-7529 Nginx整数溢出漏洞分析</h1>
+                <p class="art_time">2017年7月17日发布</p>
+                <div class="art_nav">
+                    <!--<a href="">翻译文章</a>
+                    <span>／</span>
+                    <a href="">新闻</a>
+                    <span>／</span>
+                    <a href="">原创</a>-->
+                                        <a href="http://www.4hou.com">首页 </a></a>
+                    <span>／</span>
+                    <a href="http://www.4hou.com/category/technology">技术</a>
+                    <span>／</span>
+                    <a href="">正文</a>
+
+                    </ul>
+                </div>
+                <div class="art_type">
+                    <div class="newtype">
+                        <div class="read ">
+                            <i class="icons"></i>
+                            <span>14,374</span>
+                        </div>
+                        <div class="comment ">
+                            <i class="icons"></i>
+                            <span>0</span>
+                        </div>
+                        <div class="Praise">
+                            <i class="icons"></i>
+                            <span>0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+             <p class="dy" style="padding: 24px 60px;font-size: 16px;line-height: 30px;color: #808080;background-color: #f6f6f6;"><span style="font-weight: bold;">导语：</span>综合来看，这个漏洞是对整数溢出漏洞的利用，能够从Cache文件中获取Cache头的信息。在某些配置的情况下Cache头中会存在IP地址信息，造成信息泄露。</p>
+
+            <div class="article_cen">
+                <!--文章摘要-->
+               
+                <p><p><span style="font-size: 20px"><strong>1、漏洞描述</strong></span></p>
+<p>在Nginx的range filter中存在整数溢出漏洞，可以通过带有特殊构造的range的HTTP头的恶意请求引发这个整数溢出漏洞，并导致信息泄露。</p>
+<p><span style="font-size: 20px"><strong>2、影响程度</strong></span></p>
+<table width="514" cellspacing="0" cellpadding="0">
+<tbody>
+<tr class="firstRow">
+<td align="left" style="padding-top: 0px;padding-bottom: 0px;text-align: left">攻击成本</td>
+<td align="left" style="padding-top: 0px;padding-bottom: 0px;text-align: left">低</td>
+</tr>
+<tr>
+<td align="left" style="padding-top: 0px;padding-bottom: 0px;text-align: left">危害程度</td>
+<td align="left" style="padding-top: 0px;padding-bottom: 0px;text-align: left">低</td>
+</tr>
+<tr>
+<td align="left" style="padding-top: 0px;padding-bottom: 0px;text-align: left">影响范围</td>
+<td align="left" style="padding-top: 0px;padding-bottom: 0px;text-align: left">Nginx 0.5.6 &#8211; 1.13.2</td>
+</tr>
+</tbody>
+</table>
+<p><span style="font-size: 20px"><strong>3 、漏洞原理</strong></span></p>
+<p><strong>3.1&nbsp;&nbsp;&nbsp;HTTP断点续传：Range</strong></p>
+<p>HTTP的Range允许客户端分批次请求资源的一部分，如果服务端资源较大，可以通过Range来并发下载；如果访问资源时网络中断，可以断点续传。</p>
+<p>Range设置在HTTP请求头中，它是多个byte-range-spec(或suffix-byte-range-spec)的集合；</p>
+<pre>byte-range-set&nbsp;&nbsp;=&nbsp;(&nbsp;byte-range-spec&nbsp;|&nbsp;suffix-byte-range-spec&nbsp;)*N
+byte-range-spec&nbsp;=&nbsp;first-byte-pos&nbsp;&quot;-&quot;&nbsp;[last-byte-pos]
+suffix-byte-range-spec&nbsp;=&nbsp;&quot;-&quot;&nbsp;suffix-length</pre>
+<p>其中，first-bytes-pos指定了访问的第一个字节，last-byte-pos指定了最后一个字节，suffix-length则表示要访问资源的最后suffix-length个字节的内容；例如：</p>
+<p>Range:bytes=0-1024&nbsp;表示访问第0到第1024字节；</p>
+<p>Range:bytes=500-600,601-999，-300&nbsp;表示分三块访问，分别是500到600字节，601到600字节，最后的300字节；</p>
+<p>在Response头中设置:</p>
+<p>Accept-Ranges:bytes&nbsp;表示接受部分资源的请求；</p>
+<p>Content-Range: bytes START-END/SIZE&nbsp;表示返回的资源位置；其中SIZE等于Content-Length;如：Content-Range: bytes 500-600/1000</p>
+<p><strong>3.2&nbsp;&nbsp;&nbsp;Nginx&nbsp;Range Multipart</strong></p>
+<p>如果一次请求有多个range，返回的数据需要multipart来组织；格式如下：</p>
+<pre class="brush:html;toolbar:false;">HTTP/1.1&nbsp;206&nbsp;Partial&nbsp;Content
+Date:&nbsp;Wed,&nbsp;15&nbsp;Nov&nbsp;1995&nbsp;06:25:24&nbsp;GMT
+Last-Modified:&nbsp;Wed,&nbsp;15&nbsp;Nov&nbsp;1995&nbsp;04:58:08&nbsp;GMT
+Content-type:&nbsp;multipart/byteranges;&nbsp;boundary=THIS_STRING_SEPARATES
+&nbsp;
+--THIS_STRING_SEPARATES
+Content-type:&nbsp;application/pdf
+Content-range:&nbsp;bytes&nbsp;500-999/8000
+&nbsp;
+...the&nbsp;first&nbsp;range...
+--THIS_STRING_SEPARATES
+Content-type:&nbsp;application/pdf
+Content-range:&nbsp;bytes&nbsp;7000-7999/8000
+
+...the&nbsp;second&nbsp;range
+--THIS_STRING_SEPARATES--</pre>
+<p>Nginx对Range的支持包括header处理和body处理，分别用来解析客户端发送过来的Range header和裁剪返回给客户端的请求数据Body。其实现分别由ngx_http_range_header_filter_module和ngx_http_range_body_filter_module两个过滤模块完成。</p>
+<p>在ngx_http_range_header_filter_module中调用了ngx_http_range_header_filter函数，而该函数进一步调用了ngx_http_range_parse函数来解析header中的Range字段；分别调用ngx_http_range_singlepart_header和ngx_http_range_multipart_header来生成single range和multi ranges的Response Header；<br />这次的问题就出现在多个range时，ngx_http_range_parse函数对suffix-length的处<br />理；</p>
+<p><strong>3.3&nbsp;&nbsp;&nbsp;Nginx&nbsp;Cache</strong></p>
+<p>Nginx可以作为缓存服务器，将Web应用服务器返回的内容缓存起来。如果客户端请求的内容已经被缓存，那么就可以直接将缓存内容返回，而无需再次请求应用服务器。由此，可降低应用服务器的负载，并提高服务的响应性能。</p>
+<p>下面是使用Nginx作为缓存服务器的一个示例。假设Nginx监听本地80端口，反向代理百度，那么就有如下配置：</p>
+<p style="text-align: center"><img width="489" height="290" class="aligncenter size-full wp-image-6573" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/2046e0356a9f89c0ddd9.png" /><noscript><img width="489" height="290" class="aligncenter size-full wp-image-6573" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/2046e0356a9f89c0ddd9.png" /></noscript></p>
+<p>此时，我们访问http://127.0.0.1，即可得到百度的返回：</p>
+<p style="text-align: center"><img width="554" height="423" class="aligncenter size-full wp-image-6574" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/2dadfa762a41a84d6350.png" /><noscript><img width="554" height="423" class="aligncenter size-full wp-image-6574" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/2dadfa762a41a84d6350.png" /></noscript></p>
+<p>检查页面资源，存在一个静态图片文件http://www.baidu.com/img/bd_logo1.png。由于这类静态文件一般不会发生变化，我们可以将其缓存起来。</p>
+<p>Nginx配置缓存主要由以下命令完成：</p>
+<p>&nbsp;proxy_cache_key用于区分cache文件。</p>
+<p>&nbsp;proxy_cache_path设置cache文件的路径和参数。</p>
+<p>· cache文件会保存在指定的目录下面，文件名是cache key的MD5值</p>
+<p>· 通过level参数将cache文件分多层目录保存，以避免某个目录下存在大量文件造成的性能开销</p>
+<p>· 通过keys_zone参数指定cache key在内存中的区域及其大小，1M的区域大概可以保存8000条key的信息</p>
+<p>proxy_cache_valid对不同返回状态值设定cache有效时间</p>
+<p>例如，下面这条配置：</p>
+<p style="text-align: center"><img width="554" height="61" class="aligncenter size-full wp-image-6575" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/2dadfa762a41a84d6350-1.png" /><noscript><img width="554" height="61" class="aligncenter size-full wp-image-6575" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/2dadfa762a41a84d6350-1.png" /></noscript></p>
+<p>指定了以下信息：</p>
+<p>使用协议、请求方法、域名、URI作为cache key</p>
+<p>cache文件保存在目录/tmp/Nginx/下，采取两层目录，keys_zone名称为my_zone，大小为10M</p>
+<p>对于返回状态值为200的内容，cache有效时间为10分钟</p>
+<p>现在，我们配置好了名为my_zone的cache，接下来选择对目录www.baidu.com/img/下的图片做缓存。首先，仍然是设置反向代理：</p>
+<p style="text-align: center"><img width="422" height="73" class="aligncenter size-full wp-image-6576" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/d4ae468a186bed8680ba.png" /><noscript><img width="422" height="73" class="aligncenter size-full wp-image-6576" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/d4ae468a186bed8680ba.png" /></noscript></p>
+<p>接下来，我们使用下列命令对img目录下的文件进行缓存：</p>
+<p style="text-align: center"><img width="458" height="63" class="aligncenter size-full wp-image-6577" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/d4ae468a186bed8680ba-1.png" /><noscript><img width="458" height="63" class="aligncenter size-full wp-image-6577" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/d4ae468a186bed8680ba-1.png" /></noscript></p>
+<p>配置命令解释如下：</p>
+<p>proxy_cache指定使用的keys_zone名称，就是之前的my_zone</p>
+<p>add_header在Nginx返回的HTTP头中，增加一项X-Proxy-Cache，如果缓存命中其值为HIT，未命中则为MISS</p>
+<p>proxy_ignore_headers由于百度对图片的请求也会Set-Cookie设置，而Nginx不会缓存带有Set-Cookie的返回，因此我们这里设置忽略该HTTP头</p>
+<p>现在，对图片的缓存配置就完成了，完整的配置内容如下</p>
+<p style="text-align: center"><img width="554" height="392" class="aligncenter size-full wp-image-6578" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/11ed45492f9055011ddb.png" /><noscript><img width="554" height="392" class="aligncenter size-full wp-image-6578" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/11ed45492f9055011ddb.png" /></noscript></p>
+<p>我们使用curl命令进行实验，访问http://127.0.0.1/img/bd_logo1.png。由于是第一次访问，可以看到返回内容中X-Proxy-Cache的值为MISS：</p>
+<p style="text-align: center"><img width="554" height="277" class="aligncenter size-full wp-image-6579" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/11ed45492f9055011ddb-1.png" /><noscript><img width="554" height="277" class="aligncenter size-full wp-image-6579" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/11ed45492f9055011ddb-1.png" /></noscript></p>
+<p>再次访问时，此时缓存命中，X-Proxy-Cache的值为HIT了</p>
+<p style="text-align: center"><img width="554" height="270" class="aligncenter size-full wp-image-6580" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/a3bfbbf25e73348fd312.png" /><noscript><img width="554" height="270" class="aligncenter size-full wp-image-6580" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/a3bfbbf25e73348fd312.png" /></noscript></p>
+<p>那么现在的Cache文件是什么样的呢？我们检查设置的缓存目录/tmp/Nginx，发现存在以下Cache文件：</p>
+<p style="text-align: center"><img width="465" height="115" class="aligncenter size-full wp-image-6581" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/a3bfbbf25e73348fd312-1.png" /><noscript><img width="465" height="115" class="aligncenter size-full wp-image-6581" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/a3bfbbf25e73348fd312-1.png" /></noscript></p>
+<p>可见，确实使用了2层目录保存了Cache文件。Cache文件保存了Nginx请求得到的返回内容：</p>
+<p style="text-align: center"><img width="554" height="264" class="aligncenter size-full wp-image-6582" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/a7ddf475bd10d406eeca.png" /><noscript><img width="554" height="264" class="aligncenter size-full wp-image-6582" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/a7ddf475bd10d406eeca.png" /></noscript></p>
+<p>可以看到，cache key的内容保存在了Cache文件的头部，此外还有Nginx请求后端返回的HTTP头，如后端（这里是www.baidu.com）的服务器为Apache。正常情况下，这些信息是不会返回给客户端的。而本次的的漏洞，就是由于负数偏移量，导致Cache文件的头部信息也被返回，从而造成信息泄漏。</p>
+<p><span style="font-size: 20px"><strong>4 、漏洞原理</strong></span></p>
+<p>首先，我们看这次漏洞修复的commit:</p>
+<p style="text-align: center"><img width="774" height="336" class="aligncenter size-full wp-image-6583" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/a7ddf475bd10d406eeca-1.png" /><noscript><img width="774" height="336" class="aligncenter size-full wp-image-6583" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/a7ddf475bd10d406eeca-1.png" /></noscript><img width="954" height="381" class="aligncenter size-full wp-image-6584" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/a7ddf475bd10d406eeca-2.png" /><noscript><img width="954" height="381" class="aligncenter size-full wp-image-6584" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/a7ddf475bd10d406eeca-2.png" /></noscript></p>
+<p>可以看到，在ngx_http_range_filter_module.c的ngx_http_range_parse函数中做了两处修复：</p>
+<p>· 进一步检测了size的溢出情况，防止size溢出后造成小于content-length这条判断的绕过</p>
+<p>· 则直接限定了使用后缀的情况下，start不能为负的，最小只能是0，也就是说使用&amp;ldquo;-xxx&amp;rdquo;的方式对Cache文件的读取只能从0开始到结束。</p>
+<p>根据漏洞修复commit的注释，我们知道这次漏洞的主要成因就是bytes-range读取的起始范围可能为负数，从而读取缓存文件头部。</p>
+<p>首先，如果传入完整的range参数，如start-end，则在ngx_http_range_parse()中会检查start，确保其不会溢出为负值：</p>
+<p style="text-align: center"><img width="554" height="254" class="aligncenter size-full wp-image-6585" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/926200a19fa787baf2e0.png" /><noscript><img width="554" height="254" class="aligncenter size-full wp-image-6585" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/926200a19fa787baf2e0.png" /></noscript></p>
+<p>因此，如果需要将start解析为负数，只能通过-end这类后缀型range参数实现:</p>
+<p style="text-align: center"><img width="238" height="139" class="aligncenter size-full wp-image-6586" alt="1499883357(1)" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/926200a19fa787baf2e0-1.png" /><noscript><img width="238" height="139" class="aligncenter size-full wp-image-6586" alt="1499883357(1)" src="http://img.4hou.com/wp-content/uploads/2017/07/926200a19fa787baf2e0-1.png" /></noscript></p>
+<p>此时的start等于content-length减去读入的end值，所以如果传入的end比实际长度还要长，就可以使start变为负数，而这就是第二处修复所处理的情形：</p>
+<p style="text-align: center"><img width="337" height="115" class="aligncenter size-full wp-image-6587" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/23173251a9b8a56a4efe.png" /><noscript><img width="337" height="115" class="aligncenter size-full wp-image-6587" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/23173251a9b8a56a4efe.png" /></noscript></p>
+<p>同时注意到，在这类情况下，最终end的值会被设定为content-length-1。所以这块range的总长度就超过了content-length。而Nginx对range总长度会有检查：</p>
+<p style="text-align: center"><img width="291" height="99" class="aligncenter size-full wp-image-6588" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/23173251a9b8a56a4efe-1.png" /><noscript><img width="291" height="99" class="aligncenter size-full wp-image-6588" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/23173251a9b8a56a4efe-1.png" /></noscript></p>
+<p>一般来说，range作为原始文件的一部分，其长度应该是小于content-length的。所以一旦计算得到的size比content-length还大，那就直接将原始文件返回了，不再进行range处理。为了绕过这一限制，我们就需要利用到第一处修复所处理的情形。</p>
+<p>具体而言，检查用到的size是将multipart的全部range长度相加得到的：</p>
+<p style="text-align: center"><img width="410" height="270" class="aligncenter size-full wp-image-6589" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/23173251a9b8a56a4efe-2.png" /><noscript><img width="410" height="270" class="aligncenter size-full wp-image-6589" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/23173251a9b8a56a4efe-2.png" /></noscript></p>
+<p>因此，一个range是不够的，我们至少需要两个range，其长度之和溢出为负数，就可以绕过总长度的检查了。</p>
+<p>要得到一个很大长度的range，同样可以采用-end这种后缀型，将end设置为一个非常大的数即可。此处的start, end, size均为64位有符号整形，所以只需要最终相加得到的size为0x8000000000000000即可。</p>
+<p><span style="font-size: 20px"><strong>5 、漏洞利用</strong></span></p>
+<p>本次复现利用使用Nginx-1.12.0作为缓存服务器，缓存配置同上文，访问的目标文件仍然是http://www.baidu.com/img/bd_logo1.png。</p>
+<p>首先，我们不指定range，得到该图片文件的长度为7877:</p>
+<p style="text-align: center"><img width="554" height="270" class="aligncenter size-full wp-image-6590" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/10ef1b56ffb1bf3c8cff.png" /><noscript><img width="554" height="270" class="aligncenter size-full wp-image-6590" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/10ef1b56ffb1bf3c8cff.png" /></noscript></p>
+<p>设置第一段range为-8500，此时的start为7877-8500=-623，即图片在Cache文件偏移之前的623 bytes也会被返回，而这623 bytes中就包含了Cache文件头部。</p>
+<p>下一步，按照上文所说，第二段range的长度需要将总长度溢出。我们的目标总和size为0x8000000000000000，第一段range长度为8500，故第二段range长度为0x8000000000000000-8500=9223372036854767308。</p>
+<p>于是，使用curl命令，配合-r参数指定bytes range：</p>
+<p style="text-align: center"><img width="554" height="468" class="aligncenter size-full wp-image-6591" alt="" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="http://img.4hou.com/wp-content/uploads/2017/07/10ef1b56ffb1bf3c8cff-1.png" /><noscript><img width="554" height="468" class="aligncenter size-full wp-image-6591" alt="" src="http://img.4hou.com/wp-content/uploads/2017/07/10ef1b56ffb1bf3c8cff-1.png" /></noscript></p>
+<p>可以看到返回内容中，第一段即为-8500的range，而这一段中我们就看到了Cache文件头部，例如cache key以及后端服务器返回的HTTP头。</p>
+<p><span style="font-size: 20px"><strong>6、漏洞修复</strong></span></p>
+<p>综合来看，这个漏洞就是整数溢出漏洞的利用，能够从Cache文件中获取Cache头的信息。在某些配置的情况下Cache头中会存在IP地址信息，造成信息泄露。</p>
+<p>就Nginx模块以及常用的第三方模块本身来说，无法通过这个整数溢出来对内存进行操作或者远程执行。</p>
+<p>建议升级到1.13.3和1.12.1版本；如果不能升级，可以在Nginx配置文件中添加max_ranges 1，从而禁用multipart range。</p>
+<p></p>
+                <div class="foot_description" style="background-color: #fff;">
+                    如若转载，请注明原文地址：                        <a href="http://www.4hou.com/technology/6343.html" target=_blank>http://www.4hou.com/technology/6343.html</a>
+                                    </div>
+
+
+                 </p>
+            </div>
+            <div class="article_con">
+                <!--文章内容-->
+            </div>
+            <div class="post-like">
+                <a href="javascript:;" data-action="ding" target=_blank data-id="6343" class="favorite">
+                <div class="zanbox">
+                    <dd class="zanbefor"></dd>
+                    <dd class="zanafter"></dd>
+                </div>
+                <span class="zantext">点赞</span>
+                <span class="count">
+            0</span>
+                </a>
+            </div>
+            <div class="active_bottom">
+                <ul>
+                    <a class="Sina" href="http://service.weibo.com/share/share.php?url=http://www.4hou.com/technology/6343.html" title="分享到新浪微博" target="_blank"><li class="sinahover"></li></a>
+                    <a onclick="window.open('http://sns.qzone.qq.com/cgi-bin/qzshare/cgi_qzshare_onekey?url='+encodeURIComponent(document.location.href));return false;" title="分享到QQ空间" class="WeChat" href="javascript:void(0)" target="_blank"><li class="kj"></li></a>
+                    <a onclick="dashangToggle()" class="friend" title="分享到微信、朋友圈等" target="_blank"><li class="wx"></li></a>
+
+                </ul>
+                <div class="strat icons"><span class='wpfp-span'><img src='http://img.4hou.com/wp-content/plugins/wp-favorite-posts/img/star.png' alt='Favorite' title='Favorite' class='wpfp-img' /><a class='wpfp-link' href='?wpfpaction=add&amp;postid=6343' title='收藏' rel='nofollow'>收藏</a></span></div>
+                <div class="hide_box"></div>
+                <div class="shang_box">
+                    <a class="shang_close" href="javascript:void(0)" onClick="dashangToggle()" title="关闭"><img src="http://img.4hou.com/wp-content/themes/4houv2/images/close.jpg" alt="取消" /></a>
+                    <img class="shang_logo" width="120px" src="http://img.4hou.com/wp-content/themes/4houv2/images/logo.png" alt="嘶吼" />
+                    <div class="shang_tit">
+                        <p>感谢您的支持，我会继续努力的!</p>
+                    </div>
+                    <div class="shang_payimg">
+                        <img src="http://www.4hou.com/wp-content/themes/4houv2/qrcode.php?url=http%3A%2F%2Fwww.4hou.com%2Ftechnology%2F6343.html" alt="扫码支持" title="扫一扫" />
+                    </div>
+
+                    <div class="shang_info">
+                        <p>打开<span id="shang_pay_txt">微信</span>扫一扫后点击右上角即可分享哟</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="avatarbottomwrap">
+                 <div class="avatarboxleft">
+                        <div class="avatarbottom">
+                           
+                            <a class="upload-img"><img alt='银河实验室' src='http://img.4hou.com/wp-content/uploads/2017/07/dc80a2e32fb057f68e72-96x96.png' class='avatar avatar-96 photo' height='96' width='96' /></a>
+                        </div>
+                        <h1 class="authornamebottom"><a href="http://www.4hou.com/member?Author=银河实验室" class="upload-img" target=_blank>
+                                银河实验室                             </a></h1>
+                        <p class="authorzybottom">平安集团信息安全部银河实验室</p>
+
+                        <div class="authorbottombox">
+                            <!--<div class="gzbtn">关注</div>
+                            <div class="sxbtn">私信</div>-->
+                                                            <span class="gzbtn"  style="cursor: pointer;" onclick="location.href='/mybox?action=reply&to_user=银河实验室&type=send'">发私信</span>
+                                                    </div>
+                 </div>
+                <div class="authorother">
+                 <a class="morearticle" href="http://www.4hou.com/member?Author=银河实验室" class="upload-img" target=_blank>
+                            <span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span>
+                            <span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span>
+                            <span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span>
+                             </a>
+                    <div class="swiper-container">
+
+                                                <div class="swiper-wrapper">
+                            <div class="swiper-slide">
+                                                                    <div><a href="http://www.4hou.com/info/news/7594.html" target=_blank>
+                                            <img data-original="/uploads/20170908/1504844863892321.jpg?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                    <div><a href="http://www.4hou.com/technology/7402.html" target=_blank>
+                                            <img data-original="http://img.4hou.com/wp-content/uploads/2017/08/cca976821e5511c35b8b.png?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                    <div><a href="http://www.4hou.com/technology/7427.html" target=_blank>
+                                            <img data-original="http://img.4hou.com/wp-content/uploads/2017/08/99e3caff51fa3ff87375.png?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                    <div><a href="http://www.4hou.com/info/news/7247.html" target=_blank>
+                                            <img data-original="http://img.4hou.com/wp-content/uploads/2017/08/5d6f06fb67242216cc1c.png?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                            </div>
+                        </div>
+                                        </div>
+                </div>
+                <script type="text/javascript">
+                    function dashangToggle(){
+                        $(".hide_box").fadeToggle();
+                        $(".shang_box").fadeToggle();
+                    }
+                </script>
+                <script> 
+                    var mySwiper = new Swiper('.swiper-container', {
+                        direction : 'vertical',
+                        pagination : '.swiper-pagination',
+                        paginationClickable :true,
+                        spaceBetween : 20
+                    })
+                </script>
+            </div>
+                            <div class="review" style="margin-bottom:80px;">
+    <h3 id="reply-title" class="comment-reply-title">发表评论 <small></h3>
+    <form action="http://www.4hou.com/wp-comments-post.php" method="post" id="commentform">
+        <p class="commentname"><label for="author">昵称</label>
+            <input type="text" name="author" id="author" value="" size="14" tabindex="1" aria-required='true' placeholder = "请输入昵称" required />
+        </p>
+        <p class="commenteml">
+            <label for="email">邮箱</label>
+            <input type="text" name="email" id="email" value="" size="25" tabindex="2" aria-required='true' placeholder = "请输入邮箱地址" required />
+        </p>
+        <p class="comment-form-comment">
+           <label for="comment">评论</label>
+           <textarea id="comment" name="comment" cols="45" rows="8" maxlength="65525" aria-required="true" required="required"></textarea>
+        </p>
+
+        <p class="form-submit"><input name="submit" type="submit" id="submit" class="submit" value="发表评论" />
+        <input type='hidden' name='comment_post_ID' value="6343" id='comment_post_ID' />
+            <input type='hidden' name='comment_parent' id='comment_parent' value='0' />
+        </p>
+    </form>
+					
+<div class="new-review">
+   <ol class="commentlist">
+      </ol>
+   <div class="hr clearfix">&nbsp;</div>
+</div>
+</div>             
+        </article>
+
+        <!--作者其他文章-->
+        <aside class="article_authorbox">
+          <div class="article_authorbox_top">
+                <div class="article_author">
+            <div class="article_author_avatar">
+                 <a class="upload-img"><img alt='银河实验室' src='http://img.4hou.com/wp-content/uploads/2017/07/dc80a2e32fb057f68e72-96x96.png' class='avatar avatar-96 photo' height='96' width='96' /></a>
+            </div>
+            <h1 class="article_author_name"><a href="http://www.4hou.com/member?Author=银河实验室" class="upload-img" target=_blank>
+                    银河实验室                </a></h1>
+            <p class="article_author_type">平安集团信息安全部银河实验室 </p>
+            <div class="article_author_bottom">
+                                        <span class="send-info" onclick="location.href='/mybox?action=reply&to_user=银河实验室&type=send'">发私信</span>
+                         
+            </div>
+          </div>  
+            <div class="interested">
+                <h1>可能喜欢</h1>
+                                                    <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/technology/7667.html" target="_blank">小心找工作时被挖坑，有人利用 LinkedIn 发送钓鱼链接</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/technology/7653.html" target="_blank">一次服务器被攻击的应急行动</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/info/news/7646.html" target="_blank">一个Tor浏览器0day漏洞价值100万美元，其中的隐情是……</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/info/news/7660.html" target="_blank">Elasticsearche僵尸网络：超过4000台服务器遭到两款POS 恶意软件感染</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/technology/7669.html" target="_blank">渗透挑战赛：从SQL注入到管理员权限</a> 
+                </li> 
+                                                </div>
+       </div>
+
+          
+        </aside>
+    </section>
+    <div id="zooming">
+        <img src="" id="imgcon">
+    </div>
+    <script>
+        $(document).ready(function() {
+            $.fn.postLike = function() {
+                if ($(this).hasClass('done')) {
+                    return false;
+                } else {
+                    $(this).addClass('done');
+                    var id = $(this).data("id"),
+                        action = $(this).data('action'),
+                        rateHolder = $(this).children('.count');
+                    var ajax_data = {
+                        action: "bigfa_like",
+                        um_id: id,
+                        um_action: action
+                    };
+                    $.post("/wp-admin/admin-ajax.php", ajax_data,
+                        function(data) {
+                            $(rateHolder).html(data);
+                        });
+                    return false;
+                }
+            };
+            $(document).on("click", ".favorite",
+                function() {
+                    $(this).postLike();
+                });
+
+
+            $("img").attr("title","");
+            var altcon=$(".art_title").text();
+            $("img").attr("alt",altcon);
+            // 图片放大
+            $(".article_cen").find('img').on("click",function(){
+                var imgsrc=$(this).attr("src");
+                var winthimg=$(this).width();
+                var zooming=winthimg*1.2;
+                $("#imgcon").css({width:zooming});
+                $("#imgcon").css({marginLeft:-zooming/2});
+                $("#imgcon").attr("src",imgsrc);
+                $("#zooming").addClass("zoomaniatae");
+                $("#imgcon").addClass("imgconadimate");
+            });
+            $("#zooming").on("click",function(){
+                $("#imgcon").removeClass("imgconadimate");
+                $("#zooming").removeClass("zoomaniatae");
+
+            });
+
+            $(window).scroll(function(){
+                var scrtop=$(window).scrollTop();
+                if(scrtop>450){
+                    $(".article_authorbox_top").removeClass("asideanimateleave").addClass('asideanimate')
+                    // $(".interested").hide()
+                }
+                else if(scrtop<450&&scrtop>350){
+                     $(".article_authorbox_top").addClass("asideanimateleave").removeClass('asideanimate')
+                     $(".interested").show()
+
+                }
+            });
+            var start=$(".strat .wpfp-span .wpfp-link").text()
+            if(start=="已收藏"){
+                $(".strat").addClass("stratend")
+            }else{
+                $(".strat").removeClass("stratend")
+            }
+
+            $(".avatar-96").width(72);
+            $(".avatar-96").height(72);
+            $(".avatar-120").width(50);
+            $(".avatar-120").height(50);
+
+        });
+    </script>
+<style type="text/css">
+.footer{height:auto; background-color: #282828}
+.footer_about{width: 1200px;height: 50px;padding-top: 26px; margin: 0 auto;border-bottom-color: transparent !important; position: relative;}
+.footer_about>a{font-size: 16px;height: 16px !important;line-height: 16px !important; float: left; padding-right: 18px; border-right:1px solid #ccc;}
+.last-child-a{border:none !important}
+.footer_bottom_cen p{ margin-top: 5px; margin-right: 25px;text-align: left; margin-bottom: 6px;float: left;}
+.footer_bottom_cen>div{width: 450px;float: left;margin-right: 8px}
+.footer_bottom{height: 74px}
+.footerlogos{width: 130px; height: 24px; position: absolute;right: 10%; top:24px;}
+.footerlogos dd{float: left; margin-right: 20px;cursor: pointer;}
+.footerlogos dd a{display: block;width: 100%; height: 100%}
+.wechartlogo{width: 20px; height: 20px; background-position:-227px 0px;}
+.weibologo{width: 20px; height: 20px; background-position:-269px 0px;}
+.zhihulogo{width: 20px; height: 20px; background-position:-361px 0px;}
+.wechartlogo i{width: 80px;height: 78px;background-size: contain !important; right: 137px;display: none;opacity: 1;background: url(http://www.4hou.com/wp-content/themes/4houv2/img/wechatqr.png) no-repeat;position: absolute;top: -28px;}
+.wechartlogo:hover i{display: block;}
+.footer_bottom{width: 1200px; background-color: #282828; margin:0 auto } 
+.footer_bottom_cen>div img{float: left; margin-right: 4px;margin-top: 4px; margin-left: 4px;width: 66px;}
+.footer_bottom_cen{width: 100%}
+.cloudserver{float: right !important; margin: 0 auto !important;width: 385px !important; margin-top: -31px}
+.cloudserver img{float: left;}
+.cloudserver dd{float: left;}
+@media screen and (max-width:1260px) {
+    .footer{width: 100%; padding: 0px 20px;}
+    .footer_about{width: 100%}
+    .footer_bottom{width: 100%}
+    .footer_bottom div{width: 100%;display: none;}
+}
+@media screen and (max-width:660px) {
+    .footer_about{padding-top: 14px; margin-bottom: 22px;}
+    .footerlogos{display: none;}
+    .footer_bottom{height: 44px;}
+
+}
+</style>
+<footer class="footer">
+    <div class="footer_about">
+        <a href="/about" target=_blank>关于我们</a>
+        <!--<a href="">加入我们</a>-->
+        <a href="/submit" target=_blank>我要投稿</a>
+        <a href="/service" target=_blank>广告及服务</a>
+        <a href="/partner" target=_blank class="last-child-a">友情链接</a>
+        <div class="footerlogos">
+                <dd class="wechartlogo icons">
+                  <i></i>
+                </dd>
+                <dd class="weibologo icons">
+                 <a href="http://weibo.com/u/6069423878" target=_blank></a>
+                </dd>
+                <dd class="zhihulogo icons">
+                    <a href="https://zhuanlan.zhihu.com/roartalk" target=_blank></a>
+                    
+                </dd>
+        </div>
+    </div>
+
+    <section class="footer_bottom">
+        <article class="footer_bottom_cen">
+            <p>©2017 北京嘶吼文化传媒有限公司&nbsp;&nbsp;&nbsp;京ICP备16063439号</p>
+            <p class="mobilefooter">©2017 北京嘶吼文化传媒有限公司&nbsp;&nbsp;|&nbsp;&nbsp;京ICP备16063439号</p>
+            <div class="cloudserver">
+                <span>本站由</span>
+                <img src="http://img.4hou.com/wp-content/themes/4houv2/img/bdcloud.png">
+                <img src="http://img.4hou.com/wp-content/themes/4houv2/img/bdcloud1.png">
+                <img src="http://img.4hou.com/wp-content/themes/4houv2/img/ucloud.png">
+                <span>提供云计算服务</span>
+            </div>
+        </article>
+    </section>
+    <section class="footer_top" style="display:none">
+        <article class="footer_top_cen">
+            <div class="homeqrcode">
+                <dd class="icons"></dd>
+                <div class="wb">
+                    <a href="http://weibo.com/u/6069423878" target=_blank>
+                    <i class="icons"></i>
+                    <p>关注嘶吼传媒</p>
+                    </a>
+                </div>
+
+                <div class="sh">
+                    <a href="https://zhuanlan.zhihu.com/roartalk" target=_blank>
+                    <i class="icons"></i>
+                    <p>关注嘶吼</p>
+                    </a>
+                </div>
+            </div>
+            
+            <h1>合作伙伴</h1>
+            <div class="footer_friend">
+                <a href="http://www.xinhuanet.com/talking/chinasafety/" target=_blank>新华网安全中国</a>
+                <a href="http://jaq.alibaba.com/" target=_blank>阿里聚安全</a>
+                <a href="http://www.seclover.com/" target=_blank>四叶草安全</a>
+                <a href="https://sec.vip.com/" target=_blank>唯品会安全应急响应中心</a>
+                <a href="https://www.duoyinsu.com/" target=_blank>安识科技</a>
+                <a href="http://xianzhi.aliyun.com" target=_blank>云盾先知</a>
+                <a href="http://www.ardsec.com/" target=_blank>兴华永恒</a>
+                <a href="https://www.sobug.com/" target=_blank>SOBUG</a>
+            </div>
+        </article>
+    </section>
+    
+</footer>
+<aside class="side" >
+    <div class="side_top icons "></div>
+    <div class="iconbox">
+        <div class="side_wechart icons iconhover">微信
+            <dd></dd>
+        </div>
+        <a href="http://weibo.com/u/6069423878" target=_blank><div class="side_webo icons iconhover">微博</div></a>
+        <a href="http://www.4hou.com/feed/" target=_blank><div class="side_rss icons iconhover">RSS</div></a>
+        <a href="https://zhuanlan.zhihu.com/roartalk" target=_blank><div class="side_zh icons iconhover">知乎</div></a>
+    </div>
+    <div class="side_bottom icons"></div>
+    
+</aside>
+
+<script>
+    var _hmt = _hmt || [];
+    (function() {
+        var hm = document.createElement("script");
+        hm.src = "https://hm.baidu.com/hm.js?ac201c14c3d2a4747423252be421e1bc";
+        var s = document.getElementsByTagName("script")[0];
+        s.parentNode.insertBefore(hm, s);
+    })();
+</script>
+
+<script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-91554508-1', 'auto');
+    ga('send', 'pageview');
+
+</script>
+<script>
+(function(){
+    var bp = document.createElement('script');
+    var curProtocol = window.location.protocol.split(':')[0];
+    if (curProtocol === 'https') {
+        bp.src = 'https://zz.bdstatic.com/linksubmit/push.js';        
+    }
+    else {
+        bp.src = 'http://push.zhanzhang.baidu.com/push.js';
+    }
+    var s = document.getElementsByTagName("script")[0];
+    s.parentNode.insertBefore(bp, s);
+})();
+</script>
+</body>
+</html>

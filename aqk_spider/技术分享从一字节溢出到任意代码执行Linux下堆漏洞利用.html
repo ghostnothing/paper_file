@@ -1,0 +1,696 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】从一字节溢出到任意代码执行-Linux下堆漏洞利用 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="缓冲区溢出,linux 安全,堆溢出,RCE,远程代码执行"/>
+    
+        <meta name="description" content="一个字节溢出被称为off-by-one，曾经的一段时间里，off-by-one被认为是不可以利用的，但是后来研究发现在堆上哪怕只有一个字节的溢出也会导致任意代码的执行。在这篇文章中我列出了5种常见的堆上的off-by-one攻击方式，并且给出了测试DEMO。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】从一字节溢出到任意代码执行-Linux下堆漏洞利用</h2>
+                <div class="article-msg">
+                    <span class="time">2016-10-19 10:40:20</span>
+                    
+                                        <span class="read">阅读：25387次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3113"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3113" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2676915949" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01ae2ab9a52b1881a6.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2676915949" style="color:#848e99;">Ox9A82</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p2.qhimg.com/t01395f5f80b50db75e.png" title="t015494163b49a033be.png" alt="http://p0.qhimg.com/t015494163b49a033be.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">作者：</span></strong></span><a href="http://bobao.360.cn/member/contribute?uid=2676915949" target="_blank" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192);">Ox9A82</span></strong><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192);"></span></strong></span></a></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">稿费：500RMB（不服你也来投稿啊！）</span></strong></span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></strong></span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">一个字节溢出被称为off-by-one，曾经的一段时间里，off-by-one被认为是不可以利用的，但是后来研究发现在堆上哪怕只有一个字节的溢出也会导致任意代码的执行。同时堆的off-by-one利用也出现在国内外的各类CTF竞赛中，但是在网络上还不能找到一篇系统的介绍堆off-by-one利用的教程。</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0);">在这篇文章中我列出了5种常见的堆上的off-by-one攻击方式，并且给出了测试DEMO，测试的环境均为x86。</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">0x01 背景知识</span></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">网络上关于Linux下堆管理机制的文章已经有很多了，这里不再详细的描述堆管理机制的细节，仅简单的列出一些要理解文章内容必须要掌握的基础知识点。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，目前的Linux使用的是基于ptmalloc的堆管理器。在ptmalloc中堆块被分为以下四种类型</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.fastbin</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">fastbin的范围处于16～64byte，使用单向链表来维护。每次从fastbin中分配堆块时，都会从尾部取出。fastbin块的inuse位永远是置于1的，并且享有最高的优先权，在分配和释放时总会最先考虑fastbin。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.unsort bin</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">unsort bin在bins[]中仅占有一个位置，除了fastbin外的其他块被释放后都会进入到这里来作为一个缓冲，每当进行malloc时会把堆块从unsort bin中取出并放到对于的bins[]中。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.small bin</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">small bin是指大于16byte且小于512byte的堆块，使用双向链表链接，不会有两个相邻的空的small bin块，因为一旦出现这种情况，相邻的块就会被合并成一个块。通常是在调用free函数时触发这一过程。需要注意的是在相邻空块合并时会调用unlink()宏来进行取下操作，但是调用malloc()时的取下操作却没有使用unlink宏。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.large bin</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">超出large bin范围的即为large bin，large bin相比其他块而言具有一条额外的由fd_nextsize和bk_nextsize域组成的链表结构。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01172c232bda8c75df.png" title="t0192b11765a2f8bcf5.png" alt="http://p6.qhimg.com/t0192b11765a2f8bcf5.png" width="366" height="218" style="width: 366px; height: 218px;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如图所示，其中size域低三位作为标志位，我们最需要记住的就是inuse位，这个位确定了前一个块是否处于使用状态。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">是的，在ptmalloc中一个块是否使用是由下一个块进行记录的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x02 off-by-one的分类</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">off-by-one总共可以分为两种利用方式</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">chunk overlapping</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">off-by-one overwrite allocated</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">off-by-one overwrite freed</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">off-by-one null byte</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">unlink</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">off-by-one small bin</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">off-by-one large bin</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这种划分的依据是基于利用的思路不同。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一种的利用的核心思路主要是为了进行chunk overlapping,而第二种的利用思路则是想要触发unlink。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x03 达成漏洞利用的条件</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">off-by-one并不是全都可以达到利用的目的的。首先就要求堆必须以要求的size+0x4字节（x86）的大小进行分配。如果不满足这个条件那么就无法覆盖到inuse位了。这个是由于堆的字节对齐机制造成的，简单的说堆块是以8字节进行对齐的（x64为16字节）。如果malloc(1024)，那么实际会分配1024+8=1032字节，这一点很好理解。但是如果是malloc(1020)呢，1020+8=1028字节，而1028不满足8字节对齐，那么实际只会分配1020+4=1024字节，多出的4个字节由下一块的prev_size提供空间。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">而对于触发unlink的操作来说，还需要一个额外的附加条件。因为现在的unlink是有检验的，所以需要一个指向堆上的指针才可以。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x04 漏洞利用的效果</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">off-by-one能达到什么利用效果呢？这个是很关键的问题。根据分类来看可以实现两种效果</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.chunk overlapping</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">所谓的chunk overlapping是指，针对一个目标堆块。我们可以通过一些操作，使这个目标堆块被我们重新分配到某个我们控制的新的堆块中，这样就可以对目标堆块进行任意的读写了。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.unlink</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这种off-by-one造成的unlink的利用效果其实和溢出造成的unlink的利用效果是一致的。对于small bin可以使指向堆的指针ptr的值变为&amp;ptr-0xc，这样再结合一系列的操作就可以达成几乎无限次的write-anything-anywhere了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">而large bin的unlink则可以实现一次任意地址写（write-anything-anywhere）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">0x05 漏洞利用的原理</span></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">chunk overlapping的原理在于ptmalloc的堆块验证机制的不完善，通过一些ptmalloc定义的宏就可以看出这一点。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">inuse()：仅通过下一块的inuse位来判定当前块是否使用.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">prev_chunk()：如果前一个块为空，那么进行空块合并时，仅使用本块的prev_size来寻找前块的头。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">next_chunk()：仅通过本块头+本块大小的方式来寻找下一块的头</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">chunksize()：仅通过本块的size确定本块的大小。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">unlink的原理在于unlink宏在处理时会互写数据造成任意地址写。经过改进后的unlink宏增加了check，但是可以通过一个指向堆上的指针导致绕过情况。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x06 达成漏洞利用的具体操作</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><strong><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">off-by-one overwrite allocated</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这种情况下堆块布局是这样的</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t012b01421bf6499e9b.png" title="t010c5431ea156fa6ad.png" alt="http://p3.qhimg.com/t010c5431ea156fa6ad.png" width="457" height="75" style="width: 457px; height: 75px;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">A是发生有off-by-one的堆块，其中B和C是allocated状态的块。而且C是我们的攻击目标块。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们的目标是能够读写块C，那么就应该去构造出这样的内存布局。然后通过off-by-one去改写块B的size域（注意要保证inuse域的值为1，否则会触发unlink导致crash）以实现把C块给整个包含进来。通过把B给free掉，然后再allocated一个大于B+C的块就可以返回B的地址，并且可以读写块C了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">具体的操作是：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. 构成图示的内存布局</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. off-by-one改写B块的size域(增加大小以包含C，inuse位保持1)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. free掉B块</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4. malloc一个B+C大小的块</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5. 通过返回的地址即可对C任意读写</span></p><p><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">注意，必须要把C块整个包含进来，否则free时会触发check，导致抛出错误。因为ptmalloc实现时的验证逻辑是当前块的下一块的inuse必须为1，否则在free时会触发异常，这一点本来是为了防止块被double free而做的限制，却给我们伪造堆块造成了障碍。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">off-by-one overwrite freed</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这种情况下堆块布局依然是这样的</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t012b01421bf6499e9b.png" title="t010c5431ea156fa6ad.png" alt="http://p2.qhimg.com/t010c5431ea156fa6ad.png" width="460" height="85" style="width: 460px; height: 85px;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">A是发生有off-by-one的堆块，其中B是free状态的块,C是allocated块。而且C是我们的攻击目标块。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们的目标是能够读写块C，那么就应该去构造出这样的内存布局。然后通过off-by-one去改写块B的size域（注意要保证inuse域的值为1）以实现把C块给整个包含进来。但是这种情况下的B是free状态的,通过增大B块包含C块，然后再allocated一个B+C尺寸的堆块就可以返回B的地址，并且可以读写块C了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">具体的操作是：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. 构成图示的内存布局</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. off-by-one改写B块的size域(增加大小以包含C，inuse位保持1)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. malloc一个B+C大小的块</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4. 通过返回的地址即可对C任意读写</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">off-by-one null byte</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这种情况就与上面两种有所不同了，在这种情况下溢出的这个字节是一个&#39;\x00&#39;字节。这种off-by-one可能是最为常见的，因为诸如:</span></p><p><br/></p><pre class="brush:cpp;toolbar:false">buf=malloc(124);
+if(strlen(str)==124)
+{
+&nbsp;&nbsp;&nbsp;strcpy(buf,str);
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">就会产生这种null byte off-by-one，即拷贝一个字符串到一个同样长的缓冲区时，并未考虑到NULL字节。</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">相比于前两种，这种利用方式就显得更复杂，而且对内存布局的要求也更高了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先内存布局需要三个块</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t012b01421bf6499e9b.png" title="t010c5431ea156fa6ad.png" alt="http://p9.qhimg.com/t010c5431ea156fa6ad.png" width="408" height="93" style="width: 408px; height: 93px;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其中A,B,C都是allocated块，A块发生了null byte off-by-one,覆盖了B块的inuse位，使B块伪造为空。然后在分配两个稍小的块b1、b2，根据ptmalloc的实现，这两个较小块（不能是fastbin）会分配在B块中。然后只要释放掉b1，再释放掉C，就会引发从原B块到C的合并。那么只要重新分配原B大小的chunk，就会重新得到b2。在这个例子中，b2是我们要进行读写的目标堆块。最后的堆块布局如下所示：</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01cd3dc0f53a99d16e.png" title="t019ad7e192ca1f6bf0.png" alt="http://p1.qhimg.com/t019ad7e192ca1f6bf0.png" width="498" height="116" style="width: 498px; height: 116px;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">布局堆块结构如ABC所示</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. off-by-one覆盖B，目的是覆盖掉B的inuse位</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. free B</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. malloc b1,malloc b2</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4. free C</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5. free b1</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6. malloc B</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">7. overlapping b2</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这种利用方式成功的原因有两点:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">通过prev_chunk()宏查找前块时没有对size域进行验证</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">当B块的size域被伪造后，下一块的pre_size域无法得到更新。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">off-by-one small bin</span></strong></p><p style="text-align:center"><img src="http://p8.qhimg.com/t019bfea116cdd46d64.png" title="t0191de804ae77ea2ed.png" alt="http://p7.qhimg.com/t0191de804ae77ea2ed.png" width="302" height="107" style="width: 302px; height: 107px;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这种方法是要触发unlink宏，因此需要一个指向堆上的指针来绕过fd和bk链表的check。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">需要在A块上构造一个伪堆结构，然后覆盖B的pre_size域和inuse域。这样当我们free B时，就会触发unlink宏导致指向堆上的指针ptr的值被改成&amp;ptr-0xC(x64下为&amp;ptr-0x18)。通过这个特点，我们可以覆写ptr指针，如果条件允许的话，几乎可以造成无限次的write-anything-anywhere。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. 在A块中构造伪small bin结构，并且修改B块的prev_size域和inuse域。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. free B块</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. ptr指针被改为&amp;ptr-0xC</span></p><p><br/></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">off-by-one large bin</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">large bin通过unlink造成write-anything-anywhere的利用方法最早出现于Google的Project Zero项目的一篇文章中，具体链接是</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://googleprojectzero.blogspot.fr/2014/08/the-poisoned-nul-byte-2014-edition.html" _src="https://googleprojectzero.blogspot.fr/2014/08/the-poisoned-nul-byte-2014-edition.html">https://googleprojectzero.blogspot.fr/2014/08/the-poisoned-nul-byte-2014-edition.html</a></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这篇文章中，提出了large bin检验仅仅是通过assert断言的形式来进行的，并不能真正的对漏洞进行有效的防护。但是经过我的测试发现，目前版本的ubuntu和CentOS已经均具备有检测large unlink的能力，如果发现存在指针被篡改的情况，则会抛出“corrupted double-linked list(not small)”的错误，之后翻阅了一下glibc中ptmalloc部分的实现代码却并没有发现有检测这部分的代码，猜测大概是后续版本中加入的。因为这种利用方式的意义已经不是很大，这里就不在详细列出步骤也不提供测试DEMO了。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><br/></span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">0x07 测试DEMO</span></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">1.off-by-one overwrite allocated</span></strong></p><pre class="brush:cpp;toolbar:false">int&nbsp;main(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;buf[253]=&quot;&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*A,*B,*C;
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*Overlapped;
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;A=malloc(252);
+&nbsp;&nbsp;&nbsp;&nbsp;B=malloc(252);
+&nbsp;&nbsp;&nbsp;&nbsp;C=malloc(128);
+&nbsp;&nbsp;&nbsp;&nbsp;memset(buf,&#39;a&#39;,252);
+&nbsp;&nbsp;&nbsp;&nbsp;buf[252]=&#39;\x89&#39;;&nbsp;&nbsp;//把C块包含进来
+&nbsp;&nbsp;&nbsp;&nbsp;memcpy(A,buf,253);//A存在off-by-one漏洞
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;free(B);
+&nbsp;&nbsp;&nbsp;&nbsp;Overlapped=malloc(500);
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这段代码演示了通过off-by-one对C块实施了overlapping。通过返回的变量Overlapped就可以对C块进行任意的读写了。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.off-by-one overwrite freed</span></strong></p><pre class="brush:cpp;toolbar:false">int&nbsp;main(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;buf[253]=&quot;&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*A,*B,*C;
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*Overlapped;
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;A=malloc(252);
+&nbsp;&nbsp;&nbsp;&nbsp;B=malloc(252);
+&nbsp;&nbsp;&nbsp;&nbsp;C=malloc(128);
+&nbsp;&nbsp;&nbsp;&nbsp;free(B);
+&nbsp;&nbsp;&nbsp;&nbsp;memset(buf,&#39;a&#39;,252);
+&nbsp;&nbsp;&nbsp;&nbsp;buf[252]=&#39;\x89&#39;;
+&nbsp;&nbsp;&nbsp;&nbsp;memcpy(A,buf,253);//A存在off-by-one漏洞
+&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;Overlapped=malloc(380);
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个DEMO与上面的类似，同样可以overlapping后面的块C，导致可以对C进行任意读写。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.off-by-one null byte</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">int&nbsp;main(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*A,*B,*C;
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*B1,*B2;
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*Overlapping;
+&nbsp;&nbsp;&nbsp;&nbsp;A=malloc(0x100);
+&nbsp;&nbsp;&nbsp;&nbsp;B=malloc(0x208);
+&nbsp;&nbsp;&nbsp;&nbsp;C=malloc(0x100);
+&nbsp;&nbsp;&nbsp;&nbsp;free(B);
+&nbsp;&nbsp;&nbsp;&nbsp;((char&nbsp;*)A)[0x104]=&#39;\x00&#39;;
+&nbsp;&nbsp;&nbsp;&nbsp;B1=malloc(0x100);
+&nbsp;&nbsp;&nbsp;&nbsp;B2=malloc(0x80);
+&nbsp;&nbsp;&nbsp;&nbsp;free(B1);
+&nbsp;&nbsp;&nbsp;&nbsp;free(C);
+&nbsp;&nbsp;&nbsp;&nbsp;malloc(0x200);&nbsp;&nbsp;&nbsp;
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以成功的对B2进行任意读写。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.off-by-one small bin</span></strong></p><pre class="brush:cpp;toolbar:false">void&nbsp;*ptr;
+int&nbsp;main(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;prev_size,size,fd,bk;
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*p1,*p2;
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;buf[253]=&quot;&quot;;
+&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;p1=malloc(252);
+&nbsp;&nbsp;&nbsp;&nbsp;p2=malloc(252);
+&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;ptr=p1;
+&nbsp;&nbsp;&nbsp;&nbsp;prev_size=0;
+&nbsp;&nbsp;&nbsp;&nbsp;size=249;
+&nbsp;&nbsp;&nbsp;&nbsp;fd=(int)(&amp;ptr)-0xC;
+&nbsp;&nbsp;&nbsp;&nbsp;bk=(int)(&amp;ptr)-0x8;
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;memset(buf,&#39;c&#39;,253);
+&nbsp;&nbsp;&nbsp;&nbsp;memcpy(buf,&amp;prev_size,4);
+&nbsp;&nbsp;&nbsp;&nbsp;memcpy(buf+4,&amp;size,4);
+&nbsp;&nbsp;&nbsp;&nbsp;memcpy(buf+8,&amp;fd,4);
+&nbsp;&nbsp;&nbsp;&nbsp;memcpy(buf+12,&amp;bk,4);
+&nbsp;&nbsp;&nbsp;&nbsp;size=248;
+&nbsp;&nbsp;&nbsp;&nbsp;memcpy(&amp;buf[248],&amp;size,4);
+&nbsp;&nbsp;&nbsp;&nbsp;buf[252]=&#39;\x00&#39;;
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;memcpy(p1,buf,253);
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;free(p2);
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个DEMO中使用了一个指向堆上的指针ptr，ptr是全局变量处于bss段上。通过重复写ptr值即可实现write-anything-anywhere。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x08 后记</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这是本人第一次投稿原创文章，之前只是写写博客。文笔不好，错误也在所难免，希望大家包容下。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考文档：</span></p><p style="text-indent: 2em; text-align: left;"><a href="http://netsec.ccert.edu.cn/wp-content/uploads/2015/10/2015-1029-yangkun-Gold-Mining-CTF.pdf" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">CTF中的内存漏洞利用技巧 -清华大学网络与信息安全实验室&nbsp;</span></a></p><p style="text-indent: 2em; text-align: left;"><a href="https://googleprojectzero.blogspot.com/" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">Google Project Zero Blog</span></a></p><p style="text-indent: 2em; text-align: left;"><a href="https://github.com/lattera/glibc" target="_blank" textvalue="glibc_malloc from github&nbsp;" style="text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0);">glibc_malloc from github&nbsp;</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;"><a href="https://www.contextis.com/documents/120/Glibc_Adventures-The_Forgotten_Chunks.pdf" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(255, 0, 0); text-decoration: none;">Glibc Adventures: The Forgotten Chunks&nbsp;</a></span></p><p style="text-align: center; text-indent: 0em;"></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3113.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】从一字节溢出到任意代码执行-Linux下堆漏洞利用 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3113" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="4481" user-name="random" href="javascript:;">
+                random            </a>
+                        <span class="comment-time">2016-10-20 19:42:18</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4481">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4481" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">总结的不错=</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2676915949" class="response" data-bind-id="2676915949" data-target="4477" user-name="Ox9A82" href="javascript:;">
+                Ox9A82            </a>
+                        <span class="comment-time">2016-10-20 18:37:27</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2676915949" data-target="4477">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4477" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">这种Linux下的漏洞利用在CTF中出现频率还是很高的。现实意义也很大</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="4430">没事就睡觉</a> <span class="comment-time">2016-10-19 19:09:52</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4430">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4430" data-type="comment">点赞</a></span>            </div>
+            <p>何必这么麻烦，虽然每个OS的内存结构和分配方式不同 但原理都是一样 只要稍加注意就可以找到！</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/4x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="4430" user-name="没事就睡觉" href="javascript:;">
+                没事就睡觉            </a>
+                        <span class="comment-time">2016-10-19 19:09:52</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4430">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4430" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">何必这么麻烦，虽然每个OS的内存结构和分配方式不同 但原理都是一样 只要稍加注意就可以找到！</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3113" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

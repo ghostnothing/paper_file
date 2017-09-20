@@ -1,0 +1,572 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>深入理解浏览器解析机制和XSS向量编码 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="浏览器解析机制,XSS向量编码"/>
+    
+        <meta name="description" content="（译者注：由于某些词汇翻译成中文后很生硬，因此把相应的英文标注在其后以便理解。这篇文章讲的内容很基础，同时也很重要，希望对大家有所帮助。）这篇文章将要深入理解HTML、URL和JavaScript的规"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>深入理解浏览器解析机制和XSS向量编码</h2>
+                <div class="article-msg">
+                    <span class="time">2015-03-11 15:00:30</span>
+                                        <span class="read">阅读：37509次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_292"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="292" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://www.attacker-domain.com/2013/04/deep-dive-into-browser-parsing-and-xss.html"
+                             target="_blank">来源： 360安全播报</a></span>
+                    
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align:center"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;"><img alt="http://p3.qhimg.com/t016970dc4a311767d1.jpg" src="http://p3.qhimg.com/t016970dc4a311767d1.jpg" title="t016970dc4a311767d1.jpg"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">（译者注：由于某些词汇翻译成中文后很生硬，因此把相应的英文标注在其后以便理解。这篇文章讲的内容很基础，同时也很重要，希望对大家有所帮助。）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这篇文章将要深入理解HTML、URL和JavaScript的规范细则和解析器，以及在解析一段XSS脚本时他们之间有着怎样的差别。这些内容对读者的难易程度取决于读者对HTML规范和浏览器解析的知识是否充足。当然，我向您保证这篇文章比较长，因此请准备一小时或两小时来从中获益。在主题开始之前，请花费一点时间来看看下列语句并尝试回答：这些脚本能够正确执行吗？</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(84, 141, 212);"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">基础部分</span></strong></span></p><pre class="brush:html;toolbar:false">&nbsp;&lt;a&nbsp;href=&quot;%6a%61%76%61%73%63%72%69%70%74:%61%6c%65%72%74%28%31%29&quot;&gt;&lt;/a&gt;
+URL&nbsp;编码&nbsp;&quot;javascript:alert(1)&quot;
+&lt;a&nbsp;href=&quot;&amp;#x6a;&amp;#x61;&amp;#x76;&amp;#x61;&amp;#x73;&amp;#x63;&amp;#x72;&amp;#x69;&amp;#x70;&amp;#x74;:%61%6c%65%72%74%28%32%29&quot;&gt;
+HTML字符实体编码&nbsp;&quot;javascript&quot;&nbsp;和&nbsp;URL&nbsp;编码&nbsp;&quot;alert(2)&quot;
+&nbsp;&nbsp;&lt;a&nbsp;href=&quot;javascript%3aalert(3)&quot;&gt;&lt;/a&gt;
+URL&nbsp;编码&nbsp;&quot;:&quot;
+&nbsp;&nbsp;&lt;div&gt;&amp;#60;img&nbsp;src=x&nbsp;onerror=alert(4)&amp;#62;&lt;/div&gt;
+HTML字符实体编码&nbsp;&lt;&nbsp;和&nbsp;&gt;
+&nbsp;&nbsp;&lt;textarea&gt;&amp;#60;script&amp;#62;alert(5)&amp;#60;/script&amp;#62;&lt;/textarea&gt;
+HTML字符实体编码&nbsp;&lt;&nbsp;和&nbsp;&gt;
+&lt;textarea&gt;&lt;script&gt;alert(6)&lt;/script&gt;&lt;/textarea&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(84, 141, 212);"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">高级部分</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(84, 141, 212);"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;"><br/></span></strong></span></p><pre class="brush:html;toolbar:false">&nbsp;&nbsp;&lt;button&nbsp;onclick=&quot;confirm(&#39;7&amp;#39;);&quot;&gt;Button&lt;/button&gt;
+HTML字符实体编码&nbsp;&quot;&nbsp;&#39;&nbsp;&quot;&nbsp;（单引号）
+&nbsp;&lt;button&nbsp;onclick=&quot;confirm(&#39;8\u0027);&quot;&gt;Button&lt;/button&gt;
+Unicode编码&nbsp;&quot;&nbsp;&#39;&nbsp;&quot;&nbsp;（单引号）
+&nbsp;&nbsp;&lt;script&gt;&amp;#97;&amp;#108;&amp;#101;&amp;#114;&amp;#116&amp;#40;&amp;#57;&amp;#41;&amp;#59&lt;/script&gt;
+HTML字符实体编码&nbsp;alert(9);
+&nbsp;&nbsp;&lt;script&gt;\u0061\u006c\u0065\u0072\u0074(10);&lt;/script&gt;
+Unicode&nbsp;编码&nbsp;alert
+&nbsp;&nbsp;&lt;script&gt;\u0061\u006c\u0065\u0072\u0074\u0028\u0031\u0031\u0029&lt;/script&gt;
+Unicode&nbsp;编码&nbsp;alert(11)
+&nbsp;&lt;script&gt;\u0061\u006c\u0065\u0072\u0074(\u0031\u0032)&lt;/script&gt;
+Unicode&nbsp;编码&nbsp;alert&nbsp;和&nbsp;12
+&nbsp;&nbsp;&lt;script&gt;alert(&#39;13\u0027)&lt;/script&gt;
+Unicode&nbsp;编码&nbsp;&quot;&nbsp;&#39;&nbsp;&quot;&nbsp;（单引号）
+&nbsp;&nbsp;&lt;script&gt;alert(&#39;14\u000a&#39;)&lt;/script&gt;
+Unicode&nbsp;编码换行符（0x0A）</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(84, 141, 212);"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">额外赠送</span></strong></span></p><pre class="brush:html;toolbar:false">&lt;a&nbsp;href=&quot;&amp;#x6a;&amp;#x61;&amp;#x76;&amp;#x61;&amp;#x73;&amp;#x63;&amp;#x72;&amp;#x69;&amp;#x70;&amp;#x74;&amp;#x3a;&amp;#x25;&amp;#x35;&amp;#x63;&amp;#x25;&amp;#x37;&amp;#x35;&amp;#x25;&amp;#x33;&amp;#x30;&amp;#x25;&amp;#x33;&amp;#x30;&amp;#x25;&amp;#x33;&amp;#x36;&amp;#x25;&amp;#x33;&amp;#x31;&amp;#x25;&amp;#x35;&amp;#x63;&amp;#x25;&amp;#x37;&amp;#x35;&amp;#x25;&amp;#x33;&amp;#x30;&amp;#x25;&amp;#x33;&amp;#x30;&amp;#x25;&amp;#x33;&amp;#x36;&amp;#x25;&amp;#x36;&amp;#x33;&amp;#x25;&amp;#x35;&amp;#x63;&amp;#x25;&amp;#x37;&amp;#x35;&amp;#x25;&amp;#x33;&amp;#x30;&amp;#x25;&amp;#x33;&amp;#x30;&amp;#x25;&amp;#x33;&amp;#x36;&amp;#x25;&amp;#x33;&amp;#x35;&amp;#x25;&amp;#x35;&amp;#x63;&amp;#x25;&amp;#x37;&amp;#x35;&amp;#x25;&amp;#x33;&amp;#x30;&amp;#x25;&amp;#x33;&amp;#x30;&amp;#x25;&amp;#x33;&amp;#x37;&amp;#x25;&amp;#x33;&amp;#x32;&amp;#x25;&amp;#x35;&amp;#x63;&amp;#x25;&amp;#x37;&amp;#x35;&amp;#x25;&amp;#x33;&amp;#x30;&amp;#x25;&amp;#x33;&amp;#x30;&amp;#x25;&amp;#x33;&amp;#x37;&amp;#x25;&amp;#x33;&amp;#x34;&amp;#x28;&amp;#x31;&amp;#x35;&amp;#x29;&quot;&gt;&lt;/a&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这些问题的答案在</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);" href="http://test.attacker-domain.com/browserparsing/answers.txt"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);">这里</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);"></span><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">，测试页面在</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);" href="http://test.attacker-domain.com/browserparsing/tests.html"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);">这里</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">。如果你能答对大部分问题并且没有感觉困惑，看到这就停下吧。如果没有，那么余下的内容将能够很好的帮助你理解浏览器解析过程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">在解析一篇HTML文档时主要有三个处理过程：HTML解析，URL解析和JavaScript解析。每个解析器负责解码和解析HTML文档中它所对应的部分，其工作原理已经在相应的解析器规范中明确写明。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(84, 141, 212);"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">0x01&nbsp; HTML解析</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">从XSS的角度来说，我们感兴趣的是HTML文档是如何被词法解析的，因为我们并不想让用户提供的数据最终被解析为一段可执行脚本的script标签。HTML词法解析细则在</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);" href="http://www.whatwg.org/specs/web-apps/current-work/multipage/tokenization.html"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);">这里</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">。HTML词法解析细则是一篇冗长的文档，这篇博文并不会覆盖它的所有内容。这篇博文只会覆盖有关文档解码如何结束，以及新token何时被创建这两个有趣的部分。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">一个HTML解析器作为一个状态机，它从输入流中获取字符并按照转换规则转换到另一种状态。在解析过程中，任何时候它只要遇到一个&#39;&lt;&#39;符号（后面没有跟&#39;/&#39;符号）就会进入“标签开始状态(Tag open state)”。然后转变到“标签名状态(Tag name state)”，“前属性名状态(before attribute name state)”......最后进入“数据状态(Data state)”并释放当前标签的token。当解析器处于“数据状态(Data state)”时，它会继续解析，每当发现一个完整的标签，就会释放出一个token。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">（译者注：词法解析是《编译原理》所涉及的内容，学习过编译原理的读者可以更好的理解“状态机”的工作原理）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这里有三种情况可以容纳字符实体，“数据状态中的字符引用”，“RCDATA状态中的字符引用”和“属性值状态中的字符引用”。在这些状态中HTML字符实体将会从“&amp;#...”形式解码，对应的解码字符会被放入数据缓冲区中。例如，在问题4中，“&lt;”和“&gt;”字符被编码为“&amp;#60;”和“&amp;#62;”。当解析器解析完“&lt;div&gt;”并处于“数据状态”时，这两个字符将会被解析。当解析器遇到“&amp;”字符，它会知道这是“数据状态的字符引用”，因此会消耗一个字符引用（例如“&amp;#60;”）并释放出对应字符的token。在这个例子中，对应字符指的是“&lt;”和“&gt;”。读者可能会想：这是不是意味着“&lt;”和“&gt;”的token将会被理解为标签的开始和结束，然后其中的脚本会被执行？答案是脚本并不会被执行。原因是解析器在解析这个字符引用后不会转换到“标签开始状态”。正因为如此，就不会建立新标签。因此，我们能够利用字符实体编码这个行为来转义用户输入的数据从而确保用户输入的数据只能被解析成“数据”。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">（译者注：这里要解释几个概念）</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(84, 141, 212);"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">字符实体(character entities)</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">字符实体是一个转义序列，它定义了一般无法在文本内容中输入的单个字符或符号。一个字符实体以一个&amp;符号开始，后面跟着一个预定义的实体的名称，或是一个#符号以及字符的十进制数字。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">HTML字符实体(HTML character entities)</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">在HTML中，某些字符是预留的。例如在HTML中不能使用“&lt;”或“&gt;”，这是因为浏览器可能误认为它们是标签的开始或结束。如果希望正确地显示预留字符，就需要在HTML中使用对应的字符实体。一个HTML字符实体描述如下：</span></p><p style="text-align:center"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;"><img alt="http://p9.qhimg.com/t0171d5ca6fbb87488f.png" src="http://p9.qhimg.com/t0171d5ca6fbb87488f.png" title="t0171d5ca6fbb87488f.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">需要注意的是，某些字符没有实体名称，但可以有实体编号。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(84, 141, 212);"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">字符引用（character references）</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">字符引用包括“字符值引用”和“字符实体引用”。在上述HTML例子中，&#39;&lt;&#39;对应的字符值引用为&#39;&amp;#60;&#39;，对应的字符实体引用为‘&amp;lt;’。字符实体引用也被叫做“实体引用”或“实体”。）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">现在你大概会明白为什么我们要转义“&lt;”、“&gt;”、“&#39;” (单引号)和“&quot;” (双引号)字符了。但为什么我们还要转义“&amp;”呢？大概 “&amp;” 是无辜的，任何跟在“&amp;”后面的内容仅会被解释为字符引用，这并不会开始或闭合一个标签。事实上，“&amp;”字符并不会打断HTML级别的转义过程，但它可能会打断其他级别的转义过程。我们将在JavaScript解析的部分讨论这个问题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这里要提一下RCDATA的概念。要了解什么是RCDATA，我们先要了解另一个概念。在<span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">HTML中</span>有<span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">五类元素</span>：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">1.&nbsp; 空元素(Void elements)，如&lt;area&gt;,&lt;br&gt;,&lt;base&gt;等等</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">2.&nbsp; 原始文本元素(Raw text elements)，有&lt;script&gt;和&lt;style&gt;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">3.&nbsp; RCDATA元素(RCDATA elements)，有&lt;textarea&gt;和&lt;title&gt;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">4.&nbsp; 外部元素(Foreign elements)，例如MathML命名空间或者SVG命名空间的元素</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">5.&nbsp; 基本元素(Normal elements)，即除了以上4种元素以外的元素</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">五类元素</span><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">的<span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">区别</span>如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">1.&nbsp; 空元素，不能容纳任何内容（因为它们没有闭合标签，没有内容能够放在开始标签和闭合标签中间）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">2.&nbsp; 原始文本元素，可以容纳文本。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">3.&nbsp; RCDATA元素，可以容纳文本和字符引用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">4.&nbsp; 外部元素，可以容纳文本、字符引用、CDATA段、其他元素和注释</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">5.&nbsp; 基本元素，可以容纳文本、字符引用、其他元素和注释</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">如果我们回头看HTML解析器的规则，其中有一种可以容纳字符引用的情况是“RCDATA状态中的字符引用”。这意味着在&lt;textarea&gt;和&lt;title&gt;标签中的字符引用会被HTML解析器解码。这里要再提醒一次，在解析这些字符引用的过程中不会进入“标签开始状态”。这样就可以解释问题5了。另外，对RCDATA有个特殊的情况。在浏览器解析RCDATA元素的过程中，解析器会进入“RCDATA状态”。在这个状态中，如果遇到“&lt;”字符，它会转换到“RCDATA小于号状态”。如果“&lt;”字符后没有紧跟着“/”和对应的标签名，解析器会转换回“RCDATA状态”。这意味着在RCDATA元素标签的内容中（例如&lt;textarea&gt;或&lt;title&gt;的内容中），唯一能够被解析器认做是标签的就是“&lt;/textarea&gt;”或者“&lt;/title&gt;”。当然，这要看开始标签是哪一个。因此，在“&lt;textarea&gt;”和“&lt;title&gt;”的内容中不会创建标签，就不会有脚本能够执行。这也就解释了为什么问题6中的脚本不会被执行。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">我们来迅速看一下CDATA元素。任何在CDATA元素中的内容将不会触发解析器创建开始标签。闭合CDATA元素的标志是“]]&gt;”序列。因此如果用户想逃出CDATA元素，就要用未经任何编码的“]]&gt;”序列，不然是不会逃出CDATA元素的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(84, 141, 212);"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">0x02&nbsp; URL解析</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">URL解析器也是一个状态机模型，从输入流中进来的字符可以引导URL解析器转换到不同的状态。解析器的解析细则在</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);" href="http://url.spec.whatwg.org/"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);">这里</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">。其中有很多有关安全或XSS转义的内容。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">首先，URL资源类型必须是ASCII字母（U+0041-U+005A || U+0061-U+007A），不然就会进入“无类型”状态。例如，你不能对协议类型进行任何的编码操作，不然URL解析器会认为它无类型。这就是为什么问题1中的代码不能被执行。因为URL中被编码的“javascript”没有被解码，因此不会被URL解析器识别。该原则对协议后面的“：”（冒号）同样适用，即问题3也得到解答。然而，你可能会想到：为什么问题2中的脚本被执行了呢？如果你记得我们在HTML解析部分讨论的内容的话，是否还记得有一个情况叫做“属性值中的字符引用”，在这个情况中字符引用会被解码。我们将稍后讨论解析顺序，但在这里，HTML解析器解析了文档，创建了标签token，并且对href属性里的字符实体进行了解码。然后，当HTML解析器工作完成后，URL解析器开始解析href属性值里的链接。在这时，“javascript”协议已经被解码，它能够被URL解析器正确识别。然后URL解析器继续解析链接剩下的部分。由于是“javascript”协议，JavaScript解析器开始工作并执行这段代码，这就是为什么问题2中的代码能够被执行。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">其次，URL编码过程使用UTF-8编码类型来编码每一个字符。如果你尝试着将URL链接做了其他编码类型的编码，URL解析器就可能不会正确识别。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(84, 141, 212);"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">0x03&nbsp; JavaScript 解析</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">JavaScript解析过程与HTML解析过程有点不一样。JavaScript语言是一门内容无关语言。对应着有一份内容无关的语法来描述它。我们可以利用内容无关语法来解释JavaScript是如何解析的。ECMAScript-262细则在</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);" href="http://www.ecma-international.org/publications/standards/Ecma-262.htm"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);">这里</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">，语法文件在</span><a style="text-decoration: underline; font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);" href="http://www.antlr3.org/grammar/1206736738015/JavaScript.g"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(255, 0, 0);">这里</span></a><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">这里有一些与安全相关的事情：字符是如何被解码的？对一些字符进行转义是否有效？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">开始之前，让我们来回到HTML解析过程中的“原始文本”元素。我故意将HTML中的一部分留到这个章节是因为它与JavaScript解析有关。所有的“script”块都属于“原始文本”元素。“script”块有个有趣的属性：在块中的字符引用并不会被解析和解码。如果你去看“脚本数据状态”的状态转换规则，就会发现没有任何规则能转移到字符引用状态。这意味着什么？这意味着问题9中的脚本并不会执行。所以如果攻击者尝试着将输入数据编码成字符实体并将其放在script块中，它将不会被执行。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">那像“\uXXXX”（例如\u0000,\u000A）这样的字符呢，JavaScript会解析这些字符来执行吗？简单的说：视情况而定。具体的说就是要看被编码的序列到底是哪部分。首先，像\uXXXX一样的字符被称作Unicode转义序列。从上下文来看，你可以将转义序列放在3个部分：字符串中，标识符名称中和控制字符中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">字符串中：当Unicode转义序列存在于字符串中时，它只会被解释为正规字符，而不是单引号，双引号或者换行符这些能够打破字符串上下文的字符。这项内容清楚地写在ECMAScript中。因此，Unicode转义序列将永远不会破环字符串上下文，因为它们只能被解释成字符串常量。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">ECMA-262 5.1版 6章 6节</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">“ECMAScript 与 JAVA 编程语言在对待Unicode转义序列时的行为不同。在Java程序中，如果Unicode转义序列\u000A出现在单行字符串注释中，它会被解释为行结束符（换行符），因此会导致接下来的Unicode字符不是注释的一部分。同样的，如果Unicode转义序列\u000A出现在Java程序的字符串常量中，它同样会被解释为行结束符（换行符），这在字符串常量中是不被允许的——如果需要在字符串常量中表示换行，需要用\n来代替\u000A。在ECMAScript程序中，出现在注释中的Unicode转义序列永远不会被解释，因此不会导致注释换行问题。同样地，ECMAScript程序中，在字符串常量中出现的Unicode转义序列会被当作字符串常量中的一个Unicode字符，并且不会被解释成有可能结束字符串常量的换行符或者引号。”</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">标识符名称中</span><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">：当Unicode转义序列出现在标识符名称中时，它会被解码并解释为标识符名称的一部分，例如函数名，属性名等等。这可以用来解释问题10。如果我们深入研究JavaScript细则，可以看到如下内容：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">“Unicode转义序列（如\u000A\u000B）同样被允许用在标识符名称中，被当作名称中的一个字符。而将&#39;\&#39;符号前置在Unicode转义序列串（如\u000A000B000C）并不能作为标识符名称中的字符。将Unicode转义序列串放在标识符名称中是非法的。”</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">控制字符</span><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">:当用Unicode转义序列来表示一个控制字符时，例如单引号、双引号、圆括号等等，它们将不会被解释成控制字符，而仅仅被解码并解析为标识符名称或者字符串常量。如果你去看ECMAScript的语法，就会发现没有一处会用Unicode转义序列来当作控制字符。例如，如果解析器正在解析一个函数调用语句，圆括号部分必须为“(”和“)”，而不能是\u0028和\u0029。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">总的来说，<span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px; color: rgb(84, 141, 212);">Unicode转义序列只有在标识符名称里不被当作字符串，也只有在标识符名称里的编码字符能够被正常的解析。</span>如果我们回看问题11，它并不会被执行。因为“(11)”不会被正确的解析，而“alert(11)”也不是一个有效的标识符名称。问题12不会被正确执行要么是因为&#39;\u0031\u0032&#39;不会被解释为字符串常量（因为它们没有用引号闭合）要么是因为它们是ASCII型数字。问题13不会执行的原因是&#39;\u0027&#39;仅仅会被解释成单引号文本，而此时字符串是未闭合的。问题14能够执行的原因是&#39;\u000a&#39;会被解释成换行符文本，这并不会导致真正的换行从而引发JavaScript语法错误。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(84, 141, 212);"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">0x04&nbsp; 解析流</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">在讨论过HTML，URL和JavaScript解析之后，读者应该能够对“什么会被解码”、“在什么地方被解码”和“如何被解码”这几件事有了清楚的认识。现在，另一个重要的概念是所有这些是如何协同工作的？在网页中有很多地方需要多个解析器来协同工作。因此，对于解码和转义问题，我们将简要的讨论浏览器如何解析一篇文档。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">当浏览器从网络堆栈中获得一段内容后，触发HTML解析器来对这篇文档进行词法解析。在这一步中字符引用被解码。在词法解析完成后，DOM树就被创建好了，JavaScript解析器会介入来对内联脚本进行解析。在这一步中Unicode转义序列和Hex转义序列被解码。同时，如果浏览器遇到需要URL的上下文，URL解析器也会介入来解码URL内容。在这一步中URL解码操作被完成。由于URL位置不同，URL解析器可能会在JavaScript解析器之前或之后进行解析。考虑如下两种情况</span></p><pre class="brush:html;toolbar:false">Example&nbsp;A:&nbsp;&lt;a&nbsp;href=&quot;UserInput&quot;&gt;&lt;/a&gt;
+Example&nbsp;B:&nbsp;&lt;a&nbsp;href=#&nbsp;&nbsp;&nbsp;onclick=&quot;window.open(&#39;UserInput&#39;)&quot;&gt;&lt;/a&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">在例A中，HTML解析器将首先开始工作，并对UserInput中的字符引用进行解码。然后URL解析器开始对href值进行URL解码。最后，如果URL资源类型是JavaScript，那么JavaScript解析器会进行Unicode转义序列和Hex转义序列的解码。再之后，解码的脚本会被执行。因此，这里涉及三轮解码，顺序是HTML，URL和JavaScript。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">在例B中，HTML解析器首先工作。然而接下来，JavaScript解析器开始解析在onclick事件处理器中的值。这是因为在onclick事件处理器中是script的上下文。当这段JavaScript被解析并被执行的时候，它执行的是“window.open()”操作，其中的参数是URL的上下文。在此时，URL解析器开始对UserInput进行URL解码并把结果回传给JavaScript引擎。因此这里一共涉及三轮解码，顺序是HTML，JavaScript和URL。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">有没有可能解码次数超过3轮呢？考虑一下这个例子</span></p><pre class="brush:html;toolbar:false">Example&nbsp;&nbsp;&nbsp;C:&nbsp;&lt;a&nbsp;&nbsp;&nbsp;href=&quot;javascript:window.open(&#39;UserInput&#39;)&quot;&gt;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">例C与例A很像，但不同的是在UserInput前多了window.open()操作。因此，对UserInput多了一次额外的URL解码操作。总的来说，四轮解码操作被完成，顺序是HTML，URL，JavaScript和URL。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">此时此刻，读者应该已经获得解答博文开始提到的所有问题的必要知识。如果你有任何的问题，欢迎留言讨论。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(84, 141, 212);"><strong><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">0x05&nbsp; 总结</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑,Microsoft YaHei; font-size: 14px;">简而言之，作为攻击者为了弄明白如何让XSS向量逃逸出上下文，或者为了使你的应用能够正确编码用户的输入，你必须真正明白浏览器的解析原理以及它们（HTML，URL和JavaScript解析器）是如何协同工作的。只有这样，你才能从浏览器的角度去正确编码你的向量。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://www.attacker-domain.com/2013/04/deep-dive-into-browser-parsing-and-xss.html" target="_blank">原文链接：http://www.attacker-domain.com/2013/04/deep-dive-into-browser-parsing-and-xss.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="深入理解浏览器解析机制和XSS向量编码 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="292" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="64d932c9bb50dc5a83db601d9b02e735">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15962" user-name="Mickey牛" href="javascript:;">
+                Mickey牛            </a>
+                        <span class="comment-time">2017-08-14 15:35:55</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15962">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15962" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">很棒！详细的解析</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="292" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+                                <li><a href="/learning/detail/4424.html" alt="【知识】9月16日 - 每日安全知识热点" target="_blank">【知识】9月16日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

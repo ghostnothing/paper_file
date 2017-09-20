@@ -1,0 +1,1098 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【漏洞分析】前往黑暗之门！Debugee in QEMU - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="虚拟化安全,漏洞挖掘"/>
+    
+        <meta name="description" content="最近刚刚接触漏洞挖掘，一直在读一些经典的fuzzer源码，同时也开始接触虚拟化逃逸这块的内容，在这个时候正巧碰到了两个非常经典的漏洞利用。本篇文章为对这两个漏洞的分析。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【漏洞分析】前往黑暗之门！Debugee in QEMU</h2>
+                <div class="article-msg">
+                    <span class="time">2017-08-16 17:34:12</span>
+                    
+                                        <span class="read">阅读：12087次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4265"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4265" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=1353169030" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01acaeca3752f24139.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=1353169030" style="color:#848e99;">k0shl</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p3.qhimg.com/t01e45b1ccfb08b8d92.jpg" title="t01a86dbbe57655ab47.jpg" alt="http://p1.qhimg.com/t01a86dbbe57655ab47.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=1353169030" target="_blank"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">k0shl</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">预估稿费：600RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x00 前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">好久没给安全客投稿了，最近刚刚接触漏洞挖掘，一直在读一些经典的fuzzer源码，同时也开始接触虚拟化逃逸这块的内容，在这个时候正巧碰到了两个非常经典的漏洞利用，相信很多小伙伴也已经看过了，phrack前段时间刚刚更新了关于这个漏洞的详细利用过程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我后来对这个漏洞进行了动态调试，并且通过phrack的paper恶补了一些关于虚拟机的工作原理，Guest OS和Host OS之间的一些知识。</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t01df23cda2c7badcba.png" title="t014528f8cdab6f770e.png" alt="http://p0.qhimg.com/t014528f8cdab6f770e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在调试的过程中，我愈发觉得这两个漏洞作为前往黑暗之门入门再合适不过，通过对两个漏洞的分析和利用的调试，可以熟悉这类虚拟化漏洞的调试原理。今天，我将和大家分享QEMU虚拟化逃逸的调试环境搭建，关于CVE-2015-5165和CVE-2015-7504漏洞动态调试分析，以及补丁对比。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在此之前，我默认阅读此文的小伙伴们已经看过了phrack.org关于VM Escape Case Study的文章，并且已经了解虚拟机工作的基本原理，包括但不限于内存管理机制，REALTEK网卡、PCNET网卡的数据包结构，Tx、Rx缓冲区等等。关于phrack.org的文章以及看雪翻译版分析文章的链接我将在文末给出。下面我们一起出发前往黑暗之门吧！</span></p><p style="text-align: center;"><img src="http://p2.qhimg.com/t011062251e2ae4005e.png" title="t01c22f7fd9d1301ab3.png" alt="http://p7.qhimg.com/t01c22f7fd9d1301ab3.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x01 QEMU环境搭建</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在调试QEMU虚拟化逃逸漏洞之前，我们需要搭建虚拟化逃逸的环境，首先通过git clone下载QEMU，并且通过git check设定分支（如果要调试以前版本的话）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;git&nbsp;clone&nbsp;git://git.qemu-project.org/qemu.git
+$&nbsp;cd&nbsp;qemu
+$&nbsp;mkdir&nbsp;-p&nbsp;bin/debug/native
+$&nbsp;cd&nbsp;bin/debug/native
+$&nbsp;../../../configure&nbsp;--target-list=x86_64-softmmu&nbsp;--enable-debug&nbsp;--disable-werror
+$&nbsp;make</pre><p style="text-indent: 2em;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在make的时候，Host OS会需要一些库的安装，可以通过apt-get来下载安装，比如zlib，glib-2.22等（其中glib-2.22也需要一些依赖，同时需要去网站下载，网站地址：</span><a href="http://ftp.gnome.org/pub/gnome/sources/glib/2.22/" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">http://ftp.gnome.org/pub/gnome/sources/glib/2.22/</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">安装完毕后，会在/path/to/qemu/bin/debug/native/下生成一个x86_64-softmmu目录，在此之前，需要安装一个qcow2的系统文件，所以需要通过qemu-img来生成一个qcow2系统文件。</span></p><pre class="brush:plain;toolbar:false">$&nbsp;qemu-img&nbsp;creat&nbsp;-f&nbsp;qcow2&nbsp;ubuntu.qcow2&nbsp;20G</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">之后首先通过qemu-system-x86_64完成对qcow2系统文件中系统的安装，需要用-cdrom对iso镜像文件进行加载。同时，需要安装vncviewer，这样可以通过vncviewer对qemu启动的vnc端口进行连接。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;qemu-system-x86_64&nbsp;-enable-kvm&nbsp;-m&nbsp;2048&nbsp;-hda&nbsp;/path/to/ubuntu.qcow2&nbsp;-cdrom&nbsp;/path/to/ubuntu.iso
+$&nbsp;apt-get&nbsp;install&nbsp;xvnc4viewer</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">通过vnc连接qemu之后，根据镜像文件提示进行安装，这里推荐还是用server.iso，因为安装比较快，用desktop的话可能会稍微卡顿一些，安装完成后就获得了一个有系统的qcow2文件，之后就可以用包含漏洞的rlt8139和pcnet网卡硬件启动了。</span></p><pre class="brush:plain;toolbar:false">$&nbsp;./qemu-system-x86_64&nbsp;-enable-kvm&nbsp;-m&nbsp;2048&nbsp;-display&nbsp;vnc=:89&nbsp;-netdev&nbsp;user,id=t0,&nbsp;-device&nbsp;rtl8139,netdev=t0,id=nic0&nbsp;-netdev&nbsp;user,id=t1,&nbsp;-device&nbsp;pcnet,netdev=t1,id=nic1&nbsp;-drive&nbsp;&nbsp;file=/path/to/ubuntu.qcow2,format=qcow2,if=ide,cache=writeback</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">启动之后，这里我为了省事，直接用NAT的方法共享宿主机网络，然后在本地通过SimpleHTTPServer建立一个简单的HTTP Server，通过wget方法获得两个漏洞的PoC，这两个漏洞PoC可以通过gcc -static的方法在本地编译后直接上传，然后运行即可。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">之后在宿主机通过ps -ef|grep qemu找到qemu的启动进程，通过gdb attach pid的方法附加，按c继续运行就可以了，可以通过b function的方法下断点，方便跟踪调试。</span></p><p style="text-align: center;"><img src="http://p4.qhimg.com/t0157b37844ab48f026.jpg" title="t0109633df0ef38510d.jpg" alt="http://p4.qhimg.com/t0109633df0ef38510d.jpg"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x02 CVE-2015-5165漏洞分析</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">CVE-2015-5165是一个内存泄露漏洞，由于对于ip-&gt;ip_len和hlen长度大小没有进行控制，导致两者相减计算为负时，由于ip_data_len变量定义是unsigned类型，导致这个值会非常大，从而产生内存泄露。漏洞文件在/path/to/qemu/hw/net/rtl8139.c。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先根据漏洞描述，漏洞发生在rtl8139_cplus_transmit_one函数中，通过b rtl8139_cplus_transmit_one的方法在该函数下断点，之后运行PoC，命中函数后，首先函数会传入一个RTL8139State结构体变量。继续单步跟踪，会执行到一处if语句，这里会比较当前数据包头部是否是IPV4的头部。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;si
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x4&nbsp;
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db58480&nbsp;&lt;rtl8139_cplus_transmit_one+1854&gt;:shr&nbsp;&nbsp;&nbsp;&nbsp;al,0x4
+&nbsp;&nbsp;&nbsp;0x55b25db58483&nbsp;&lt;rtl8139_cplus_transmit_one+1857&gt;:movzx&nbsp;&nbsp;eax,al
+&nbsp;&nbsp;&nbsp;0x55b25db58486&nbsp;&lt;rtl8139_cplus_transmit_one+1860&gt;:and&nbsp;&nbsp;&nbsp;&nbsp;eax,0xf
+=&gt;&nbsp;0x55b25db58489&nbsp;&lt;rtl8139_cplus_transmit_one+1863&gt;:cmp&nbsp;&nbsp;&nbsp;&nbsp;eax,0x4
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db584892173&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(IP_HEADER_VERSION(ip)&nbsp;!=&nbsp;IP_HEADER_VERSION_4)&nbsp;{</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">可见此时确实是IPv4的结构，随后进入if语句的代码逻辑，在其中会调用be16_to_cpu对ip-&gt;ip_len进行转换，ip-&gt;ip_len的长度为0x1300，转换后长度为0x13。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x1300&nbsp;
+RDI:&nbsp;0x1300&nbsp;//ip-&gt;ip_len
+EFLAGS:&nbsp;0x206&nbsp;(carry&nbsp;PARITY&nbsp;adjust&nbsp;zero&nbsp;sign&nbsp;trap&nbsp;INTERRUPT&nbsp;direction&nbsp;overflow)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db584f7&nbsp;&lt;rtl8139_cplus_transmit_one+1973&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;movzx&nbsp;&nbsp;eax,WORD&nbsp;PTR&nbsp;[rax+0x2]
+&nbsp;&nbsp;&nbsp;0x55b25db584fb&nbsp;&lt;rtl8139_cplus_transmit_one+1977&gt;:movzx&nbsp;&nbsp;eax,ax
+&nbsp;&nbsp;&nbsp;0x55b25db584fe&nbsp;&lt;rtl8139_cplus_transmit_one+1980&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edi,eax
+=&gt;&nbsp;0x55b25db58500&nbsp;&lt;rtl8139_cplus_transmit_one+1982&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;0x55b25db54a37&nbsp;&lt;be16_to_cpu&gt;
+&nbsp;&nbsp;&nbsp;0x55b25db58505&nbsp;&lt;rtl8139_cplus_transmit_one+1987&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edx,eax
+Guessed&nbsp;arguments:
+arg[0]:&nbsp;0x1300&nbsp;//ip-&gt;ip_len=0x1300
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db585002181&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip_data_len&nbsp;=&nbsp;be16_to_cpu(ip-&gt;ip_len)&nbsp;-&nbsp;hlen;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+gdb-peda$&nbsp;ni
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x13&nbsp;//经过be16_to_cpu()之后返回值为0x13
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db584fb&nbsp;&lt;rtl8139_cplus_transmit_one+1977&gt;:movzx&nbsp;&nbsp;eax,ax
+&nbsp;&nbsp;&nbsp;0x55b25db584fe&nbsp;&lt;rtl8139_cplus_transmit_one+1980&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edi,eax
+&nbsp;&nbsp;&nbsp;0x55b25db58500&nbsp;&lt;rtl8139_cplus_transmit_one+1982&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;0x55b25db54a37&nbsp;&lt;be16_to_cpu&gt;
+=&gt;&nbsp;0x55b25db58505&nbsp;&lt;rtl8139_cplus_transmit_one+1987&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edx,eax
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db585052181&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip_data_len&nbsp;=&nbsp;be16_to_cpu(ip-&gt;ip_len)&nbsp;-&nbsp;hlen;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">转换后，会将转换后的值和hlen相减。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;si
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x14&nbsp;//hlen=0x14
+RDX:&nbsp;0x13&nbsp;//be16_to_cpu(ip-&gt;ip_len)=0x13
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db58500&nbsp;&lt;rtl8139_cplus_transmit_one+1982&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;0x55b25db54a37&nbsp;&lt;be16_to_cpu&gt;
+&nbsp;&nbsp;&nbsp;0x55b25db58505&nbsp;&lt;rtl8139_cplus_transmit_one+1987&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edx,eax
+&nbsp;&nbsp;&nbsp;0x55b25db58507&nbsp;&lt;rtl8139_cplus_transmit_one+1989&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;eax,DWORD&nbsp;PTR&nbsp;[rbp-0x13c]
+=&gt;&nbsp;0x55b25db5850d&nbsp;&lt;rtl8139_cplus_transmit_one+1995&gt;:sub&nbsp;&nbsp;&nbsp;&nbsp;edx,eax
+&nbsp;&nbsp;&nbsp;0x55b25db5850f&nbsp;&lt;rtl8139_cplus_transmit_one+1997&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;eax,edx
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db5850d2181&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip_data_len&nbsp;=&nbsp;be16_to_cpu(ip-&gt;ip_len)&nbsp;-&nbsp;hlen;
+gdb-peda$&nbsp;si
+[----------------------------------registers-----------------------------------]
+RDX:&nbsp;0xffffffff&nbsp;//相减之后为0xffffffff，这个变量是一个unsigned类型，此值极大
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db5850d&nbsp;&lt;rtl8139_cplus_transmit_one+1995&gt;:sub&nbsp;&nbsp;&nbsp;&nbsp;edx,eax
+=&gt;&nbsp;0x55b25db5850f&nbsp;&lt;rtl8139_cplus_transmit_one+1997&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;eax,edx
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db5850f2181&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip_data_len&nbsp;=&nbsp;be16_to_cpu(ip-&gt;ip_len)&nbsp;-&nbsp;hlen;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">相减后，这个值为0xffffffff，而这个值是一个16位无符号数，也就是是一个极大值0xffff，我们可以通过源码看到关于这个变量的定义。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">uint16_t&nbsp;ip_data_len&nbsp;=&nbsp;0;
+……
+ip_data_len&nbsp;=&nbsp;be16_to_cpu(ip-&gt;ip_len)&nbsp;-&nbsp;hlen;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">接下来继续单步跟踪，会发现ip_data_len这个极大值会被用来计算tcp_data_len，也就是tcp数据的长度，随后还有一个tcp_chunk_size，这个chunk_size限制了一个数据包的最大值，当tcp数据的长度超过chunk_size的时候，则会分批发送。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">//计算tcp_data_len
+gdb-peda$&nbsp;si
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0xffff&nbsp;//ip_data_len
+[-------------------------------------code-------------------------------------]
+=&gt;&nbsp;0x55b25db586c2&nbsp;&lt;rtl8139_cplus_transmit_one+2432&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;sub&nbsp;&nbsp;&nbsp;&nbsp;eax,DWORD&nbsp;PTR&nbsp;[rbp-0x10c]//hlen的大小是0x14
+&nbsp;&nbsp;&nbsp;0x55b25db586c8&nbsp;&lt;rtl8139_cplus_transmit_one+2438&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[rbp-0x108],eax
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db586c22231&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;tcp_data_len&nbsp;=&nbsp;ip_data_len&nbsp;-&nbsp;tcp_hlen;
+gdb-peda$&nbsp;si
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0xffeb&nbsp;//相减后tcp_data_len长度是0xffeb
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db586c2&nbsp;&lt;rtl8139_cplus_transmit_one+2432&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;sub&nbsp;&nbsp;&nbsp;&nbsp;eax,DWORD&nbsp;PTR&nbsp;[rbp-0x10c]
+=&gt;&nbsp;0x55b25db586c8&nbsp;&lt;rtl8139_cplus_transmit_one+2438&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[rbp-0x108],eax
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db586c82231&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;tcp_data_len&nbsp;=&nbsp;ip_data_len&nbsp;-&nbsp;tcp_hlen;
+//计算chunk_size&nbsp;=&nbsp;0x5b4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+gdb-peda$&nbsp;ni
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x5b4&nbsp;
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db586ce&nbsp;&lt;rtl8139_cplus_transmit_one+2444&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;eax,0x5dc
+&nbsp;&nbsp;&nbsp;0x55b25db586d3&nbsp;&lt;rtl8139_cplus_transmit_one+2449&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;sub&nbsp;&nbsp;&nbsp;&nbsp;eax,DWORD&nbsp;PTR&nbsp;[rbp-0x13c]//ETH_MTU-hlen
+&nbsp;&nbsp;&nbsp;0x55b25db586d9&nbsp;&lt;rtl8139_cplus_transmit_one+2455&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;sub&nbsp;&nbsp;&nbsp;&nbsp;eax,DWORD&nbsp;PTR&nbsp;[rbp-0x10c]//-tcp_hlen
+=&gt;&nbsp;0x55b25db586df&nbsp;&lt;rtl8139_cplus_transmit_one+2461&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[rbp-0x104],eax
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db586df2232&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;tcp_chunk_size&nbsp;=&nbsp;ETH_MTU&nbsp;-&nbsp;hlen&nbsp;-&nbsp;tcp_hlen;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">随后rtl8139_cplus_transmit_one函数会进入一个for循环处理，这个for循环会计算每一个chunk_size是达到整个tcp_data_len的末尾，如果没有则处理整个chunk_size并发送。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;tcp_data_len&nbsp;=&nbsp;ip_data_len&nbsp;-&nbsp;tcp_hlen;//tcp_data_len&nbsp;=&nbsp;0xffff-0x14=0xffeb
+int&nbsp;tcp_chunk_size&nbsp;=&nbsp;ETH_MTU&nbsp;-&nbsp;hlen&nbsp;-&nbsp;tcp_hlen;//chunk_size&nbsp;=&nbsp;0x5b4
+for&nbsp;(tcp_send_offset&nbsp;=&nbsp;0;&nbsp;tcp_send_offset&nbsp;&lt;&nbsp;tcp_data_len;&nbsp;tcp_send_offset&nbsp;+=&nbsp;tcp_chunk_size)//0xffeb/0x5b4&nbsp;=&nbsp;43
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint16_t&nbsp;chunk_size&nbsp;=&nbsp;tcp_chunk_size;//0x5b4
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;check&nbsp;if&nbsp;this&nbsp;is&nbsp;the&nbsp;last&nbsp;frame&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(tcp_send_offset&nbsp;+&nbsp;tcp_chunk_size&nbsp;&gt;=&nbsp;tcp_data_len)//if&nbsp;packet&nbsp;length&nbsp;&gt;&nbsp;tcp&nbsp;data&nbsp;length
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;is_last_frame&nbsp;=&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chunk_size&nbsp;=&nbsp;tcp_data_len&nbsp;-&nbsp;tcp_send_offset;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DPRINTF(&quot;+++&nbsp;C+&nbsp;mode&nbsp;TSO&nbsp;TCP&nbsp;seqno&nbsp;%08x\n&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;be32_to_cpu(p_tcp_hdr-&gt;th_seq));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;add&nbsp;4&nbsp;TCP&nbsp;pseudoheader&nbsp;fields&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;copy&nbsp;IP&nbsp;source&nbsp;and&nbsp;destination&nbsp;fields&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy(data_to_checksum,&nbsp;saved_ip_header&nbsp;+&nbsp;12,&nbsp;8);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DPRINTF(&quot;+++&nbsp;C+&nbsp;mode&nbsp;TSO&nbsp;calculating&nbsp;TCP&nbsp;checksum&nbsp;for&nbsp;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;packet&nbsp;with&nbsp;%d&nbsp;bytes&nbsp;data\n&quot;,&nbsp;tcp_hlen&nbsp;+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chunk_size);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(tcp_send_offset)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy((uint8_t*)p_tcp_hdr&nbsp;+&nbsp;tcp_hlen,&nbsp;(uint8_t*)p_tcp_hdr&nbsp;+&nbsp;tcp_hlen&nbsp;+&nbsp;tcp_send_offset,&nbsp;chunk_size);//disclouse&nbsp;key!!!p_tcp_hdr&nbsp;=&nbsp;ip_header&nbsp;&nbsp;&nbsp;p_tcp_hdr+tcp_hlen&nbsp;=&nbsp;data&nbsp;section
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;keep&nbsp;PUSH&nbsp;and&nbsp;FIN&nbsp;flags&nbsp;only&nbsp;for&nbsp;the&nbsp;last&nbsp;frame&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!is_last_frame)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TCP_HEADER_CLEAR_FLAGS(p_tcp_hdr,&nbsp;TCP_FLAG_PUSH|TCP_FLAG_FIN);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;recalculate&nbsp;TCP&nbsp;checksum&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip_pseudo_header&nbsp;*p_tcpip_hdr&nbsp;=&nbsp;(ip_pseudo_header&nbsp;*)data_to_checksum;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_tcpip_hdr-&gt;zeros&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_tcpip_hdr-&gt;ip_proto&nbsp;&nbsp;&nbsp;=&nbsp;IP_PROTO_TCP;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_tcpip_hdr-&gt;ip_payload&nbsp;=&nbsp;cpu_to_be16(tcp_hlen&nbsp;+&nbsp;chunk_size);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_tcp_hdr-&gt;th_sum&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;tcp_checksum&nbsp;=&nbsp;ip_checksum(data_to_checksum,&nbsp;tcp_hlen&nbsp;+&nbsp;chunk_size&nbsp;+&nbsp;12);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DPRINTF(&quot;+++&nbsp;C+&nbsp;mode&nbsp;TSO&nbsp;TCP&nbsp;checksum&nbsp;%04x\n&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tcp_checksum);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_tcp_hdr-&gt;th_sum&nbsp;=&nbsp;tcp_checksum;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;restore&nbsp;IP&nbsp;header&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy(eth_payload_data,&nbsp;saved_ip_header,&nbsp;hlen);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;set&nbsp;IP&nbsp;data&nbsp;length&nbsp;and&nbsp;recalculate&nbsp;IP&nbsp;checksum&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip-&gt;ip_len&nbsp;=&nbsp;cpu_to_be16(hlen&nbsp;+&nbsp;tcp_hlen&nbsp;+&nbsp;chunk_size);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;increment&nbsp;IP&nbsp;id&nbsp;for&nbsp;subsequent&nbsp;frames&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip-&gt;ip_id&nbsp;=&nbsp;cpu_to_be16(tcp_send_offset/tcp_chunk_size&nbsp;+&nbsp;be16_to_cpu(ip-&gt;ip_id));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip-&gt;ip_sum&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip-&gt;ip_sum&nbsp;=&nbsp;ip_checksum(eth_payload_data,&nbsp;hlen);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DPRINTF(&quot;+++&nbsp;C+&nbsp;mode&nbsp;TSO&nbsp;IP&nbsp;header&nbsp;len=%d&nbsp;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;checksum=%04x\n&quot;,&nbsp;hlen,&nbsp;ip-&gt;ip_sum);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;tso_send_size&nbsp;=&nbsp;ETH_HLEN&nbsp;+&nbsp;hlen&nbsp;+&nbsp;tcp_hlen&nbsp;+&nbsp;chunk_size;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DPRINTF(&quot;+++&nbsp;C+&nbsp;mode&nbsp;TSO&nbsp;transferring&nbsp;packet&nbsp;size&nbsp;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;%d\n&quot;,&nbsp;tso_send_size);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rtl8139_transfer_frame(s,&nbsp;saved_buffer,&nbsp;tso_send_size,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0,&nbsp;(uint8_t&nbsp;*)&nbsp;dot1q_buffer);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;add&nbsp;transferred&nbsp;count&nbsp;to&nbsp;TCP&nbsp;sequence&nbsp;number&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_tcp_hdr-&gt;th_seq&nbsp;=&nbsp;cpu_to_be32(chunk_size&nbsp;+&nbsp;be32_to_cpu(p_tcp_hdr-&gt;th_seq));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++send_count;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在for循环中，会有一处if语句判断tcp_send_offset是否为0，当tcp_send_offset不为0时，会执行memcpy操作，拷贝目标缓冲区进入待发送的tcp_buffer中，这个memcpy拷贝的就是buffer，而每轮都会拷贝一个chunk_size，之后再加一个chunk_size，这样就会超过原本buffer的大小，而考到缓冲区外的空间，造成内存泄露。首先来看memcpy第一回合。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;si
+[----------------------------------registers-----------------------------------]
+RDX:&nbsp;0x5b4&nbsp;//size
+RSI:&nbsp;0x7f49f003adfa&nbsp;--&gt;&nbsp;0x9000000000000000//src&nbsp;
+RDI:&nbsp;0x7f49f003a846&nbsp;--&gt;&nbsp;0x0&nbsp;//dst
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db5880e&nbsp;&lt;rtl8139_cplus_transmit_one+2764&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;rcx,rdx
+&nbsp;&nbsp;&nbsp;0x55b25db58811&nbsp;&lt;rtl8139_cplus_transmit_one+2767&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rdx,rax
+&nbsp;&nbsp;&nbsp;0x55b25db58814&nbsp;&lt;rtl8139_cplus_transmit_one+2770&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rdi,rcx
+=&gt;&nbsp;0x55b25db58817&nbsp;&lt;rtl8139_cplus_transmit_one+2773&gt;:call&nbsp;&nbsp;&nbsp;0x55b25d9361a8//memcpy
+Guessed&nbsp;arguments:
+arg[0]:&nbsp;0x7f49f003a846&nbsp;--&gt;&nbsp;0x0&nbsp;
+arg[1]:&nbsp;0x7f49f003adfa&nbsp;--&gt;&nbsp;0x9000000000000000&nbsp;
+arg[2]:&nbsp;0x5b4&nbsp;
+arg[3]:&nbsp;0x7f49f003a846&nbsp;--&gt;&nbsp;0x0&nbsp;
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+Thread&nbsp;3&nbsp;&quot;qemu-system-x86&quot;&nbsp;hit&nbsp;Breakpoint&nbsp;4,&nbsp;0x000055b25db58817&nbsp;in&nbsp;rtl8139_cplus_transmit_one&nbsp;(s=0x55b26083d430)
+&nbsp;&nbsp;&nbsp;&nbsp;at&nbsp;/home/sh1/Desktop/qemu/hw/net/rtl8139.c:2267
+2267&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy((uint8_t*)p_tcp_hdr&nbsp;+&nbsp;tcp_hlen,&nbsp;(uint8_t*)p_tcp_hdr&nbsp;+&nbsp;tcp_hlen&nbsp;+&nbsp;tcp_send_offset,&nbsp;chunk_size);
+gdb-peda$&nbsp;x/50x&nbsp;0x7f49f003adfa//src
+0x7f49f003adfa:0x90000000000000000x100000007f49e7c7
+0x7f49f003ae0a:0xc0000000000000000x100000007f49e456
+0x7f49f003ae1a:0x80000000000000000x100000007f49ef8b
+gdb-peda$&nbsp;ni
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x7f49f003a846&nbsp;--&gt;&nbsp;0x9000000000000000&nbsp;
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db58811&nbsp;&lt;rtl8139_cplus_transmit_one+2767&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rdx,rax
+&nbsp;&nbsp;&nbsp;0x55b25db58814&nbsp;&lt;rtl8139_cplus_transmit_one+2770&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rdi,rcx
+&nbsp;&nbsp;&nbsp;0x55b25db58817&nbsp;&lt;rtl8139_cplus_transmit_one+2773&gt;:call&nbsp;&nbsp;&nbsp;0x55b25d9361a8
+=&gt;&nbsp;0x55b25db5881c&nbsp;&lt;rtl8139_cplus_transmit_one+2778&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;cmp&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[rbp-0x130],0x0
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+2271&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!is_last_frame)
+gdb-peda$&nbsp;x/50x&nbsp;0x7f49f003a846//target&nbsp;dst
+0x7f49f003a846:0x90000000000000000x100000007f49e7c7
+0x7f49f003a856:0xc0000000000000000x100000007f49e456
+0x7f49f003a866:0x80000000000000000x100000007f49ef8b
+//memcpy(0x7f49f003a846,0x7f49f003adfa,lenth)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这里注意一下目前我们拷贝的缓冲区起始地址是：0x7f49f003adfa，拷贝到目标缓冲区后，单步跟踪，会发现for循环中会调用rtl8139_tansfer_frame函数将saved_buffer送回缓冲区。而saved_buffer的内容就包含了我们拷贝的内容。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;si
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x55b26083d430&nbsp;--&gt;&nbsp;0x55b25f178400&nbsp;--&gt;&nbsp;0x55b25f15eda0&nbsp;--&gt;&nbsp;0x55b25f15ef20&nbsp;--&gt;&nbsp;0x393331386c7472&nbsp;(&#39;rtl8139&#39;)
+RBX:&nbsp;0x1&nbsp;
+RCX:&nbsp;0x0&nbsp;
+RDX:&nbsp;0x5ea&nbsp;
+RSI:&nbsp;0x7f49f003a810&nbsp;--&gt;&nbsp;0x5452563412005452&nbsp;
+RDI:&nbsp;0x55b26083d430&nbsp;--&gt;&nbsp;0x55b25f178400&nbsp;--&gt;&nbsp;0x55b25f15eda0&nbsp;--&gt;&nbsp;0x55b25f15ef20&nbsp;--&gt;&nbsp;0x393331386c7472&nbsp;(&#39;rtl8139&#39;)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db58a3a&nbsp;&lt;rtl8139_cplus_transmit_one+3320&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;r8,rcx
+&nbsp;&nbsp;&nbsp;0x55b25db58a3d&nbsp;&lt;rtl8139_cplus_transmit_one+3323&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;ecx,0x0
+&nbsp;&nbsp;&nbsp;0x55b25db58a42&nbsp;&lt;rtl8139_cplus_transmit_one+3328&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rdi,rax
+=&gt;&nbsp;0x55b25db58a45&nbsp;&lt;rtl8139_cplus_transmit_one+3331&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;0x55b25db5776d&nbsp;&lt;rtl8139_transfer_frame&gt;
+Guessed&nbsp;arguments:
+arg[0]:&nbsp;0x55b26083d430&nbsp;--&gt;&nbsp;0x55b25f178400&nbsp;--&gt;&nbsp;0x55b25f15eda0&nbsp;--&gt;&nbsp;0x55b25f15ef20&nbsp;--&gt;&nbsp;0x393331386c7472&nbsp;(&#39;rtl8139&#39;)
+arg[1]:&nbsp;0x7f49f003a810&nbsp;--&gt;&nbsp;0x5452563412005452&nbsp;
+arg[2]:&nbsp;0x5ea&nbsp;
+arg[3]:&nbsp;0x0&nbsp;
+arg[4]:&nbsp;0x0&nbsp;
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db58a452307&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rtl8139_transfer_frame(s,&nbsp;saved_buffer,&nbsp;tso_send_size,
+gdb-peda$&nbsp;x/50x&nbsp;&nbsp;0x7f49f003a810//save_buffer
+0x7f49f003a810:0x54525634120054520x0045000856341200
+0x7f49f003a820:0x06400040aededc050xa8c0010108c0b9d3
+0x7f49f003a830:0xfecaefbeadde02010x1050bebafeca72c0
+0x7f49f003a840:0x00000000f015adde0xe7c7900000000000
+0x7f49f003a850:0x0000100000007f490xe456c00000000000
+0x7f49f003a860:0x0000100000007f490xef8b800000000000
+0x7f49f003a870:0x0000100000007f490xe43ce00000000000
+0x7f49f003a880:0x0000100000007f490xe369c00000000000</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">随后我们第二轮再次命中memcpy函数，注意一下源缓冲区的值。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;si
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x5b4&nbsp;
+RBX:&nbsp;0x5b4&nbsp;
+RCX:&nbsp;0x7f49f003a846&nbsp;--&gt;&nbsp;0x9000000000000000&nbsp;
+RDX:&nbsp;0x5b4&nbsp;
+RSI:&nbsp;0x7f49f003b3ae&nbsp;--&gt;&nbsp;0x7f49cc0de0000000&nbsp;
+RDI:&nbsp;0x7f49f003a846&nbsp;--&gt;&nbsp;0x9000000000000000&nbsp;
+EFLAGS:&nbsp;0x202&nbsp;(carry&nbsp;parity&nbsp;adjust&nbsp;zero&nbsp;sign&nbsp;trap&nbsp;INTERRUPT&nbsp;direction&nbsp;overflow)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db5880e&nbsp;&lt;rtl8139_cplus_transmit_one+2764&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;rcx,rdx
+&nbsp;&nbsp;&nbsp;0x55b25db58811&nbsp;&lt;rtl8139_cplus_transmit_one+2767&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rdx,rax
+&nbsp;&nbsp;&nbsp;0x55b25db58814&nbsp;&lt;rtl8139_cplus_transmit_one+2770&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rdi,rcx
+=&gt;&nbsp;0x55b25db58817&nbsp;&lt;rtl8139_cplus_transmit_one+2773&gt;:call&nbsp;&nbsp;&nbsp;0x55b25d9361a8//memcpy
+Guessed&nbsp;arguments:
+arg[0]:&nbsp;0x7f49f003a846&nbsp;--&gt;&nbsp;0x9000000000000000&nbsp;
+arg[1]:&nbsp;0x7f49f003b3ae&nbsp;--&gt;&nbsp;0x7f49cc0de0000000&nbsp;
+arg[2]:&nbsp;0x5b4&nbsp;
+arg[3]:&nbsp;0x7f49f003a846&nbsp;--&gt;&nbsp;0x9000000000000000&nbsp;
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+Thread&nbsp;3&nbsp;&quot;qemu-system-x86&quot;&nbsp;hit&nbsp;Breakpoint&nbsp;4,&nbsp;0x000055b25db58817&nbsp;in&nbsp;rtl8139_cplus_transmit_one&nbsp;(s=0x55b26083d430)
+&nbsp;&nbsp;&nbsp;&nbsp;at&nbsp;/home/sh1/Desktop/qemu/hw/net/rtl8139.c:2267
+2267&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy((uint8_t*)p_tcp_hdr&nbsp;+&nbsp;tcp_hlen,&nbsp;(uint8_t*)p_tcp_hdr&nbsp;+&nbsp;tcp_hlen&nbsp;+&nbsp;tcp_send_offset,&nbsp;chunk_size);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这一次是 0x7f49f003b3ae - 0x7f49f003adfa = 0x5b4 确实是一个chunk的大小，如此一来，每一轮memcpy都会加上一个chunk_size，当超出了buffer，就造成了信息泄露，可以拷贝当前buffer之外的内容。而我们只需要从Rx Buffer中读取，这样就会造成信息泄露了。</span></p><p style="text-align: center;"><img src="http://p1.qhimg.com/t0181b5e651ad3b09f7.png" title="t01b9404a08dc6b68e3.png" alt="http://p5.qhimg.com/t01b9404a08dc6b68e3.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x03 CVE-2015-7504漏洞分析</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">CVE-2015-7504是一个堆溢出漏洞，这个漏洞形成的原因涉及到一个PCNetState_st结构体，这个结构体中有一个buffer变量长度大小定义为4096，然而在PCNET网卡的pcnet_receive函数中处理buffer时会在结尾增加一个4字节的CRC校验，这时当我们对传入buffer长度控制为4096的话，4字节的CRC校验会覆盖超出4096长度的4字节位置，而这4字节正好是PCNetState_st结构体中的一个irq关键结构，进一步我们可以利用irq结构控制rip，漏洞文件在/path/to/qemu/hw/net/pcnet.c。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来我们在pcnet_receive函数入口下断点，函数入口处会传入PCNetState_st结构体对象，这里我筛选部分跟此漏洞有关的结构体变量。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;p&nbsp;*(struct&nbsp;PCNetState_st*)0x55b25f34a1a0
+$1&nbsp;=&nbsp;{
+&nbsp;&nbsp;……
+&nbsp;&nbsp;buffer&nbsp;=&nbsp;&quot;RT\000\022\064VRT\000\022\064V\b&quot;,&nbsp;&#39;\000&#39;,&nbsp;
+&nbsp;&nbsp;irq&nbsp;=&nbsp;0x55b2603bc910,&nbsp;
+&nbsp;&nbsp;……
+&nbsp;&nbsp;looptest&nbsp;=&nbsp;0x1
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">随后单步跟踪，这里首先会获取s-&gt;buffer的值。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">//store&nbsp;s-&gt;buffer&nbsp;to&nbsp;src
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x55b25f34a1a0&nbsp;--&gt;&nbsp;0x55b2603bca00&nbsp;--&gt;&nbsp;0x55b2603bca20&nbsp;--&gt;&nbsp;0x55b25e13d940&nbsp;--&gt;&nbsp;0x1&nbsp;
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db4e537&nbsp;&lt;pcnet_receive+952&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;WORD&nbsp;PTR&nbsp;[rax+0x212c],dx
+&nbsp;&nbsp;&nbsp;0x55b25db4e53e&nbsp;&lt;pcnet_receive+959&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;jmp&nbsp;&nbsp;&nbsp;&nbsp;0x55b25db4effb&nbsp;&lt;pcnet_receive+3708&gt;
+&nbsp;&nbsp;&nbsp;0x55b25db4e543&nbsp;&lt;pcnet_receive+964&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rax,QWORD&nbsp;PTR&nbsp;[rbp-0xa8]
+=&gt;&nbsp;0x55b25db4e54a&nbsp;&lt;pcnet_receive+971&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;rax,0x2290//offset
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db4e54a1062&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint8_t&nbsp;*src&nbsp;=&nbsp;s-&gt;buffer;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">随后会到达一处if语句判断，这里会判断looptest的值，当此值为非0值时，会进入else语句处理。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">//looptest
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x1&nbsp;//s-&gt;looptest
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db4e587&nbsp;&lt;pcnet_receive+1032&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[rbp-0xd8],0x0
+&nbsp;&nbsp;&nbsp;0x55b25db4e591&nbsp;&lt;pcnet_receive+1042&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rax,QWORD&nbsp;PTR&nbsp;[rbp-0xa8]
+&nbsp;&nbsp;&nbsp;0x55b25db4e598&nbsp;&lt;pcnet_receive+1049&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;eax,DWORD&nbsp;PTR&nbsp;[rax+0x32b4]
+=&gt;&nbsp;0x55b25db4e59e&nbsp;&lt;pcnet_receive+1055&gt;:test&nbsp;&nbsp;&nbsp;eax,eax
+&nbsp;&nbsp;&nbsp;0x55b25db4e5a0&nbsp;&lt;pcnet_receive+1057&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;jne&nbsp;&nbsp;&nbsp;&nbsp;0x55b25db4e635&nbsp;&lt;pcnet_receive+1206&gt;
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db4e59e1067&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!s-&gt;looptest)&nbsp;{
+//s-&gt;looptest&nbsp;=&nbsp;PCNET_LOOPTEST_CRC
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x1&nbsp;[-------------------------------------code-------------------------------------]
+=&gt;&nbsp;0x55b25db4e645&nbsp;&lt;pcnet_receive+1222&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;je&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x55b25db4e66c&nbsp;&lt;pcnet_receive+1261&gt;
+&nbsp;&nbsp;&nbsp;0x55b25db4e647&nbsp;&lt;pcnet_receive+1224&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rax,QWORD&nbsp;PTR&nbsp;[rbp-0xa8]
+&nbsp;&nbsp;&nbsp;0x55b25db4e64e&nbsp;&lt;pcnet_receive+1231&gt;:movzx&nbsp;&nbsp;eax,WORD&nbsp;PTR&nbsp;[rax+0x206a]
+&nbsp;&nbsp;&nbsp;0x55b25db4e655&nbsp;&lt;pcnet_receive+1238&gt;:movzx&nbsp;&nbsp;eax,ax
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db4e6451075&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;if&nbsp;(s-&gt;looptest&nbsp;==&nbsp;PCNET_LOOPTEST_CRC&nbsp;||</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">随后会进入else语句处理，在else语句处理中会有一处while循环进行CRC校验。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;else&nbsp;if&nbsp;(s-&gt;looptest&nbsp;==&nbsp;PCNET_LOOPTEST_CRC&nbsp;||
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;!CSR_DXMTFCS(s)&nbsp;||&nbsp;size&nbsp;&lt;&nbsp;MIN_BUF_SIZE+4)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint32_t&nbsp;fcs&nbsp;=&nbsp;~0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint8_t&nbsp;*p&nbsp;=&nbsp;src;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(p&nbsp;!=&nbsp;&amp;src[size])
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CRC(fcs,&nbsp;*p++);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(uint32_t&nbsp;*)p&nbsp;=&nbsp;htonl(fcs);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;size&nbsp;+=&nbsp;4;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这处循环CRC校验会处理4096大小的数据。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x55b25f34c430&nbsp;--&gt;&nbsp;0x5452563412005452&nbsp;//buffer
+RBX:&nbsp;0x1000//大小&nbsp;
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db4e66c&nbsp;&lt;pcnet_receive+1261&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[rbp-0xd4],0xffffffff
+&nbsp;&nbsp;&nbsp;0x55b25db4e676&nbsp;&lt;pcnet_receive+1271&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rax,QWORD&nbsp;PTR&nbsp;[rbp-0x98]
+&nbsp;&nbsp;&nbsp;0x55b25db4e67d&nbsp;&lt;pcnet_receive+1278&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;QWORD&nbsp;PTR&nbsp;[rbp-0xb8],rax
+=&gt;&nbsp;0x55b25db4e684&nbsp;&lt;pcnet_receive+1285&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;jmp&nbsp;&nbsp;&nbsp;&nbsp;0x55b25db4e6ce&nbsp;&lt;pcnet_receive+1359&gt;
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+Thread&nbsp;3&nbsp;&quot;qemu-system-x86&quot;&nbsp;hit&nbsp;Breakpoint&nbsp;10,&nbsp;pcnet_receive&nbsp;(
+&nbsp;&nbsp;&nbsp;&nbsp;nc=0x55b2603bca20,&nbsp;buf=0x55b25f34c430&nbsp;&quot;RT&quot;,&nbsp;size_=0x1000)
+&nbsp;&nbsp;&nbsp;&nbsp;at&nbsp;/home/sh1/Desktop/qemu/hw/net/pcnet.c:1080
+1080&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(p&nbsp;!=&nbsp;&amp;src[size])</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">每一轮循环p都会自加1，循环结束后p会到0x1000的位置，随后会进行一处赋值，赋值的内容是htonl(fcs)，长度是4字节，而这4字节的内容会超过s-&gt;buffer的大小，可以回头看一下之前我发的关于PCNetState_st结构体的值，在s-&gt;buffer之后跟的是irq结构。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">根据之前我们跟踪对*src = s-&gt;buffer的汇编代码，我们可以看到buffer的偏移是0x2290，而buffer的长度是0x1000，buffer 的下一个变量是irq结构，buffer是0x2290 + 0x1000 = 0x3290 + 0x55b25f34a1a0 = 0x55b25f34d430</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;x/10x&nbsp;0x55B25F34D400
+0x55b25f34d400:0x00000000000000000x0000000000000000
+0x55b25f34d410:0x00000000000000000x0000000000000000
+0x55b25f34d420:0x00000000000000000xfe7193d400000000
+0x55b25f34d430:0x000055b2603bc910</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">可以看到0x55b25f34d430位置存放的正是irq的指针（结合我之前发的结构体中irq变量的值），接下来我们来看p=htonl(fcs)赋值操作。这里fcs是可控的，我们把它的值设置为0xdeadbeef，因为是PoC仅用于验证，而真实利用，请参考phrack文中的利用方法。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0xdeadbeef&nbsp;//eax的值是deadbeef
+RBX:&nbsp;0x1000&nbsp;
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db4e6f2&nbsp;&lt;pcnet_receive+1395&gt;:call&nbsp;&nbsp;&nbsp;0x55b25d936078
+=&gt;&nbsp;0x55b25db4e6f7&nbsp;&lt;pcnet_receive+1400&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edx,eax
+&nbsp;&nbsp;&nbsp;0x55b25db4e6f9&nbsp;&lt;pcnet_receive+1402&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rax,QWORD&nbsp;PTR&nbsp;[rbp-0xb8]
+&nbsp;
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db4e6f71082&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(uint32_t&nbsp;*)p&nbsp;=&nbsp;htonl(fcs);
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x55b25f34d430&nbsp;--&gt;&nbsp;0x55b2603bc910&nbsp;--&gt;&nbsp;0x55b25f18a3f0&nbsp;--&gt;&nbsp;0x55b25f1564a0&nbsp;--&gt;&nbsp;0x55b25f156620&nbsp;--&gt;&nbsp;0x717269&nbsp;(&#39;irq&#39;)//目标地址
+RDX:&nbsp;0xdeadbeef&nbsp;//拷贝内容
+[-------------------------------------code-------------------------------------]
+=&gt;&nbsp;0x55b25db4e700&nbsp;&lt;pcnet_receive+1409&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[rax],edx
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055b25db4e7001082&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(uint32_t&nbsp;*)p&nbsp;=&nbsp;htonl(fcs);
+gdb-peda$&nbsp;x/10x&nbsp;0x55b25f34d430//拷贝前
+0x55b25f34d430:0x000055b2603bc9100x000055b25db4be11
+0x55b25f34d440:0x000055b25db4bdd90x000055b25f349920
+0x55b25f34d450:0x00000001000000010x000055b25f182850
+0x55b25f34d460:0x00000000000000000x000055b25ff0d760
+0x55b25f34d470:0x000055b2603bc7300x0000000000000001
+gdb-peda$&nbsp;si//拷贝后
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x55b25f34d430&nbsp;--&gt;&nbsp;0x55b2deadbeef&nbsp;
+RDX:&nbsp;0xdeadbeef&nbsp;[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55b25db4e700&nbsp;&lt;pcnet_receive+1409&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[rax],edx
+=&gt;&nbsp;0x55b25db4e702&nbsp;&lt;pcnet_receive+1411&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[rbp-0xe4],0x4
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+1083&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;size&nbsp;+=&nbsp;4;
+gdb-peda$&nbsp;x/10x&nbsp;0x55b25f34d430//拷贝结束后deadbeef覆盖了irq结构
+0x55b25f34d430:0x000055b2deadbeef0x000055b25db4be11</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">当我们覆盖irq结构后，在pcnet_receive函数结束时更新irq结构，调用关系是pcnet_receive()-&gt;pcnet_update_irq()-&gt;qemu_set_irq()</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">RDI:&nbsp;0x55b2deadbeef&nbsp;
+&nbsp;&nbsp;&nbsp;0x55b25db4d31d&nbsp;&lt;pcnet_update_irq+497&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;esi,edx
+&nbsp;&nbsp;&nbsp;0x55b25db4d31f&nbsp;&lt;pcnet_update_irq+499&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rdi,rax
+=&gt;&nbsp;0x55b25db4d322&nbsp;&lt;pcnet_update_irq+502&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;0x55b25daf6c86&nbsp;&lt;qemu_set_irq&gt;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这时，irq的值已经被覆盖了，我们跟入qemu_set_irq，这个函数在/path/to/qemu/hw/core/irq.c中。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;disas&nbsp;qemu_set_irq
+Dump&nbsp;of&nbsp;assembler&nbsp;code&nbsp;for&nbsp;function&nbsp;qemu_set_irq:
+&nbsp;&nbsp;&nbsp;0x000055b25daf6c86&nbsp;&lt;+0&gt;:push&nbsp;&nbsp;&nbsp;rbp
+&nbsp;&nbsp;&nbsp;0x000055b25daf6c87&nbsp;&lt;+1&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rbp,rsp
+&nbsp;&nbsp;&nbsp;0x000055b25daf6c8a&nbsp;&lt;+4&gt;:sub&nbsp;&nbsp;&nbsp;&nbsp;rsp,0x10
+&nbsp;&nbsp;&nbsp;0x000055b25daf6c8e&nbsp;&lt;+8&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;QWORD&nbsp;PTR&nbsp;[rbp-0x8],rdi
+&nbsp;&nbsp;&nbsp;0x000055b25daf6c92&nbsp;&lt;+12&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[rbp-0xc],esi
+&nbsp;&nbsp;&nbsp;0x000055b25daf6c95&nbsp;&lt;+15&gt;:cmp&nbsp;&nbsp;&nbsp;&nbsp;QWORD&nbsp;PTR&nbsp;[rbp-0x8],0x0
+&nbsp;&nbsp;&nbsp;0x000055b25daf6c9a&nbsp;&lt;+20&gt;:je&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x55b25daf6cbd&nbsp;&lt;qemu_set_irq+55&gt;
+=&gt;&nbsp;0x000055b25daf6c9c&nbsp;&lt;+22&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rax,QWORD&nbsp;PTR&nbsp;[rbp-0x8]
+&nbsp;&nbsp;&nbsp;0x000055b25daf6ca0&nbsp;&lt;+26&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rax,QWORD&nbsp;PTR&nbsp;[rax+0x30]
+&nbsp;&nbsp;&nbsp;0x000055b25daf6ca4&nbsp;&lt;+30&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rdx,QWORD&nbsp;PTR&nbsp;[rbp-0x8]
+&nbsp;&nbsp;&nbsp;0x000055b25daf6ca8&nbsp;&lt;+34&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;esi,DWORD&nbsp;PTR&nbsp;[rdx+0x40]
+&nbsp;&nbsp;&nbsp;0x000055b25daf6cab&nbsp;&lt;+37&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rdx,QWORD&nbsp;PTR&nbsp;[rbp-0x8]
+&nbsp;&nbsp;&nbsp;0x000055b25daf6caf&nbsp;&lt;+41&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rcx,QWORD&nbsp;PTR&nbsp;[rdx+0x38]
+&nbsp;&nbsp;&nbsp;0x000055b25daf6cb3&nbsp;&lt;+45&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edx,DWORD&nbsp;PTR&nbsp;[rbp-0xc]
+&nbsp;&nbsp;&nbsp;0x000055b25daf6cb6&nbsp;&lt;+48&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rdi,rcx
+&nbsp;&nbsp;&nbsp;0x000055b25daf6cb9&nbsp;&lt;+51&gt;:call&nbsp;&nbsp;&nbsp;rax
+&nbsp;&nbsp;&nbsp;0x000055b25daf6cbb&nbsp;&lt;+53&gt;:jmp&nbsp;&nbsp;&nbsp;&nbsp;0x55b25daf6cbe&nbsp;&lt;qemu_set_irq+56&gt;
+&nbsp;&nbsp;&nbsp;0x000055b25daf6cbd&nbsp;&lt;+55&gt;:nop
+&nbsp;&nbsp;&nbsp;0x000055b25daf6cbe&nbsp;&lt;+56&gt;:leave&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;0x000055b25daf6cbf&nbsp;&lt;+57&gt;:ret&nbsp;&nbsp;&nbsp;&nbsp;
+End&nbsp;of&nbsp;assembler&nbsp;dump.</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这里rax会作为s-&gt;irq被引用，+0x30位置存放的是handler，这个值会作为一个函数被引用，可以看上面汇编call rax，这也正是我们可以通过构造fake irq结构体来控制rip的方法，而这里由于0xdeadbeef的覆盖，引用的是无效地址，从而引发了异常，导致qemu崩溃。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;x/10x&nbsp;0x55b2deadbeef&nbsp;
+0x55b2deadbeef:Cannot&nbsp;access&nbsp;memory&nbsp;at&nbsp;address&nbsp;0x55b2deadbeef
+gdb-peda$&nbsp;si
+Thread&nbsp;3&nbsp;&quot;qemu-system-x86&quot;&nbsp;received&nbsp;signal&nbsp;SIGSEGV,&nbsp;Segmentation&nbsp;fault.</pre><p style="text-indent: 2em;"><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x04 补丁对比</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">QEMU针对这两个CVE漏洞进行了修补，首先是CVE-2015-5165的patch，在rtl8139_cplus_transmit_one函数中，在be16_to_cpu(ip-&gt;ip_len)-hlen之间做了一个判断，首先是单独执行be16_to_cpu()。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;si
+[----------------------------------registers-----------------------------------]
+RDI:&nbsp;0x1300&nbsp;//ip-&gt;ip_len
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x5599f558bd83&nbsp;&lt;rtl8139_cplus_transmit_one+2020&gt;:movzx&nbsp;&nbsp;eax,ax
+&nbsp;&nbsp;&nbsp;0x5599f558bd86&nbsp;&lt;rtl8139_cplus_transmit_one+2023&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edi,eax
+=&gt;&nbsp;0x5599f558bd88&nbsp;&lt;rtl8139_cplus_transmit_one+2025&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;0x5599f55881f7&nbsp;&lt;be16_to_cpu&gt;
+&nbsp;&nbsp;&nbsp;0x5599f558bd8d&nbsp;&lt;rtl8139_cplus_transmit_one+2030&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;WORD&nbsp;PTR&nbsp;[rbp-0x14a],ax
+&nbsp;&nbsp;&nbsp;0x5599f558bd94&nbsp;&lt;rtl8139_cplus_transmit_one+2037&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;movzx&nbsp;&nbsp;eax,WORD&nbsp;PTR&nbsp;[rbp-0x14a]
+&nbsp;&nbsp;&nbsp;0x5599f558bd9b&nbsp;&lt;rtl8139_cplus_transmit_one+2044&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;cmp&nbsp;&nbsp;&nbsp;&nbsp;eax,DWORD&nbsp;PTR&nbsp;[rbp-0x118]
+&nbsp;&nbsp;&nbsp;0x5599f558bda1&nbsp;&lt;rtl8139_cplus_transmit_one+2050&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;jl&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x5599f558c5d5&nbsp;&lt;rtl8139_cplus_transmit_one+4150&gt;
+Guessed&nbsp;arguments:
+arg[0]:&nbsp;0x1300&nbsp;
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x00005599f558bd882126&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip_data_len&nbsp;=&nbsp;be16_to_cpu(ip-&gt;ip_len);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在be16_to_cpu之后，值仍然会变成0x13，但是不会直接和hlen相减，而是和hlen做了一个判断。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x00005599f558bd9b2127&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ip_data_len&nbsp;&lt;&nbsp;hlen&nbsp;||&nbsp;ip_data_len&nbsp;&gt;&nbsp;eth_payload_len)&nbsp;{
+gdb-peda$&nbsp;info&nbsp;register&nbsp;eax
+eax&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x130x13
+gdb-peda$&nbsp;x&nbsp;0x7f1f47693830-0x118
+0x7f1f47693718:0x0000080000000014</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如果小于，则会跳转到skip offload分支，直接将save_buffer交还缓冲区，并且增加计数，而不会进行后续处理。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;si
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x5599f558c5d1&nbsp;&lt;rtl8139_cplus_transmit_one+4146&gt;:nop
+&nbsp;&nbsp;&nbsp;0x5599f558c5d2&nbsp;&lt;rtl8139_cplus_transmit_one+4147&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;jmp&nbsp;&nbsp;&nbsp;&nbsp;0x5599f558c5d5&nbsp;&lt;rtl8139_cplus_transmit_one+4150&gt;
+&nbsp;&nbsp;&nbsp;0x5599f558c5d4&nbsp;&lt;rtl8139_cplus_transmit_one+4149&gt;:nop
+=&gt;&nbsp;0x5599f558c5d5&nbsp;&lt;rtl8139_cplus_transmit_one+4150&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;rax,QWORD&nbsp;PTR&nbsp;[rbp-0x158]
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+2330&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++s-&gt;tally_counters.TxOk;
+skip_offload:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;update&nbsp;tally&nbsp;counter&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++s-&gt;tally_counters.TxOk;
+……</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">来看一下补丁前后的对比。</span></p><p style="text-align: center;"><img src="http://p4.qhimg.com/t01a5f7c81dc736a960.png" title="t01a36f06e942d001d3.png" alt="http://p8.qhimg.com/t01a36f06e942d001d3.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">关于CVE-2015-7504的修补在那个位置的上面增加了一处判断。</span></p><p style="text-align: center;"><img src="http://p4.qhimg.com/t01b53114b567643dd0.png" title="t012e0cd8476acc1501.png" alt="http://p7.qhimg.com/t012e0cd8476acc1501.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里对size的大小进行了判断，给4096字节的buffer留出了4字节存放fcs的值，这里有个比较有意思的事情，就是刚开始我以为这里修补了漏洞，但是我在这个函数下断点的时候，却意外的发现没有命中而是直接退出了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">所以好奇跟了一下，发现实际上真正封堵这个漏洞的是在外层调用pcnet_transmit函数中，在外层函数中会有另外一处判断。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">gdb-peda$&nbsp;p&nbsp;*(struct&nbsp;PCNetState_st*)0x55e53ecafc80
+$2&nbsp;=&nbsp;{
+&nbsp;&nbsp;……
+&nbsp;&nbsp;xmit_pos&nbsp;=&nbsp;0x0,&nbsp;
+&nbsp;&nbsp;……}
+//关键判断
+gdb-peda$&nbsp;si
+[----------------------------------registers-----------------------------------]
+RAX:&nbsp;0x1000&nbsp;//bcnt
+RDX:&nbsp;0x0&nbsp;//s-&gt;xmit_pos
+EFLAGS:&nbsp;0x206&nbsp;(carry&nbsp;PARITY&nbsp;adjust&nbsp;zero&nbsp;sign&nbsp;trap&nbsp;INTERRUPT&nbsp;direction&nbsp;overflow)
+[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55e53c39cc26&nbsp;&lt;pcnet_transmit+704&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rax,QWORD&nbsp;PTR&nbsp;[rbp-0x58]
+&nbsp;&nbsp;&nbsp;0x55e53c39cc2a&nbsp;&lt;pcnet_transmit+708&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;edx,DWORD&nbsp;PTR&nbsp;[rax+0x218c]
+&nbsp;&nbsp;&nbsp;0x55e53c39cc30&nbsp;&lt;pcnet_transmit+714&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;eax,DWORD&nbsp;PTR&nbsp;[rbp-0x3c]
+=&gt;&nbsp;0x55e53c39cc33&nbsp;&lt;pcnet_transmit+717&gt;:add&nbsp;&nbsp;&nbsp;&nbsp;eax,edx
+&nbsp;&nbsp;&nbsp;0x55e53c39cc35&nbsp;&lt;pcnet_transmit+719&gt;:cmp&nbsp;&nbsp;&nbsp;&nbsp;eax,0xffc
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055e53c39cc331250&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(s-&gt;xmit_pos&nbsp;+&nbsp;bcnt&nbsp;&gt;&nbsp;sizeof(s-&gt;buffer)&nbsp;-&nbsp;4)&nbsp;{</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这里s-&gt;buffer的大小为4096，为它留出4字节的空间给CRC校验，也就是当我们长度设置为4096，这里xmit_pos为0，bcnt为4096，那么是不满足要求的，则在这里就进入异常处理。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">[-------------------------------------code-------------------------------------]
+&nbsp;&nbsp;&nbsp;0x55e53c39cc35&nbsp;&lt;pcnet_transmit+719&gt;:cmp&nbsp;&nbsp;&nbsp;&nbsp;eax,0xffc
+&nbsp;&nbsp;&nbsp;0x55e53c39cc3a&nbsp;&lt;pcnet_transmit+724&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;jbe&nbsp;&nbsp;&nbsp;&nbsp;0x55e53c39cc4f&nbsp;&lt;pcnet_transmit+745&gt;
+&nbsp;&nbsp;&nbsp;0x55e53c39cc3c&nbsp;&lt;pcnet_transmit+726&gt;:mov&nbsp;&nbsp;&nbsp;&nbsp;rax,QWORD&nbsp;PTR&nbsp;[rbp-0x58]
+=&gt;&nbsp;0x55e53c39cc40&nbsp;&lt;pcnet_transmit+730&gt;:
+&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;PTR&nbsp;[rax+0x218c],0xffffffff
+[------------------------------------------------------------------------------]
+Legend:&nbsp;code,&nbsp;data,&nbsp;rodata,&nbsp;value
+0x000055e53c39cc401251&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;s-&gt;xmit_pos&nbsp;=&nbsp;-1;
+gdb-peda$&nbsp;p&nbsp;*(struct&nbsp;PCNetState_st*)0x55e53ecafc80
+$2&nbsp;=&nbsp;{
+&nbsp;&nbsp;……
+&nbsp;&nbsp;xmit_pos&nbsp;=&nbsp;0xffffffff,&nbsp;
+&nbsp;&nbsp;……}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">而在后面的代码逻辑中，最后传入漏洞函数的size大小，就是s-&gt;xmit_pos+bcnt，因此外层函数一定满足size&lt;=4092的条件，似乎里面的修补显得没有那么必要了。因此我也不太明白为什么会修补了两处，但至少这样做，彻底将这里的Heap Buffer Overflow修补了。</span></p><p style="text-align: center;"><img src="http://p5.qhimg.com/t011692caa3ff2dc633.png" title="t01dfe5b26b30a38f63.png" alt="http://p4.qhimg.com/t01dfe5b26b30a38f63.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这样我们完成了对PoC的调试，关于利用在phrack上的描述已经非常详细，只需要按照调试PoC的思路构造可控结构体，就可以完成最后的利用了。</span></p><p style="text-align: center;"><img src="http://p1.qhimg.com/t01f87905823bd7aa25.png" title="t01ee5e1f33164e31f0.png" alt="http://p0.qhimg.com/t01ee5e1f33164e31f0.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从虚拟机逃逸到宿主机获得宿主机权限的整个过程还是很有意思的，真的像从黑暗之门穿越到另一个世界，在内存中寻寻觅觅，最后一举突破的感觉非常棒。也希望自己未来能够挖到更多更强更高危的漏洞吧，请师傅们多多指正，感谢阅读！</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考文章</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><a href="http://www.phrack.org/papers/vm-escape-qemu-case-study.html">http://www.phrack.org/papers/vm-escape-qemu-case-study.html</a> </span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://bbs.pediy.com/thread-217997.htm">http://bbs.pediy.com/thread-217997.htm</a>&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://bbs.pediy.com/thread-218045.htm">http://bbs.pediy.com/thread-218045.htm</a>&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://bbs.pediy.com/thread-217999.htm">http://bbs.pediy.com/thread-217999.htm</a>&nbsp; &nbsp;&nbsp;&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="http://www.freebuf.com/articles/87949.html">http://www.freebuf.com/articles/87949.html</a>&nbsp;</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/4265.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【漏洞分析】前往黑暗之门！Debugee in QEMU - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4265" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16143" user-name="爱吃红提的小王子" href="javascript:;">
+                爱吃红提的小王子            </a>
+                        <span class="comment-time">2017-08-17 11:21:57</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16143">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16143" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">写得真不错，学习。</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2554610746" class="response" data-bind-id="2554610746" data-target="16135" user-name="東" href="javascript:;">
+                東            </a>
+                        <span class="comment-time">2017-08-16 22:38:05</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2554610746" data-target="16135">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16135" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">前排跟随k0shl师傅学习</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/4x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2876331896" class="response" data-bind-id="2876331896" data-target="16134" user-name="360U2876331896" href="javascript:;">
+                360U2876331896            </a>
+                        <span class="comment-time">2017-08-16 20:34:06</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2876331896" data-target="16134">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16134" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">跟着扣屎师傅学挖洞</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src='http://p1.qhmsg.com/dm/48_48_100/t014f4ec10242661d68.jpg'/>              
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="244711266" class="response" data-bind-id="244711266" data-target="16128" user-name="smierll" href="javascript:;">
+                smierll            </a>
+                        <span class="comment-time">2017-08-16 19:12:56</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="244711266" data-target="16128">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16128" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">前排跟随koshi师傅学习</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="4265" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

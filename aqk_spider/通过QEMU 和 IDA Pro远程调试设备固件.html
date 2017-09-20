@@ -1,0 +1,561 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>通过QEMU 和 IDA Pro远程调试设备固件 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="QEMU,IDA Pro,远程调试,设备固件"/>
+    
+        <meta name="description" content="在分析嵌入式设备的固件时，只采用静态分析方​式通常是不够的。你需要实际执行你的分析目标来观察它的行为。在嵌入式Linux设备的世界里，很容易把一个调试器放在目标硬件上进行调试。如果你能在自己的系统上运行二进制文件，而不是拖着硬件做分析, 将会方便很多。这就需要用QEMU进行仿真。
+接下来的一系列文章，我将专注于Netgear的一个比较流行的无线路由器，对其UPnP守护进程进行逆向分析。这篇文章将介绍如何在系统仿真环境下运行守护进程，以便可以通过调试器对其进行分析。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>通过QEMU 和 IDA Pro远程调试设备固件</h2>
+                <div class="article-msg">
+                    <span class="time">2015-01-08 12:15:39</span>
+                                        <span class="read">阅读：11901次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_187"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="187" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://drops.wooyun.org/tips/4523"
+                             target="_blank">来源： wooyun</a></span>
+                    
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 16px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x00 背景与简介</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">这篇文章主要讲了如何在模拟环境下调试设备固件。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">作者：Zach Cutlip</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">原文链接：http://shadow-file.blogspot.gr/2015/01/dynamically-analyzing-wifi-routers-upnp.html。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">在分析嵌入式设备的固件时，只采用静态分析方式通常是不够的。你需要实际执行你的分析目标来观察它的行为。在嵌入式Linux设备的世界里，很容易把一个调试器放在目标硬件上进行调试。如果你能在自己的系统上运行二进制文件，而不是拖着硬件做分析, 将会方便很多。这就需要用QEMU进行仿真。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">接下来的一系列文章，我将专注于Netgear的一个比较流行的无线路由器，对其UPnP守护进程进行逆向分析。这篇文章将介绍如何在系统仿真环境下运行守护进程，以便可以通过调试器对其进行分析。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 16px;">0x01 先决条件</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">首先，建议你读一下我的工作区以及所使用的工具的描述。这里是链接http://shadow-file.blogspot.com/2013/12/emulating-and-debugging-workspace.html。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">你需要一个MIPS Linux的模拟环境。对于这一点，建议读者查看我之前的搭建QEMU的帖子。http://shadow-file.blogspot.com/2013/05/running-debian-mips-linux-in-qemu.html</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">你还需要一个MIPS Linux的交叉编译器。我不会详细描述交叉编译器的建立过程，因为它们一团糟。有时候，你需要较旧的工具链，而其他时候，你需要较新的工具链。最好使用uClibc buildroot project（http://buildroot.uclibc.org/）同时建立big endian和little endian的MIPS Linux工具链。除此之外，每当我发现其他交叉编译工具链时，我都会保存他们。类似D-Link和Netgear公司发布GPL版本tarballs是旧工具链的好来源。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">一旦你有了目标架构的交叉编译工具链，你需要为目标建立GDB调试器。你至少需要适合目标架构的被静态编译的gdbserver。如果要使用GDB进行远程调试，你需要编译GDB，以便在你的本地机器架构（如X86-64）上运行，来对目标架构（如MIPS或mipsel体系结构）进行调试。同样，我也不会去讨论这些工具的构建，如果你建立了你的工具链，这应该很容易了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">后面我将描述如何使用IDA Pro来进行远程调试。但是，如果你想使用gdb，可以看看我的MIPS gdbinit文件：https://github.com/zcutlip/gdbinit-mips</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 16px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x02 模拟一个简单的二进制</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">假设你已经建立了上述工具，并能正常工作，你现在应该能够通过SSH进入您的模拟MIPS系统。正如我在Debian MIPS QEMU文章中所述，我喜欢连接QEMU的接口到VMWare的NAT接口，这样就能够用我的Mac通过SSH来接入，而不需要先登陆我的Ubuntu虚拟机。这也可以让我通过NFS将我的Mac工作区挂载到QEMU系统。这样，无论我工作在主机环境中，或是Ubuntu中，还是在QEMU中，我都在用相同的工作区。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"></span></p><pre class="brush:bash;toolbar:false">zach@malastare:~&nbsp;(130)&nbsp;$&nbsp;ssh&nbsp;root@192.168.127.141
+root@192.168.127.141&#39;s&nbsp;password:
+Linux&nbsp;debian-mipsel&nbsp;2.6.32-5-4kc-malta&nbsp;#1&nbsp;Wed&nbsp;Jan&nbsp;12&nbsp;06:13:27&nbsp;UTC&nbsp;2011&nbsp;mips
+root@debian-mipsel:~#&nbsp;mount
+/dev/sda1&nbsp;on&nbsp;/&nbsp;type&nbsp;ext3&nbsp;(rw,errors=remount-ro)
+malastare:/Users/share/code&nbsp;on&nbsp;/root/code&nbsp;type&nbsp;nfs&nbsp;(rw,addr=192.168.127.1)
+root@debian-mipsel:~#cd&nbsp;code
+root@debian-mipsel:~/code#</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">一旦登陆到模拟系统，cd到从设备的固件中提取的文件系统中。你应该能够chroot到固件的根文件系统。需要使用chroot，因为目标二进制是和固件的库链接的，很可能不能跟Debian的共享库一起工作。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"></span></p><pre class="brush:bash;toolbar:false">root@debian-mipsel:~#cd&nbsp;code/wifi-reversing/netgear/r6200/extracted-1.0.0.28/rootfs/
+root@debian-mipsel:~/code/wifi-reversing/netgear/r6200/extracted-1.0.0.28/rootfs#file&nbsp;./bin/ls
+./bin/ls:&nbsp;symbolic&nbsp;link&nbsp;to&nbsp;`busybox&#39;
+root@debian-mipsel:~/code/wifi-reversing/netgear/r6200/extracted-1.0.0.28/rootfs#file&nbsp;./bin/busybox
+./bin/busybox:&nbsp;ELF&nbsp;32-bit&nbsp;LSB&nbsp;executable,&nbsp;MIPS,&nbsp;MIPS32&nbsp;version&nbsp;1&nbsp;(SYSV),&nbsp;dynamically&nbsp;linked&nbsp;(uses&nbsp;shared&nbsp;libs),&nbsp;stripped
+root@debian-mipsel:~/code/wifi-reversing/netgear/r6200/extracted-1.0.0.28/rootfs#chroot&nbsp;.&nbsp;/bin/ls&nbsp;-l&nbsp;/bin/busybox
+-rwxr-xr-x&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;10001&nbsp;&nbsp;&nbsp;&nbsp;80&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;276413&nbsp;Sep&nbsp;20&nbsp;&nbsp;2012&nbsp;/bin/busybox
+root@debian-mipsel:~/code/wifi-reversing/netgear/r6200/extracted-1.0.0.28/rootfs#</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">在上面的例子中，我已切换到所提取的文件系统的根目录中。然后使用file命令，我了解到busybox是little endian MIPS可执行文件。然后，chroot到提取根目录，并运行bin/ls，它是busybox的符号链接。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">如果试图简单的通过“chroot .”来地启动一个shell，将无法正常工作。因为你的默认shell是bash，而大多数嵌入式设备没有bash。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">root@debian-mipsel:~/code/wifi-reversing/netgear/r6200/extracted-1.0.0.28/rootfs#chroot . chroot: failed to run command `/bin/bash&#39;: No such file or directory root@debian-mipsel:~/code/wifi-reversing/netgear/r6200/extracted-1.0.0.28/rootfs#</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">相反，你可以chroot并执行bin / sh：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"></span></p><pre class="brush:bash;toolbar:false">root@debian-mipsel:~/code/wifi-reversing/netgear/r6200/extracted-1.0.0.28/rootfs#chroot&nbsp;.&nbsp;/bin/sh
+BusyBox&nbsp;v1.7.2&nbsp;(2012-09-20&nbsp;10:26:08&nbsp;CST)&nbsp;built-in&nbsp;shell&nbsp;(ash)
+Enter&nbsp;&#39;help&#39;&nbsp;for&nbsp;a&nbsp;list&nbsp;of&nbsp;built-in&nbsp;commands.
+#
+#
+#exit
+root@debian-mipsel:~/code/wifi-reversing/netgear/r6200/extracted-1.0.0.28/rootfs#</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 16px;">0x03 硬件解决方法</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">即使有了必要的工具，建立了仿真环境且工作正常，你仍然可能遇到障碍。虽然QEMU在模拟核心芯片组包括CPU上都做的很不错，但是QEMU往往不能提供你想运行的二进制程序需要的硬件。如果你试图模仿一些简单的像/bin/ls的程序，通常能够正常工作。但更复杂的东西，如肯定有特定的硬件依赖的UPnP守护程序，QEMU就不能够满足。尤其对于管理嵌入式系统硬件的程序更是这样，例如打开或关闭无线适配器。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">你将遇到的最常见问题是在运行系统服务，如Web服务器或UPnP守护进程时，缺乏NVRAM。非易失性RAM通常是包含配置参数的设备快速存储器的一个分区。当一个守护进程启动时，它通常会尝试查询NVRAM，获取其运行时配置信息。有时一个守护进程会查询NVRAM的几十甚至上百个参数。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">为了解决在模拟条件下缺乏NVRAM的问题，我写了一个叫nvram-faker的库。当你运行二进制程序时，应该使用LD_PRELOAD对nvram-faker库进行预加载。它会拦截通常由libnvram.so提供的nvram_get（）调用。nvram-faker会查询你提供的一个INI风格的配置文件，而不是试图查询NVRAM。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">附带的README提供更完整的说明。这里有一个链接：https://github.com/zcutlip/nvram-faker</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">即使解决了NVRAM问题，该程序可能会假设某些硬件是存在的。如果硬件不存在，该程序可能无法运行，或者即便它运行了，行为可能也与在其目标硬件上运行时有所不同。在这种情况下，你可能需要修补二进制文件。采用二进制补丁的情况各不相同。这取决于期望什么硬件，以及它不存在时的行为是什么。如果硬件缺失，你可能需要修补一个被执行到的条件分支。也可能需要修补针对特殊设备的ioctl（）调用，如果你想将其替代为针对常规文件的读取和写入时。这里我将不谈论修补的细节，但在我的BT HomeHub文章以及44CON的相应讲座中进行了讨论。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">这里是这些资源的链接：http://shadow-file.blogspot.com/2013/09/44con-resources.html</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 16px;">0x04 附加调试器</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">一旦在QEMU中运行了二进制程序，就可以附加调试器了。当然你需要gdbserver。同样，这个工具应该适合目标架构并被静态编译，因为你会在chroot下运行它。你需要将它复制到提取的文件系统的根目录中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"></span></p><pre class="brush:bash;toolbar:false">#&nbsp;./gdbserver
+Usage:&nbsp;gdbserver&nbsp;[OPTIONS]&nbsp;COMM&nbsp;PROG&nbsp;[ARGS&nbsp;...]
+gdbserver&nbsp;[OPTIONS]&nbsp;--attach&nbsp;COMM&nbsp;PID
+gdbserver&nbsp;[OPTIONS]&nbsp;--multi&nbsp;COMM
+COMM&nbsp;may&nbsp;either&nbsp;be&nbsp;a&nbsp;tty&nbsp;device&nbsp;(for&nbsp;serial&nbsp;debugging),&nbsp;or
+HOST:PORT&nbsp;to&nbsp;listen&nbsp;for&nbsp;a&nbsp;TCP&nbsp;connection.
+Options:
+&nbsp;&nbsp;--debug&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Enable&nbsp;general&nbsp;debugging&nbsp;output.
+--remote-debug&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Enable&nbsp;remote&nbsp;protocol&nbsp;debugging&nbsp;output.
+--version&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Display&nbsp;version&nbsp;information&nbsp;and&nbsp;exit.
+&nbsp;&nbsp;--wrapperWRAPPER&nbsp;--&nbsp;&nbsp;Run&nbsp;WRAPPER&nbsp;to&nbsp;start&nbsp;new&nbsp;programs.
+&nbsp;&nbsp;--once&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Exit&nbsp;after&nbsp;the&nbsp;first&nbsp;connection&nbsp;has&nbsp;closed.
+#</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">你可以将gdbserver附加到正在运行的进程，或者用它来直接执行二进制程序。如果你需要调试只发生一次的初始化程序，你可以选择后者。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">另一方面，你可能要等到守护进程被创建。据我所知没有办法让IDA跟踪创建的进程（forked processes）。你需要单独的附加到它们。如果采用这种方式，你可以在chroot外，附加到已经运行的进程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">以下shell脚本将在chroot下执行upnpd。如果DEBUG设置为1，它会附加在upnpd上，并在1234端口上暂停等待远程调试会话。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"></span></p><pre class="brush:cpp;toolbar:false">ROOTFS=&quot;/root/code/wifi-reversing/netgear/r6200/extracted-1.0.0.28/rootfs&quot;
+chroot$ROOTFS&nbsp;/bin/sh&nbsp;-c&nbsp;&quot;LD_PRELOAD=/libnvram-faker.so&nbsp;/usr/sbin/upnpd&quot;
+&nbsp;
+#Give&nbsp;upnpd&nbsp;a&nbsp;bit&nbsp;to&nbsp;initialize&nbsp;and&nbsp;fork&nbsp;into&nbsp;the&nbsp;background.
+sleep&nbsp;3;
+&nbsp;
+if&nbsp;[&nbsp;&quot;x1&quot;&nbsp;=&nbsp;&quot;x$DEBUG&quot;&nbsp;];
+then
+&nbsp;
+$ROOTFS/gdbserver&nbsp;--attach&nbsp;0.0.0.0:1234&nbsp;$(pgrepupnpd)
+fi</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">你可以在recvfrom（）调用之前创建一个断点，然后当你向upnpd发送M-SEARCH包时，验证调试器断点。</span></p><p style="text-indent: 2em; text-align: left;"><img src="http://p6.qhimg.com/t01bd60110613f4c6ef.png" title="t01bd60110613f4c6ef.png" alt="http://p7.qhimg.com/t01bd60110613f4c6ef.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">然后，在IDA的Debugger菜单中的Process选项中设置“主机名”为你的QEMU系统的IP地址，并设置端口为gdbserver正在监听的端口。我用的是1234。</span></p><p style="text-indent: 2em; text-align: left;"><img src="http://p8.qhimg.com/t01daab1b11afd91c67.png" title="t01daab1b11afd91c67.png" alt="t01daab1b11afd91c67.png" width="600" height="285" border="0" vspace="0" style="width: 600px; height: 285px;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">接受设置，然后通过IDA的CTRL+8热键连接到远程调试会话。再次按Ctrl+8继续执行。你应该能够发送一个M-SEARCH包1，可以看到调试器命中断点。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;"><img src="http://p8.qhimg.com/t01688cf3fc40a9c0a3.png" title="t01688cf3fc40a9c0a3.png" alt="http://p0.qhimg.com/t01688cf3fc40a9c0a3.png"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">显然还有很多需要探索，也会遇到有很多这里未提及的情况，但希望这可以让你开始。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 14px;">我推荐Craig Heffner用于UPnP分析的miranda工具：https://code.google.com/p/miranda-upnp/</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文转载自 wooyun<br/><a class="text-more" href="http://drops.wooyun.org/tips/4523" target="_blank">原文链接：http://drops.wooyun.org/tips/4523</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="通过QEMU 和 IDA Pro远程调试设备固件 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="187" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="64d932c9bb50dc5a83db601d9b02e735">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+                                <li><a href="/learning/detail/4424.html" alt="【知识】9月16日 - 每日安全知识热点" target="_blank">【知识】9月16日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

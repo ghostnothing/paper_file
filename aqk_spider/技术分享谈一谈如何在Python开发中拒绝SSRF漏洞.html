@@ -1,0 +1,748 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】谈一谈如何在Python开发中拒绝SSRF漏洞 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Python,SSRF,漏洞,内网"/>
+    
+        <meta name="description" content="SSRF是一种常见的Web漏洞，通常存在于需要请求外部内容的逻辑中，比如本地化网络图片、XML解析时的外部实体注入、软件的离线下载等。当攻击者传入一个未经验证的URL，后端代码直接请求这个URL，将会造成SSRF漏洞。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】谈一谈如何在Python开发中拒绝SSRF漏洞</h2>
+                <div class="article-msg">
+                    <span class="time">2016-09-30 11:30:33</span>
+                    
+                                        <span class="read">阅读：38285次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3074"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3074" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=725715450" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t018dbae4f8676012e4.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=725715450" style="color:#848e99;">ph17h0n</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;"><strong><img src="http://p9.qhimg.com/t01e43e0241a595e648.png" title="t01087a7dd76c0b7d30.png" alt="http://p6.qhimg.com/t01087a7dd76c0b7d30.png"/></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;"></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; white-space: normal; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192);"><span style="font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">作者：<a href="http://bobao.360.cn/member/contribute?uid=725715450" target="_blank" title="ph17h0n" textvalue="ph17h0n" style="text-decoration: underline; font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 112, 192);"><span style="font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 112, 192);">ph17h0n</span></a></span><span style="font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; white-space: normal; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">稿费：500RMB（不<span style="font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 112, 192);"></span>服你也来投稿啊！）</span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; white-space: normal; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192);"><span style="font-weight: 900;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></span></span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; white-space: normal; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192);"><span style="font-weight: 900;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></span></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-weight: 900; line-height: 25px; text-indent: 32px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 0, 0); font-size: 18px; background-color: rgb(255, 255, 255);">传送门</span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; text-indent: 2em;">SSRF漏洞的挖掘经验</strong><strong style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; text-indent: 2em;">&nbsp;</strong><strong style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/240.html" target="_self">http://bobao.360.cn/learning/detail/240.html</a></strong></span></p><p style="text-indent: 2em; text-align: left;"><strong style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; text-indent: 2em;"><br/></strong></p><p style="text-indent: 2em; text-align: left;"><strong style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; text-indent: 2em;"><strong style="white-space: normal; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; text-indent: 2em;">0x01 SSRF漏洞常见防御手法及绕过方法</strong></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">SSRF是一种常见的Web漏洞，通常存在于需要请求外部内容的逻辑中，比如本地化网络图片、XML解析时的外部实体注入、软件的离线下载等。当攻击者传入一个未经验证的URL，后端代码直接请求这个URL，将会造成SSRF漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">具体危害体现在以下几点上：</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">URL为内网IP或域名，攻击者将可以通过SSRF漏洞扫描目标内网，查找内网内的漏洞，并想办法反弹权限</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">URL中包含端口，攻击者将可以扫描并发现内网中机器的其他服务，再进一步进行利用</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当请求方法允许其他协议的时候，将可能利用gopher、file等协议进行第三方服务利用，如利用内网的redis获取权限、利用fastcgi进行getshell等</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">特别是这两年，大量利用SSRF攻击内网服务的案例被爆出来，导致SSRF漏洞慢慢受到重视。这就给Web应用开发者提出了一个难题：<span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(255, 0, 0);"><strong>如何在保证业务正常的情况下防御SSRF漏洞？</strong></span></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">很多开发者认为，只要检查一下请求url的host不为内网IP，即可防御SSRF。这个观点其实提出了两个技术要点：</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">1.如何检查IP是否为内网IP</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2.如何获取真正请求的host</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">于是，攻击者通过这两个技术要点，针对性地想出了很多绕过方法。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x02 如何检查IP是否为内网IP</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">这实际上是很多开发者面临的第一个问题，很多新手甚至连内网IP常用的段是多少也不清楚。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">何谓内网IP，实际上并没有一个硬性的规定，多少到多少段必须设置为内网。有的管理员可能会将内网的IP设置为233.233.233.0/24段，当然这是一个比较极端的例子。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">通常我们会将以下三个段设置为内网IP段，所有内网内的机器分配到的IP是在这些段中：</span></p><pre class="brush:plain;toolbar:false">&nbsp;192.168.0.0/16&nbsp;=&gt;&nbsp;192.168.0.0&nbsp;~&nbsp;192.168.255.255
+&nbsp;10.0.0.0/8&nbsp;=&gt;&nbsp;10.0.0.0&nbsp;~&nbsp;10.255.255.255
+&nbsp;172.16.0.0/12&nbsp;=&gt;&nbsp;172.16.0.0&nbsp;~&nbsp;172.31.255.255</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">所以通常，我们只需要判断目标IP不在这三个段，另外还包括一个 127.0.0.0/8 段即可。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">很多人会忘记 127.0.0.0/8 ，认为本地地址就是 127.0.0.1 ，实际上本地回环包括了整个127段。你可以访问<strong>http://127.233.233.233/</strong>，会发现和请求127.0.0.1是一个结果：</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p1.qhimg.com/t017214ea3e00e4482c.jpg" alt="" style="color: rgb(51, 51, 51); font-family: &#39;Open Sans&#39;, &#39;Clear Sans&#39;, &#39;Helvetica Neue&#39;, Helvetica, Arial, sans-serif; line-height: 25.6px; white-space: pre-wrap; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent; vertical-align: middle;"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">所以我们需要防御的实际上是4个段，只要IP不落在这4个段中，就认为是“安全”的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">网上一些开发者会选择使用“正则”的方式判断目标IP是否在这四个段中，这种判断方法通常是会遗漏或误判的，比如如下代码：</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p5.qhimg.com/t018978fab8f2d32a52.jpg" alt="" style="color: rgb(51, 51, 51); font-family: &#39;Open Sans&#39;, &#39;Clear Sans&#39;, &#39;Helvetica Neue&#39;, Helvetica, Arial, sans-serif; line-height: 25.6px; white-space: pre-wrap; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent; vertical-align: middle;"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这是Sec-News最老版本判断内网IP的方法，里面使用正则判断IP是否在内网的几个段中。这个正则也是我当时临时在网上搜的，很明显这里存在多个绕过的问题：</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">1. 利用八进制IP地址绕过</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2. 利用十六进制IP地址绕过</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">3. 利用十进制的IP地址绕过</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">4. 利用IP地址的省略写法绕过</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这四种方式我们可以依次试试：</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p3.qhimg.com/t013c5fa610384db473.jpg" alt="" style="color: rgb(51, 51, 51); font-family: &#39;Open Sans&#39;, &#39;Clear Sans&#39;, &#39;Helvetica Neue&#39;, Helvetica, Arial, sans-serif; line-height: 25.6px; white-space: pre-wrap; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent; vertical-align: middle;"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">四种写法（5个例子）：012.0.0.1 、 0xa.0.0.1 、 167772161 、 10.1 、 0xA000001 实际上都请求的是10.0.0.1，但他们一个都匹配不上上述正则表达式。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">更聪明一点的人是不会用正则表达式来检测IP的（也许这类人并不知道内网IP的正则该怎么写）。Wordpress的做法是，先将IP地址规范化，然后用“.”将其分割成数组parts，然后根据parts[0]和parts[1]的取值来判断：</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p7.qhimg.com/t01a6a0ecaf8343a13c.jpg" alt="" style="color: rgb(51, 51, 51); font-family: &#39;Open Sans&#39;, &#39;Clear Sans&#39;, &#39;Helvetica Neue&#39;, Helvetica, Arial, sans-serif; line-height: 25.6px; white-space: pre-wrap; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent; vertical-align: middle;"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">其实也略显麻烦，而且曾经也出现过用进制方法绕过的案例（ <a href="http://xlab.baidu.com/wordpress/" target="_self">WordPress &lt;4.5 SSRF 分析</a> ），不推荐使用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我后来选择了一种更为简单的方法。众所周知，IP地址是可以转换成一个整数的，在PHP中调用ip2long函数即可转换，在Python使用inet_aton去转换。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">而且IP地址是和2^32内的整数一一对应的，也就是说0.0.0.0 == 0，255.255.255.255 == 2^32 - 1。所以，我们判断一个IP是否在某个IP段内，只需将IP段的起始值、目标IP值全部转换为整数，然后比较大小即可。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">于是，我们可以将之前的正则匹配的方法修改为如下方法：</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p8.qhimg.com/t01751d07520595bad2.jpg" alt="" style="color: rgb(51, 51, 51); font-family: &#39;Open Sans&#39;, &#39;Clear Sans&#39;, &#39;Helvetica Neue&#39;, Helvetica, Arial, sans-serif; line-height: 25.6px; white-space: pre-wrap; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent; vertical-align: middle;"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这就是一个最简单的方法，也最容易理解。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">假如你懂一点掩码的知识，你应该知道IP地址的掩码实际上就是(32 - IP地址所代表的数字的末尾bit数)。所以，我们只需要保证目标IP和内网边界IP的前“掩码”位bit相等即可。借助位运算，将以上判断修改地更加简单：</span></p><pre class="brush:python;toolbar:false;">from&nbsp;socket&nbsp;import&nbsp;inet_aton
+from&nbsp;struct&nbsp;import&nbsp;unpack
+
+def&nbsp;ip2long(ip_addr):
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;unpack(&quot;!L&quot;,&nbsp;inet_aton(ip_addr))[0]
+&nbsp;&nbsp;&nbsp;&nbsp;
+def&nbsp;is_inner_ipaddress(ip):
+&nbsp;&nbsp;&nbsp;&nbsp;ip&nbsp;=&nbsp;ip2long(ip)&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;ip2long(&#39;127.0.0.0&#39;)&nbsp;&gt;&gt;&nbsp;24&nbsp;==&nbsp;ip&nbsp;&gt;&gt;&nbsp;24&nbsp;or&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip2long(&#39;10.0.0.0&#39;)&nbsp;&gt;&gt;&nbsp;24&nbsp;==&nbsp;ip&nbsp;&gt;&gt;&nbsp;24&nbsp;or&nbsp;\&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip2long(&#39;172.16.0.0&#39;)&nbsp;&gt;&gt;&nbsp;20&nbsp;==&nbsp;ip&nbsp;&gt;&gt;&nbsp;20&nbsp;or&nbsp;\&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip2long(&#39;192.168.0.0&#39;)&nbsp;&gt;&gt;&nbsp;16&nbsp;==&nbsp;ip&nbsp;&gt;&gt;&nbsp;16</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">以上代码也就是Python中判断一个IP是否是内网IP的最终方法，使用时调用<strong>is_inner_ipaddress(...)</strong>即可（注意自己编写捕捉异常的代码）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">0x03 host获取与绕过</span></strong></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">如何获取&quot;真正请求&quot;的Host，这里需要考虑三个问题：</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">1. 如何正确的获取用户输入的URL的Host？</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2. 只要Host只要不是内网IP即可吗？</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">3. 只要Host指向的IP不是内网IP即可吗？</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">如何正确的获取用户输入的URL的Host？</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">第一个问题，看起来很简单，但实际上有很多网站在获取Host上犯过一些错误。最常见的就是，使用</span><strong style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">http://233.233.233.233@10.0.0.1:8080/</strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">、</span><strong style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">http://10.0.0.1#233.233.233.233</strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">这样的URL，让后端认为其Host是233.233.233.233，实际上请求的却是10.0.0.1。这种方法利用的是程序员对URL解析的错误，有很多程序员甚至会用正则去解析URL。</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在Python 3下，正确获取一个URL的Host的方法：</span></p><pre class="brush:python;toolbar:false;">from&nbsp;urllib.parse&nbsp;import&nbsp;urlparse
+
+url&nbsp;=&nbsp;&#39;https://10.0.0.1/index.php&#39;
+urlparse(url).hostname</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">这一步一定不能犯错，否则后面的工作就白做了。</span><br/><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">只要Host只要不是内网IP即可吗？</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第二个问题，只要检查一下我们获取到的Host是否是内网IP，即可防御SSRF漏洞么？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">答案是否定的，原因是，Host可能是IP形式，也可能是域名形式。如果Host是域名形式，我们是没法直接比对的。只要其解析到内网IP上，就可以绕过我们的<strong>is_inner_ipaddress</strong>了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">网上有个服务 <a href="http://xip.io" target="_self">http://xip.io</a> ，这是一个“神奇”的域名，它会自动将包含某个IP地址的子域名解析到该IP。比如 <strong>127.0.0.1.xip.io</strong> ，将会自动解析到127.0.0.1，<strong>www.10.0.0.1.xip.io</strong>将会解析到10.0.0.1： </span></p><p style="text-indent: 2em; text-align: center;"><img src="http://p7.qhimg.com/t01ca5b08c2db8e12ec.jpg" alt="" style="color: rgb(51, 51, 51); font-family: &#39;Open Sans&#39;, &#39;Clear Sans&#39;, &#39;Helvetica Neue&#39;, Helvetica, Arial, sans-serif; line-height: 25.6px; white-space: pre-wrap; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent; vertical-align: middle;"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这个域名极大的方便了我们进行SSRF漏洞的测试，当我们请求<strong>http://127.0.0.1.xip.io/info.php</strong>的时候，表面上请求的Host是127.0.0.1.xip.io，此时执行<strong>is_inner_ipaddress(&#39;127.0.0.1.xip.io&#39;)</strong>是不会返回True的。但实际上请求的却是127.0.0.1，这是一个标准的内网IP。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">所以，在检查Host的时候，我们需要将Host解析为具体IP，再进行判断，代码如下：</span></p><pre class="brush:python;toolbar:false;">&nbsp;import&nbsp;socket
+&nbsp;import&nbsp;re
+&nbsp;from&nbsp;urllib.parse&nbsp;import&nbsp;urlparse
+&nbsp;from&nbsp;socket&nbsp;import&nbsp;inet_aton
+&nbsp;from&nbsp;struct&nbsp;import&nbsp;unpack
+&nbsp;
+&nbsp;def&nbsp;check_ssrf(url):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hostname&nbsp;=&nbsp;urlparse(url).hostname
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;def&nbsp;ip2long(ip_addr):&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;unpack(&quot;!L&quot;,&nbsp;inet_aton(ip_addr))[0]&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;def&nbsp;is_inner_ipaddress(ip):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip&nbsp;=&nbsp;ip2long(ip)&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;ip2long(&#39;127.0.0.0&#39;)&nbsp;&gt;&gt;&nbsp;24&nbsp;==&nbsp;ip&nbsp;&gt;&gt;&nbsp;24&nbsp;or&nbsp;\&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip2long(&#39;10.0.0.0&#39;)&nbsp;&gt;&gt;&nbsp;24&nbsp;==&nbsp;ip&nbsp;&gt;&gt;&nbsp;24&nbsp;or&nbsp;\&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip2long(&#39;172.16.0.0&#39;)&nbsp;&gt;&gt;&nbsp;20&nbsp;==&nbsp;ip&nbsp;&gt;&gt;&nbsp;20&nbsp;or&nbsp;\&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip2long(&#39;192.168.0.0&#39;)&nbsp;&gt;&gt;&nbsp;16&nbsp;==&nbsp;ip&nbsp;&gt;&gt;&nbsp;16
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;try:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;re.match(r&quot;^https?://.*/.*$&quot;,&nbsp;url):&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise&nbsp;BaseException(&quot;url&nbsp;format&nbsp;error&quot;)&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip_address&nbsp;=&nbsp;socket.getaddrinfo(hostname,&nbsp;&#39;http&#39;)[0][4][0]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;is_inner_ipaddress(ip_address):&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise&nbsp;BaseException(&quot;inner&nbsp;ip&nbsp;address&nbsp;attack&quot;)&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;True,&nbsp;&quot;success&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;except&nbsp;BaseException&nbsp;as&nbsp;e:&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;False,&nbsp;str(e)&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;except:&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;False,&nbsp;&quot;unknow&nbsp;error&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">首先判断url是否是一个HTTP协议的URL（如果不检查，攻击者可能会利用file、gopher等协议进行攻击），然后获取url的host，并解析该host，最终将解析完成的IP放入<strong>is_inner_ipaddress</strong>函数中检查是否是内网IP。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">只要Host指向的IP不是内网IP即可吗？</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">第三个问题，是不是做了以上工作，解析并判断了Host指向的IP不是内网IP，即防御了SSRF漏洞？</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">答案继续是否定的，上述函数并不能正确防御SSRF漏洞。为什么？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当我们请求的目标返回30X状态的时候，如果没有禁止跳转的设置，大部分HTTP库会自动跟进跳转。此时如果跳转的地址是内网地址，将会造成SSRF漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这个原因也很好理解，我以Python的requests库为例。requests的API中有个设置，叫allow_redirects，当将其设置为True的时候requests会自动进行30X跳转。而默认情况下（开发者未传入这个参数的情况下），requests会默认将其设置为True：</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p0.qhimg.com/t0106d9a66cf25583ab.jpg" alt="" style="color: rgb(51, 51, 51); font-family: &#39;Open Sans&#39;, &#39;Clear Sans&#39;, &#39;Helvetica Neue&#39;, Helvetica, Arial, sans-serif; line-height: 25.6px; white-space: pre-wrap; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent; vertical-align: middle;"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">所以，我们可以试试请求一个302跳转的网址：</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p7.qhimg.com/t0143aa986dda0066ef.jpg" alt="" style="color: rgb(51, 51, 51); font-family: &#39;Open Sans&#39;, &#39;Clear Sans&#39;, &#39;Helvetica Neue&#39;, Helvetica, Arial, sans-serif; line-height: 25.6px; white-space: pre-wrap; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent; vertical-align: middle;"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">默认情况下，将会跟踪location指向的地址，所以返回的status code是最终访问的页面的状态码。而设置了<strong>allow_redirects</strong>的情况下，将会直接返回302状态码。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">所以，即使我们获取了<strong>http://t.cn/R2iwH6d</strong>的Host，通过了<strong>is_inner_ipaddress</strong>检查，也会因为302跳转，跳到一个内网IP，导致SSRF。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这种情况下，我们有两种解决方法：</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">1. 设置allow_redirects=False，不允许目标进行跳转</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2. 每跳转一次，就检查一次新的Host是否是内网IP，直到抵达最后的网址</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第一种情况明显是会影响业务的，只是规避问题而未解决问题。当业务上需要目标URL能够跳转的情况下，只能使用第二种方法了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">所以，归纳一下，完美解决SSRF漏洞的过程如下：</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">1. 解析目标URL，获取其Host</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2. 解析Host，获取Host指向的IP地址</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">3. 检查IP地址是否为内网IP</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">4. 请求URL</span></strong></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">5. 如果有跳转，拿出跳转URL，执行1</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x04 使用requests库的hooks属性来检查SSRF</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">那么，上一章说的5个过程，具体用Python怎么实现？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们可以写一个循环，循环条件就是“该次请求的状态码是否是30X”，如果是就继续执行循环，继续跟进location，如果不是，则退出循环。代码如下：</span></p><pre class="brush:python;toolbar:false;">&nbsp;r&nbsp;=&nbsp;requests.get(url,&nbsp;allow_redirects=False)
+&nbsp;while&nbsp;r.is_redirect:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;url&nbsp;=&nbsp;r.headers[&#39;location&#39;]&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;succ,&nbsp;errstr&nbsp;=&nbsp;check_ssrf(url)&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;succ:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise&nbsp;Exception(&#39;SSRF&nbsp;Attack.&#39;)&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r&nbsp;=&nbsp;requests.get(url,&nbsp;allow_redirects=False)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这个代码思路大概没有问题，但非常简陋，而且效率不高。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">只要你翻翻requests的源代码，你会发现，它在处理30X跳转的时候考虑了很多地方：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">所有请求放在一个requests.Session()中</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">跳转有个缓存，当下次跳转地址在缓存中的时候，就不用多次请求了</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">跳转数量有最大限制，不可能无穷无尽跳下去</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">解决307跳转出现的一些BUG等</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">如果说就按照之前简陋的代码编写程序，固然可以防御SSRF漏洞，但上述提高效率的方法均没用到。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">那么，有更好的解决方法么？当然有，我们翻一下requests的源代码，可以看到一行特殊的代码：</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p5.qhimg.com/t013d169da9e03945ad.jpg" alt="" style="color: rgb(51, 51, 51); font-family: &#39;Open Sans&#39;, &#39;Clear Sans&#39;, &#39;Helvetica Neue&#39;, Helvetica, Arial, sans-serif; line-height: 25.6px; white-space: pre-wrap; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent; vertical-align: middle;"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">hook的意思就是“劫持”，意思就是在hook的位置我可以插入我自己的代码。我们看看dispatch_hook函数做了什么：</span></p><pre class="brush:python;toolbar:false;">&nbsp;def&nbsp;dispatch_hook(key,&nbsp;hooks,&nbsp;hook_data,&nbsp;**kwargs):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;&quot;&quot;Dispatches&nbsp;a&nbsp;hook&nbsp;dictionary&nbsp;on&nbsp;a&nbsp;given&nbsp;piece&nbsp;of&nbsp;data.&quot;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hooks&nbsp;=&nbsp;hooks&nbsp;or&nbsp;dict()
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hooks&nbsp;=&nbsp;hooks.get(key)&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;hooks:&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;hasattr(hooks,&nbsp;&#39;__call__&#39;):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hooks&nbsp;=&nbsp;[hooks]&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;hook&nbsp;in&nbsp;hooks:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_hook_data&nbsp;=&nbsp;hook(hook_data,&nbsp;**kwargs)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;_hook_data&nbsp;is&nbsp;not&nbsp;None:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hook_data&nbsp;=&nbsp;_hook_data
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;hook_data</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">hooks是一个函数，或者一系列函数。这里做的工作就是遍历这些函数，并调用：<strong>_hook_data = hook(hook_data,**kwargs)</strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们翻翻文档，可以找到hooks event的说明 <a href="http://docs.python-requests.org/en/master/user/advanced/?highlight=hook#event-hooks" target="_self">http://docs.python-requests.org/en/master/user/advanced/?highlight=hook#event-hooks</a> ：</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p9.qhimg.com/t01fe256536fb8bcaf9.jpg" alt="" style="color: rgb(51, 51, 51); font-family: &#39;Open Sans&#39;, &#39;Clear Sans&#39;, &#39;Helvetica Neue&#39;, Helvetica, Arial, sans-serif; line-height: 25.6px; white-space: pre-wrap; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent; vertical-align: middle;"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">文档中定义了一个<strong>print_url</strong>函数，将其作为一个hook函数。在请求的过程中，响应对象被传入了<strong>print_url</strong>函数，请求的域名被打印了下来。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们可以考虑一下，我们将检查SSRF的过程也写为一个hook函数，然后传给requests.get，在之后的请求中一旦获取response就会调用我们的hook函数。这样，即使我设置<strong>allow_redirects=True</strong>，requests在每次请求后都会调用一次hook函数，在hook函数里我只需检查一下<strong>response.headers[&#39;location&#39;]</strong>即可。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">说干就干，先写一个hook函数：</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p5.qhimg.com/t010795d780733bb1bc.jpg" alt="" style="color: rgb(51, 51, 51); font-family: &#39;Open Sans&#39;, &#39;Clear Sans&#39;, &#39;Helvetica Neue&#39;, Helvetica, Arial, sans-serif; line-height: 25.6px; white-space: pre-wrap; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent; vertical-align: middle;"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当<strong>r.is_redirect</strong>为True的时候，也就是说这次请求包含一个跳转。获取此时的<strong>r.headers[&#39;location&#39;]</strong>，并进行一些处理，最后传入<strong>check_ssrf</strong>。当检查不通过时，抛出一个异常。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">然后编写一个请求函数<strong>safe_request_url</strong>，意思是“安全地请求一个URL”。使用这个函数请求的域名，将不会出现SSRF漏洞：</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p8.qhimg.com/t010b82fb2501b6afb2.jpg" alt="" style="color: rgb(51, 51, 51); font-family: &#39;Open Sans&#39;, &#39;Clear Sans&#39;, &#39;Helvetica Neue&#39;, Helvetica, Arial, sans-serif; line-height: 25.6px; white-space: pre-wrap; border-width: 0px 4px 0px 2px; border-right-style: solid; border-left-style: solid; border-right-color: transparent; border-left-color: transparent; vertical-align: middle;"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们可以看到，在第一次请求url前，还是需要<strong>check_ssrf</strong>一次的。因为hook函数<strong>_request_check_location</strong>只是检查30X跳转时是否存在SSRF漏洞，而没有检查最初请求是否存在SSRF漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">不过上面的代码还不算完善，因为<strong>_request_check_location</strong>覆盖了原有（用户可能定义的其他hooks）的hooks属性，所以需要简单调整一下。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">最终，给出完整代码：</span></p><pre class="brush:python;toolbar:false;">&nbsp;import&nbsp;socket
+&nbsp;import&nbsp;re
+&nbsp;import&nbsp;requests
+&nbsp;from&nbsp;urllib.parse&nbsp;import&nbsp;urlparse
+&nbsp;from&nbsp;socket&nbsp;import&nbsp;inet_aton
+&nbsp;from&nbsp;struct&nbsp;import&nbsp;unpack
+&nbsp;from&nbsp;requests.utils&nbsp;import&nbsp;requote_uri
+&nbsp;
+&nbsp;def&nbsp;check_ssrf(url):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hostname&nbsp;=&nbsp;urlparse(url).hostname
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;def&nbsp;ip2long(ip_addr):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;unpack(&quot;!L&quot;,&nbsp;inet_aton(ip_addr))[0]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;def&nbsp;is_inner_ipaddress(ip):&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip&nbsp;=&nbsp;ip2long(ip)&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;ip2long(&#39;127.0.0.0&#39;)&nbsp;&gt;&gt;&nbsp;24&nbsp;==&nbsp;ip&nbsp;&gt;&gt;&nbsp;24&nbsp;or&nbsp;\&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip2long(&#39;10.0.0.0&#39;)&nbsp;&gt;&gt;&nbsp;24&nbsp;==&nbsp;ip&nbsp;&gt;&gt;&nbsp;24&nbsp;or&nbsp;\&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip2long(&#39;172.16.0.0&#39;)&nbsp;&gt;&gt;&nbsp;20&nbsp;==&nbsp;ip&nbsp;&gt;&gt;&nbsp;20&nbsp;or&nbsp;\&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip2long(&#39;192.168.0.0&#39;)&nbsp;&gt;&gt;&nbsp;16&nbsp;==&nbsp;ip&nbsp;&gt;&gt;&nbsp;16&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;try:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;re.match(r&quot;^https?://.*/.*$&quot;,&nbsp;url):&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise&nbsp;BaseException(&quot;url&nbsp;format&nbsp;error&quot;)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ip_address&nbsp;=&nbsp;socket.getaddrinfo(hostname,&nbsp;&#39;http&#39;)[0][4][0]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;is_inner_ipaddress(ip_address):&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise&nbsp;BaseException(&quot;inner&nbsp;ip&nbsp;address&nbsp;attack&quot;)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;True,&nbsp;&quot;success&quot;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;except&nbsp;BaseException&nbsp;as&nbsp;e:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;False,&nbsp;str(e)&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;except:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;False,&nbsp;&quot;unknow&nbsp;error&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+def&nbsp;safe_request_url(url,&nbsp;**kwargs):
+&nbsp;&nbsp;&nbsp;&nbsp;def&nbsp;_request_check_location(r,&nbsp;*args,&nbsp;**kwargs):&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;r.is_redirect:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;url&nbsp;=&nbsp;r.headers[&#39;location&#39;]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;The&nbsp;scheme&nbsp;should&nbsp;be&nbsp;lower&nbsp;case...&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;parsed&nbsp;=&nbsp;urlparse(url)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;url&nbsp;=&nbsp;parsed.geturl()&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Facilitate&nbsp;relative&nbsp;&#39;location&#39;&nbsp;headers,&nbsp;as&nbsp;allowed&nbsp;by&nbsp;RFC&nbsp;7231.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;(e.g.&nbsp;&#39;/path/to/resource&#39;&nbsp;instead&nbsp;of&nbsp;&#39;http://domain.tld/path/to/resource&#39;)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Compliant&nbsp;with&nbsp;RFC3986,&nbsp;we&nbsp;percent&nbsp;encode&nbsp;the&nbsp;url.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;parsed.netloc:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;url&nbsp;=&nbsp;urljoin(r.url,&nbsp;requote_uri(url))&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;url&nbsp;=&nbsp;requote_uri(url)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;succ,&nbsp;errstr&nbsp;=&nbsp;check_ssrf(url)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;succ:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise&nbsp;requests.exceptions.InvalidURL(&quot;SSRF&nbsp;Attack:&nbsp;%s&quot;&nbsp;%&nbsp;(errstr,&nbsp;))&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;success,&nbsp;errstr&nbsp;=&nbsp;check_ssrf(url)&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;success:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise&nbsp;requests.exceptions.InvalidURL(&quot;SSRF&nbsp;Attack:&nbsp;%s&quot;&nbsp;%&nbsp;(errstr,))&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;all_hooks&nbsp;=&nbsp;kwargs.get(&#39;hooks&#39;,&nbsp;dict())&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;&#39;response&#39;&nbsp;in&nbsp;all_hooks:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;hasattr(all_hooks[&#39;response&#39;],&nbsp;&#39;__call__&#39;):&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r_hooks&nbsp;=&nbsp;[all_hooks[&#39;response&#39;]]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r_hooks&nbsp;=&nbsp;all_hooks[&#39;response&#39;]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r_hooks.append(_request_check_location)&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;else:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r_hooks&nbsp;=&nbsp;[_request_check_location]&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;all_hooks[&#39;response&#39;]&nbsp;=&nbsp;r_hooks&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;kwargs[&#39;hooks&#39;]&nbsp;=&nbsp;all_hooks&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;requests.get(url,&nbsp;**kwargs)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">外部程序只要调用<strong>safe_request_url(url)</strong>即可安全地请求某个URL，该函数的参数与requests.get函数参数相同。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">完美在Python Web开发中解决SSRF漏洞。其他语言的解决方案类似，大家可以自己去探索。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">参考内容：</span></strong></p><p style="text-indent: 2em; text-align: left;"><a href="http://www.luteam.com/?p=211" target="_self"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">http://www.luteam.com/?p=211</span></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="http://docs.python-requests.org/" target="_self">http://docs.python-requests.org/</a><br/><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-weight: 900; line-height: 25px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; background-color: rgb(255, 255, 255);">传送门</span></p><hr style="white-space: normal;"/><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; text-indent: 2em;">SSRF漏洞的挖掘经验</strong><strong style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; text-indent: 2em;">&nbsp;</strong><strong style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; text-indent: 2em;"><a href="http://bobao.360.cn/learning/detail/240.html" target="_self">http://bobao.360.cn/learning/detail/240.html</a></strong></span></p><p style="white-space: normal; text-indent: 2em; text-align: center;"><br/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3074.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】谈一谈如何在Python开发中拒绝SSRF漏洞 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3074" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/6x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="4381" user-name="带头大哥的小弟" href="javascript:;">
+                带头大哥的小弟            </a>
+                        <span class="comment-time">2016-10-13 11:27:28</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4381">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4381" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">用r.history获取跳转列表</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/7x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="4345" user-name="路人乙" href="javascript:;">
+                路人乙            </a>
+                        <span class="comment-time">2016-10-08 23:39:12</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4345">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4345" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">学习了，不得不服ph牛出品必属精品。写的由浅入深，层层递进啊。反正就是看懂了开头，却没有看懂结尾。</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="4325" user-name="老衲" href="javascript:;">
+                老衲            </a>
+                        <span class="comment-time">2016-09-30 15:11:23</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="4325">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_4325" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">想要绕过还是要看代码的，学习楼主一样地安全编码</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3074" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

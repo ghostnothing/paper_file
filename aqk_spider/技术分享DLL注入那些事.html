@@ -1,0 +1,679 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】DLL注入那些事 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="DLL,注入"/>
+    
+        <meta name="description" content="DLL注入是安全方面常用的技术，其实现方式多种多样。本文以小型工具项目为例，通过多种方式实现DLL注入，研究目前常用的注入方式与其具体实现。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】DLL注入那些事</h2>
+                <div class="article-msg">
+                    <span class="time">2017-08-22 11:06:09</span>
+                    
+                                        <span class="read">阅读：9623次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4271"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4271" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://blog.deniable.org/blog/2017/07/16/inject-all-the-things"
+                             target="_blank">来源： blog.deniable.org</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2522399780" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2522399780" style="color:#848e99;">shan66</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><img src="http://p5.qhimg.com/t011b2047aa5101086b.jpg" title="t011b2047aa5101086b.jpg" alt="http://p5.qhimg.com/t011b2047aa5101086b.jpg"/></span></p><p style="text-indent: 2em;"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">译者：</span><a href="http://bobao.360.cn/member/contribute?uid=2522399780" target="_self"><span style="font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif; color: rgb(0, 112, 192);">s</span><span style="color: rgb(0, 112, 192); line-height: 28px; font-weight: 900; font-size: 18px; font-family: 微软雅黑, sans-serif;">han66</span></a></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, sans-serif; font-size: 18px; font-weight: 900; background-color: white;">预估稿费：260RMB</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, sans-serif; font-size: 18px; font-weight: 900; background-color: white;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-family: 微软雅黑, sans-serif; font-size: 18px; font-weight: 900; background-color: white;"><br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在本文中，我们将向读者全面介绍各种DLL注入技术。所谓DLL注入，本来是软件用于向其他程序添加/扩展功能、调试或逆向工程的一种合法技术。不过，后来恶意软件也常用这种方式来干坏事。因此，这意味着从安全的角度来看，我们必须知道DLL注入是如何工作的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">之前，当我开始开发Red Team的定制工具（为了模拟不同类型的攻击者）时，我完成了这个小项目的大部分代码，并将该项目命名为“<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px; color: rgb(0, 0, 0);">injectAllTheThings</span>”。如果你想看一些使用DLL注入的具体示例，请访问<a href="https://attack.mitre.org/wiki/Technique/T1055" target="_self">这里</a>。如果你想了解DLL注入，该项目也会很有帮助。实际上，我已经在一个单一的Visual Studio项目中组合了多种DLL注入技术（实际上是7种不同的技术），它们都有32位和64位版本，并且非常便于阅读和理解：每种技术都有自己单独的源文件。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">以下是该工具的输出，给出了所有已经实现的方法。</span></p><p style="text-indent: 0em; text-align: center;"><img width="554px" height="158px" src="http://p0.qhimg.com/t016765af01a0fe6140.png" title="t01f4ab3235a95e43d0.png" alt="http://p3.qhimg.com/t01f4ab3235a95e43d0.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">根据<a href="https://twitter.com/subtee" target="_self">@SubTee</a>的说法，DLL注入是“没什么大不了”的。我同意这种观点，但是，DLL注入远不止加载DLL这么简单。</span></p><p style="text-indent: 0em; text-align: center;"><img width="550px" height="415px" src="http://p7.qhimg.com/t0169943eff8fbfaf86.png" title="t01f8270ae6279386c6.png" alt="http://p6.qhimg.com/t01f8270ae6279386c6.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">你虽然可以使用经过Microsoft签名的二进制代码来加载DLL，但是却无法附加到某个进程来利用其内存。大多数渗透测试人员实际上不知道什么是DLL注入以及它是如何工作的，主要是因为<a href="https://www.metasploit.com/" target="_self">Metasploit</a>可以代劳的事情太多了。他们一直在盲目地使用它。我相信，学习这个“怪异的”内存操纵技术的最佳地点，不是安全论坛，而是黑客论坛。如果你加入了红队，你可能需要鼓捣这种东西，除非你安于使用他人提供的工具。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">大多时候，我们首先会使用一项高度复杂的技术展开攻击，如果我们没有被发现，才会开始降低复杂程度。这就是说，我们会先将二进制文件丢到磁盘上，然后使用DLL注入。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这篇文章将全面介绍DLL注入，同时也是<a href="https://github.com/fdiskyou/injectAllTheThings" target="_self">GitHub</a>托管的该项目的“帮助文档”。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><br/></span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; font-size: 18px;">概述</span></strong></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; font-size: 18px;"></span></strong></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">DLL注入简单来说就是将代码插入/注入到正在运行的进程中的过程。我们注入的代码是动态链接库（DLL）的形式。为什么可以做到这一点？因为DLL（如UNIX中的共享库）是在运行时根据需要来进行加载。在这个项目中，我将只使用DLL，但是实际上还可以使用其他各种形式（任何PE文件、shellcode / assembly等）来“注入”代码，这些在恶意软件中非常常见。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">此外，请记住，您需要具有适当级别的权限才能鼓捣其他进程的内存。但是，这里不会探讨受和<a href="https://www.microsoftpressstore.com/articles/article.aspx?p=2233328&seqNum=2" target="_self">保护的进程</a>、<a href="https://msdn.microsoft.com/en-gb/library/windows/desktop/bb648648(v=vs.85).aspx" target="_self">Windows特权级别</a>（由Vista引入）有关的内容——这是一个完全不同的主题。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">如上所述，DLL注入可以用于合法目的。例如，防病毒和终端安全解决方案就需要使用这些技术将自己的软件代码/挂钩放置到系统上的“所有”运行的进程中。这使他们能够在运行过程中监视每个进程的行为，从而更好地保护我们。但是，该技术也可以用于恶意的目的。一般来说，常用技术是注入“lsass”进程以获取密码哈希值。恶意软件也广泛使用代码注入技术，例如，运行shellcode、运行PE文件或将DLL加载到另一个进程的内存中以隐藏自身，等等。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">基础知识</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们将使用MS Windows API完成各种注入，因为这个API提供了非常丰富的功能，允许我们连接和操纵其他进程。自从微软第一个版本的操作系统以来，DLL一直是MS Windows的基石。事实上，MS Windows 所有API都涉及DLL。最重要的一些DLL有“<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(227, 108, 9);">Kernel32.dll</span>”（其中包含用于管理内存、进程和线程的函数）、“<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(227, 108, 9);">User32.dll</span>”（主要是用户界面函数）和“<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(227, 108, 9);">GDI32.dll</span>”（用于绘制图形和文字显示）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">您可能奇怪为什么会提供这样的API，为什么微软给我们这么好的一套函数来操作进程的内存？实际上，它们的最初用途是扩展应用程序的功能。例如，一家公司创建一个了应用程序，并希望允许其他公司扩展或增强应用程序。所以，DLL最初是用于合法的目的。此外，DLL还可用于项目管理，节省内存，实现资源共享等。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">下图讲解DLL注入技术的流程。</span></p><p style="text-indent: 0em; text-align: center;"><img width="550px" height="650px" src="http://p3.qhimg.com/t01ff4691c9837d2983.png" title="t01a23d6a30b98f78c7.png" alt="http://p2.qhimg.com/t01a23d6a30b98f78c7.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">就像上面看到的那样，DLL注入分为四个步骤：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">1.附加到目标/远程进程</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">2.在目标/远程进程内分配内存</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">3.将DLL路径或DLL复制到目标/远程进程内存中</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">4.让进程执行DLL</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">所有这些步骤都是通过调用一组API函数来实现的。每种技术都需要一定的设置和选项才能完成。实际上，每种技术都有自己的优点和缺点。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">技术详解</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们有多种方法来让进程执行我们的DLL。最常见的方法就是使用“CreateRemoteThread()”和“NtCreateThreadEx()”。但是，我们无法将DLL作为参数传递给这些函数。我们必须提供一个保存执行起始点的内存地址。为此，我们需要完成内存分配，使用“LoadLibrary()”加载我们的DLL，复制内存等等。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这个项目我称之为&#39;injectAllTheThings&#39;（取这个名字，只是因为我讨厌‘injector’的名字，加上GitHub上已经有太多的‘injector’了），它有7种不同的技术。当然，这些技术都不是我发明的。我只是使用了这七种技术（是的，还有更多）。一些API具有详细的文档说明（如“CreateRemoteThread()”），有些API则没有相关的文档说明（如&#39;NtCreateThreadEx()&#39;）。以下是已经实现的技术的完整列表，它们全部适用于32位和64位。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">CreateRemoteThread()</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">NtCreateThreadEx()</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">QueueUserAPC</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">SetWindowsHookEx()</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">RtlCreateUserThread()</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">通过SetThreadContext()获取代码洞</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">反射型DLL</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">其中，可能有一些是你早就接触过的技术。当然，这不是所有DLL注入技术的完整列表。如我所说，还有更多的技术，但是并没有包括在这里。这里给出的，是到目前为止，我在一些项目中使用过的技术。有些是稳定的，有些是不稳定的——当然，之所以不稳定，可能是由于我的代码的原因，而不是这些技术本身的原因。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">LoadLibrary()</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms684175(v=vs.85).aspx" target="_self">MSDN</a>所述，“LoadLibrary（）”函数的作用是将指定的模块加载到调用进程的地址空间中。而指定的模块可能会导致加载其他模块。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">HMODULE&nbsp;WINAPI&nbsp;LoadLibrary(
+&nbsp;&nbsp;_In_&nbsp;LPCTSTR&nbsp;lpFileName
+);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">lpFileName [in]</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">The name of the module. This can be either a library module (a .dll file) or an executable module (an .exe file). (...)</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">If the string specifies a full path, the function searches only that path for the module.</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">If the string specifies a relative path or a module name without a path, the function uses a standard search strategy to find the module (...)</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">If the function cannot find the module, the function fails. When specifying a path, be sure to use backslashes (\), not forward slashes (/). (...)</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">If the string specifies a module name without a path and the file name extension is omitted, the function appends the default library extension .dll to the module name. (...)</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">换句话说，它只需要一个文件名作为其唯一的参数。也就是说，我们只需要为DLL的路径分配一些内存，并将执行起始点设置为“LoadLibrary()”函数的地址，将路径的内存地址作为参数传递就行了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">实际上，这里最大的问题是“LoadLibrary()”使用程序来将加载的DLL添加到注册表中。意思是它可以轻松被检测到，但是实际上许多终端安全解决方案仍然无法检测到它们。无论如何，正如我之前所说，DLL注入也有合法的使用情况，所以...另外，请注意，如果DLL已经加载了&#39;LoadLibrary()&#39;，它将不会被再次执行。如果使用反射型DLL注入，当然没有这个问题，因为DLL没有被注册。如果使用反射DLL注入技术而不是使用“LoadLibrary()”，会将整个DLL加载到内存中。然后找到DLL的入口点的偏移量来加载它。如果你愿意，还可以设法将其隐藏起来。取证人员仍然可以在内存中找到你的DLL，只是这不会那么容易而已。Metasploit使用了大量的DLL注入，但是大多数终端解决方案都能搞定这一切。如果你喜欢狩猎，或者你属于“蓝队”，可以看看<a href="https://www.defcon.org/html/defcon-20/dc-20-speakers.html#King" target="_self">这里</a>和<a href="https://www.defcon.org/html/defcon-20/dc-20-speakers.html#King" target="_self">这里</a>。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">顺便说一句，如果你的终端安全软件无法搞定所有这一切...你可尝试使用一些<a href="https://www.nostarch.com/gamehacking" target="_self">游戏反欺骗引擎</a>。一些反欺诈游戏的反rootkit功能比某些AV更加先进。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">连接到目标/远程进程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">首先，我们需要得到要与之进行交互的进程的句柄。为此，我们可以使用API调用<a href="https://msdn.microsoft.com/en-gb/library/windows/desktop/ms684320(v=vs.85).aspx" target="_self">OpenProcess()</a>。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">HANDLE&nbsp;WINAPI&nbsp;OpenProcess(
+&nbsp;&nbsp;_In_&nbsp;DWORD&nbsp;dwDesiredAccess,
+&nbsp;&nbsp;_In_&nbsp;BOOL&nbsp;&nbsp;bInheritHandle,
+&nbsp;&nbsp;_In_&nbsp;DWORD&nbsp;dwProcessId
+);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如果您阅读MSDN上的文档，就会明白，为此需要具备一定的访问权限。访问权限的完整列表可以在<a href="https://msdn.microsoft.com/en-gb/library/windows/desktop/ms684880(v=vs.85).aspx" target="_self">这里</a>找到。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这些可能因MS Windows版本而异，不过几乎所有技术都需要用到以下内容。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><pre class="brush:cpp;toolbar:false">HANDLE&nbsp;hProcess&nbsp;=&nbsp;OpenProcess(
+&nbsp;&nbsp;&nbsp;&nbsp;PROCESS_QUERY_INFORMATION&nbsp;|
+&nbsp;&nbsp;&nbsp;&nbsp;PROCESS_CREATE_THREAD&nbsp;|
+&nbsp;&nbsp;&nbsp;&nbsp;PROCESS_VM_OPERATION&nbsp;|
+&nbsp;&nbsp;&nbsp;&nbsp;PROCESS_VM_WRITE,
+&nbsp;&nbsp;&nbsp;&nbsp;FALSE,&nbsp;dwProcessId);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; font-size: 18px;"><br/></span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; font-size: 18px;">在目标/远程进程内分配内存</span></strong></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为了给DLL路径分配内存，我们需要使用<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/aa366890%28v=vs.85%29.aspx" target="_self">VirtualAllocEx()</a>。如MSDN所述，VirtualAllocEx()可以用来预留、提交或更改指定进程的虚拟地址空间内的内存区域的状态。该函数将其分配的内存初始化为零。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">LPVOID&nbsp;WINAPI&nbsp;VirtualAllocEx(
+&nbsp;&nbsp;_In_&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HANDLE&nbsp;hProcess,
+&nbsp;&nbsp;_In_opt_&nbsp;LPVOID&nbsp;lpAddress,
+&nbsp;&nbsp;_In_&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SIZE_T&nbsp;dwSize,
+&nbsp;&nbsp;_In_&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;&nbsp;flAllocationType,
+&nbsp;&nbsp;_In_&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;&nbsp;flProtect
+);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们需要完成类似下面的工作：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">//&nbsp;calculate&nbsp;the&nbsp;number&nbsp;of&nbsp;bytes&nbsp;needed&nbsp;for&nbsp;the&nbsp;DLL&#39;s&nbsp;pathname
+DWORD&nbsp;dwSize&nbsp;=&nbsp;(lstrlenW(pszLibFile)&nbsp;+&nbsp;1)&nbsp;*&nbsp;sizeof(wchar_t);
+//&nbsp;allocate&nbsp;space&nbsp;in&nbsp;the&nbsp;target/remote&nbsp;process&nbsp;for&nbsp;the&nbsp;pathname
+LPVOID&nbsp;pszLibFileRemote&nbsp;=&nbsp;(PWSTR)VirtualAllocEx(hProcess,&nbsp;NULL,&nbsp;dwSize,&nbsp;MEM_COMMIT,&nbsp;PAGE_READWRITE);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">此外，您还可以使用“<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/aa364963%28v=vs.85%29.aspx" target="_self">GetFullPathName()</a>”API调用。但是，我不会在整个项目中使用这个API调用。不过，这只是个人偏好的问题。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">如果要为整个DLL分配空间，则必须执行以下操作：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">hFile&nbsp;=&nbsp;CreateFileW(pszLibFile,&nbsp;GENERIC_READ,&nbsp;0,&nbsp;NULL,&nbsp;OPEN_EXISTING,&nbsp;FILE_ATTRIBUTE_NORMAL,&nbsp;NULL);
+dwSize,&nbsp;=&nbsp;GetFileSize(hFile,&nbsp;NULL);
+PVOID&nbsp;pszLibFileRemote&nbsp;=&nbsp;(PWSTR)VirtualAllocEx(hProcess,&nbsp;NULL,&nbsp;dwSize,&nbsp;MEM_COMMIT,&nbsp;PAGE_READWRITE);</pre><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">将DLL路径或DLL复制到目标/远程进程的内存中</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在只需要使用<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms681674%28v=vs.85%29.aspx" target="_self">WriteProcessMemory()</a>API调用将DLL路径或完整的DLL复制到目标/远程进程。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">BOOL&nbsp;WINAPI&nbsp;WriteProcessMemory(
+&nbsp;&nbsp;_In_&nbsp;&nbsp;HANDLE&nbsp;&nbsp;hProcess,
+&nbsp;&nbsp;_In_&nbsp;&nbsp;LPVOID&nbsp;&nbsp;lpBaseAddress,
+&nbsp;&nbsp;_In_&nbsp;&nbsp;LPCVOID&nbsp;lpBuffer,
+&nbsp;&nbsp;_In_&nbsp;&nbsp;SIZE_T&nbsp;&nbsp;nSize,
+&nbsp;&nbsp;_Out_&nbsp;SIZE_T&nbsp;&nbsp;*lpNumberOfBytesWritten
+);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这就像：</span></p><pre class="brush:cpp;toolbar:false">DWORD&nbsp;n&nbsp;=&nbsp;WriteProcessMemory(hProcess,&nbsp;pszLibFileRemote,&nbsp;(PVOID)pszLibFile,&nbsp;dwSize,&nbsp;NULL);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如果我们要复制完整的DLL，就像在反射DLL注入技术中那样，则还需要另外一些代码，因为这需要将其读入内存，然后再将其复制到目标/远程进程。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">lpBuffer&nbsp;=&nbsp;HeapAlloc(GetProcessHeap(),&nbsp;0,&nbsp;dwLength);
+ReadFile(hFile,&nbsp;lpBuffer,&nbsp;dwLength,&nbsp;&amp;dwBytesRead,&nbsp;NULL);
+WriteProcessMemory(hProcess,&nbsp;pszLibFileRemote,&nbsp;(PVOID)pszLibFile,&nbsp;dwSize,&nbsp;NULL);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如前所述，通过使用反射DLL注入技术，并将DLL复制到内存中，DLL就不会被注册到进程中。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这稍微有点复杂，因为需要在内存中加载DLL时取得它的入口点。作为反射DLL项目用到的“LoadRemoteLibraryR()”函数可以为我们完成这些工作。如果你想查看源码的话，可以访问这里。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">需要注意的一点是，我们要注入的DLL需要使用适当的include和options进行编译，使其与ReflectiveDLLInjection方法相适应。&#39;injectAllTheThings&#39;项目包括名为&#39;rdll_32.dll / rdll_64.dll&#39;的DLL，您可以使用它来完成这些工作。</span></p><p style="text-indent: 2em;"><strong><span style="font-size: 18px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;</span></span></strong></p><p style="text-indent: 2em;"><strong><span style="font-size: 18px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">让进程执行DLL</span></span></strong></p><hr/><p style="text-indent: 2em;"><strong style="color: rgb(54, 96, 146); font-size: 18px; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">CreateRemoteThread()</span></strong></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">CreateRemoteThread()是一种经典和最受欢迎的DLL注入技术。另外，它的说明文档也是最全面的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">它包括以下步骤：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">1.用OpenProcess()打开目标进程</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">2.通过GetProcAddress()找到LoadLibrary()的地址</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">3.通过VirtualAllocEx()为目标/远程进程地址空间中的DLL路径预留内存</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">4.使用WriteProcessMemory()将DLL路径写入前面预留的内存空间中</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">5.使用CreateRemoteThread()创建一个新线程，该线程将调用LoadLibrary()函数，以DLL路径名称作为参数</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">如果浏览MSDN上的<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms682437%28v=vs.85%29.aspx" target="_self">CreateRemoteThread()</a>文档，会发现我们需要一个指向由线程执行的、类型为LPTHREAD_START_ROUTINE的应用程序定义函数的指针，它实际上是远程进程中线程的起始地址。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这意味着为了执行我们的DLL，只需要给我们的进程发出指示，让它来完成就行了。这样就简单了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">完整的步骤如下所示。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">HANDLE&nbsp;hProcess&nbsp;=&nbsp;OpenProcess(PROCESS_QUERY_INFORMATION&nbsp;|&nbsp;PROCESS_CREATE_THREAD&nbsp;|&nbsp;PROCESS_VM_OPERATION&nbsp;|&nbsp;PROCESS_VM_WRITE,&nbsp;FALSE,&nbsp;dwProcessId);
+//&nbsp;Allocate&nbsp;space&nbsp;in&nbsp;the&nbsp;remote&nbsp;process&nbsp;for&nbsp;the&nbsp;pathname
+LPVOID&nbsp;pszLibFileRemote&nbsp;=&nbsp;(PWSTR)VirtualAllocEx(hProcess,&nbsp;NULL,&nbsp;dwSize,&nbsp;MEM_COMMIT,&nbsp;PAGE_READWRITE);
+//&nbsp;Copy&nbsp;the&nbsp;DLL&#39;s&nbsp;pathname&nbsp;to&nbsp;the&nbsp;remote&nbsp;process&nbsp;address&nbsp;space
+DWORD&nbsp;n&nbsp;=&nbsp;WriteProcessMemory(hProcess,&nbsp;pszLibFileRemote,&nbsp;(PVOID)pszLibFile,&nbsp;dwSize,&nbsp;NULL);
+//&nbsp;Get&nbsp;the&nbsp;real&nbsp;address&nbsp;of&nbsp;LoadLibraryW&nbsp;in&nbsp;Kernel32.dll
+PTHREAD_START_ROUTINE&nbsp;pfnThreadRtn&nbsp;=&nbsp;(PTHREAD_START_ROUTINE)GetProcAddress(GetModuleHandle(TEXT(&quot;Kernel32&quot;)),&nbsp;&quot;LoadLibraryW&quot;);
+//&nbsp;Create&nbsp;a&nbsp;remote&nbsp;thread&nbsp;that&nbsp;calls&nbsp;LoadLibraryW(DLLPathname)
+HANDLE&nbsp;hThread&nbsp;=&nbsp;CreateRemoteThread(hProcess,&nbsp;NULL,&nbsp;0,&nbsp;pfnThreadRtn,&nbsp;pszLibFileRemote,&nbsp;0,&nbsp;NULL);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">完整的源代码，请参阅CreateRemoteThread.cpp文件。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px; color: rgb(54, 96, 146);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">NtCreateThreadEx()</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">另一个选择是使用<a href="https://undocumented.ntinternals.net/index.html?page=UserMode%2FUndocumented%20Functions%2FNT%20Objects%2FThread%2FNtCreateThread.html" target="_self">NtCreateThreadEx()</a>。这是一个未公开的ntdll.dll函数，在将来它可能会消失或发生变化。这种技术实现起来有点复杂，因为我们需要使用一个结构体（见下文）作为参数传递给它，而使用另一个结构体接收来自它的数据。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">struct&nbsp;NtCreateThreadExBuffer&nbsp;{
+&nbsp;&nbsp;ULONG&nbsp;Size;
+&nbsp;&nbsp;ULONG&nbsp;Unknown1;
+&nbsp;&nbsp;ULONG&nbsp;Unknown2;
+&nbsp;&nbsp;PULONG&nbsp;Unknown3;
+&nbsp;&nbsp;ULONG&nbsp;Unknown4;
+&nbsp;&nbsp;ULONG&nbsp;Unknown5;
+&nbsp;&nbsp;ULONG&nbsp;Unknown6;
+&nbsp;&nbsp;PULONG&nbsp;Unknown7;
+&nbsp;&nbsp;ULONG&nbsp;Unknown8;
+};</pre><p style="text-indent: 2em;"><a href="http://securityxploded.com/ntcreatethreadex.php" target="_self"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这里</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">有一篇对该调用的详细说明。这种方法与CreateRemoteThread()方法比较接近。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">PTHREAD_START_ROUTINE&nbsp;ntCreateThreadExAddr&nbsp;=&nbsp;(PTHREAD_START_ROUTINE)GetProcAddress(GetModuleHandle(TEXT(&quot;ntdll.dll&quot;)),&nbsp;&quot;NtCreateThreadEx&quot;);&nbsp;
+LPFUN_NtCreateThreadEx&nbsp;funNtCreateThreadEx&nbsp;=&nbsp;(LPFUN_NtCreateThreadEx)ntCreateThreadExAddr;
+NTSTATUS&nbsp;status&nbsp;=&nbsp;funNtCreateThreadEx(
+&nbsp;&nbsp;&amp;hRemoteThread,
+&nbsp;&nbsp;0x1FFFFF,
+&nbsp;&nbsp;NULL,
+&nbsp;&nbsp;hProcess,
+&nbsp;&nbsp;pfnThreadRtn,
+&nbsp;&nbsp;(LPVOID)pszLibFileRemote,
+&nbsp;&nbsp;FALSE,
+&nbsp;&nbsp;NULL,
+&nbsp;&nbsp;NULL,
+&nbsp;&nbsp;NULL,
+&nbsp;&nbsp;NULL
+&nbsp;&nbsp;);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">完整的源代码，请参阅t_NtCreateThreadEx.cpp文件。</span></p><p style="text-indent: 2em;"><span style="color: rgb(54, 96, 146);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; font-size: 18px;">QueueUserAPC()</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">对于前面的方法，有一个替代：使用<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms684954%28v=vs.85%29.aspx" target="_self">QueueUserAPC()</a>函数。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">如MSDN所述，这个调用“将用户模式异步过程调用（APC）对象添加到指定线程的APC队列。”</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">下面是具体定义。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">DWORD&nbsp;WINAPI&nbsp;QueueUserAPC(
+&nbsp;&nbsp;_In_&nbsp;PAPCFUNC&nbsp;&nbsp;pfnAPC,
+&nbsp;&nbsp;_In_&nbsp;HANDLE&nbsp;&nbsp;&nbsp;&nbsp;hThread,
+&nbsp;&nbsp;_In_&nbsp;ULONG_PTR&nbsp;dwData
+);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">pfnAPC [in]</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">A pointer to the application-supplied APC function to be called when the specified thread performs an alertable wait operation. (...)</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">hThread [in]</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">A handle to the thread. The handle must have the THREAD_SET_CONTEXT access right. (...)</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">dwData [in]</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">A single value that is passed to the APC function pointed to by the pfnAPC parameter.</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">所以，如果我们不想创建自己的线程，那么可以使用QueueUserAPC()来劫持目标/远程进程中的现有线程。也就是说，调用此函数将在指定的线程上对异步过程调用进行排队。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我们可以使用真正的APC回调函数代替LoadLibrary()。这里的参数实际上可以指向注入的DLL文件名的指针。</span></p><pre class="brush:cpp;toolbar:false">DWORD&nbsp;dwResult&nbsp;=&nbsp;QueueUserAPC((PAPCFUNC)pfnThreadRtn,&nbsp;hThread,&nbsp;(ULONG_PTR)pszLibFileRemote);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">当你尝试这种技术的时候，你可能会注意到，这与MS Windows执行APC的方式有关。但是，这里没有查看APC队列的调度器，这意味着，只有当线程变为可警示状态时，队列才会被检查。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这样，我们就可以劫持每一个线程了，具体如下。</span></p><pre class="brush:cpp;toolbar:false">BOOL&nbsp;bResult&nbsp;=&nbsp;Thread32First(hSnapshot,&nbsp;&amp;threadEntry);
+&nbsp;&nbsp;while&nbsp;(bResult)
+&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;bResult&nbsp;=&nbsp;Thread32Next(hSnapshot,&nbsp;&amp;threadEntry);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(bResult)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(threadEntry.th32OwnerProcessID&nbsp;==&nbsp;dwProcessId)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;threadId&nbsp;=&nbsp;threadEntry.th32ThreadID;
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wprintf(TEXT(&quot;[+]&nbsp;Using&nbsp;thread:&nbsp;%i\n&quot;),&nbsp;threadId);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HANDLE&nbsp;hThread&nbsp;=&nbsp;OpenThread(THREAD_SET_CONTEXT,&nbsp;FALSE,&nbsp;threadId);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(hThread&nbsp;==&nbsp;NULL)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wprintf(TEXT(&quot;[-]&nbsp;Error:&nbsp;Can&#39;t&nbsp;open&nbsp;thread.&nbsp;Continuing&nbsp;to&nbsp;try&nbsp;other&nbsp;threads...\n&quot;));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;dwResult&nbsp;=&nbsp;QueueUserAPC((PAPCFUNC)pfnThreadRtn,&nbsp;hThread,&nbsp;(ULONG_PTR)pszLibFileRemote);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!dwResult)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wprintf(TEXT(&quot;[-]&nbsp;Error:&nbsp;Couldn&#39;t&nbsp;call&nbsp;QueueUserAPC&nbsp;on&nbsp;thread&gt;&nbsp;Continuing&nbsp;to&nbsp;try&nbsp;othrt&nbsp;threads...\n&quot;));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wprintf(TEXT(&quot;[+]&nbsp;Success:&nbsp;DLL&nbsp;injected&nbsp;via&nbsp;CreateRemoteThread().\n&quot;));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CloseHandle(hThread);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们这样做，主要是想让一个线程变为可警示状态。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">顺便说一句，很高兴看到这种技术被<a href="https://countercept.com/our-thinking/doublepulsar-usermode-analysis-generic-reflective-dll-loader/" target="_self">DOUBLEPULSAR</a>应用。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">完整的源代码，请参见“t_QueueUserAPC.cpp”文件。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px; color: rgb(54, 96, 146);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">SetWindowsHookEx()</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为了使用这种技术，我们首先需要了解一下MS Windows钩子的工作原理。简单来说，钩子就是一种拦截事件并采取行动的方式。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">你可能会猜到，会有很多不同类型的钩子。其中，最常见的是WH_KEYBOARD和WH_MOUSE。是的，你可能已经猜到了，它们可以用来监控键盘和鼠标的输入。</span></p><p style="text-indent: 2em;"><a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms644990%28v=vs.85%29.aspx" target="_self"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">SetWindowsHookEx()</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">的作用是“将应用程序定义的钩子装到钩子链中。”</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">HHOOK&nbsp;WINAPI&nbsp;SetWindowsHookEx(
+&nbsp;&nbsp;_In_&nbsp;int&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;idHook,
+&nbsp;&nbsp;_In_&nbsp;HOOKPROC&nbsp;&nbsp;lpfn,
+&nbsp;&nbsp;_In_&nbsp;HINSTANCE&nbsp;hMod,
+&nbsp;&nbsp;_In_&nbsp;DWORD&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dwThreadId
+);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">idHook [in]</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">Type: int</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">The type of hook procedure to be installed. (...)</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">lpfn [in]</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">Type: HOOKPROC</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">A pointer to the hook procedure. (...)</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">hMod [in]</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">Type: HINSTANCE</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">A handle to the DLL containing the hook procedure pointed to by the lpfn parameter. (...)</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">dwThreadId [in]</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">Type: DWORD</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">The identifier of the thread with which the hook procedure is to be associated. (...)</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">MSDN上一个有趣的评论指出：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">“SetWindowsHookEx可以用于将DLL注入到另一个进程中。32位DLL不能被注入到64位进程中，同时，64位DLL也不能被注入到32位进程中。如果应用程序需要在其他进程中使用钩子，则需要使用一个32位应用程序调用SetWindowsHookEx将32位DLL注入32位进程中，或者使用64位应用程序调用SetWindowsHookEx来把64位DLL注入64位进程。32位和64位DLL必须具有不同的名称。”</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">请大家务必记住这一点。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">下面是取自具体实现中的一段代码。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">GetWindowThreadProcessId(targetWnd,&nbsp;&amp;dwProcessId);
+HHOOK&nbsp;handle&nbsp;=&nbsp;SetWindowsHookEx(WH_KEYBOARD,&nbsp;addr,&nbsp;dll,&nbsp;threadID);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我们需要知道，发生的每个事件都将通过一个钩子链，这是一系列可以在事件中运行的过程。SetWindowsHookExe()要做的基本上就是如何将自己的钩子放入钩子链中。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">上面的代码需要用到要安装的钩子类型（WH_KEYBOARD）、指向过程的指针、具有该过程的DLL的句柄以及将要挂钩的线程的ID。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">为了获得指向程序的指针，我们需要首先使用LoadLibrary()调用加载DLL。然后，调用<a href="https://wikileaks.org/ciav7p1/cms/page_6062133.html" target="_self">SetWindowsHookEx()</a>，并等待我们想要的事件发生（这里而言就是按一个键）。一旦相应的事件发生，我们的DLL就会被执行。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">完整的源代码，请参阅t_SetWindowsHookEx.cpp文件。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px; color: rgb(54, 96, 146);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">RtlCreateUserThread()</span></strong></span></p><p style="text-indent: 2em;"><a href="https://undocumented.ntinternals.net/index.html?page=UserMode%2FUndocumented%20Functions%2FExecutable%20Images%2FRtlCreateUserThread.html" target="_self"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">RtlCreateUserThread()</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">是一个未公开的API调用。它的设置几乎与CreateRemoteThread()以及后面介绍的NtCreateThreadE()完全相同。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">实际上，RtlCreateUserThread()会调用NtCreateThreadEx()，这意味着RtlCreateUserThread()是NtCreateThreadEx()的封装。所以，这里没有什么新玩意。但是，我们可能只想使用RtlCreateUserThread()，而不是NtCreateThreadEx()。即使后者发生了变动，我们的RtlCreateUserThread()仍然可以正常工作。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我们知道，<a href="http://blog.gentilkiwi.com/mimikatz" target="_self">mimikatz</a>和Metasploit都使用<a href="http://blog.gentilkiwi.com/mimikatz" target="_self">RtlCreateUserThread()</a>。如果你有兴趣的话，可以看看<a href="https://github.com/gentilkiwi/mimikatz/blob/d5676aa66cb3f01afc373b0a2f8fcc1a2822fd27/modules/kull_m_remotelib.c#L59" target="_self">这里</a>和<a href="https://github.com/rapid7/meterpreter/blob/6d43284689240f4261cae44a47f0fb557c1dde27/source/common/arch/win/remote_thread.c" target="_self">这里</a>。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">所以，如果mimikatz和Metasploit正在使用RtlCreateUserThread()...是的，那些家伙都了解自己的代码...按照他们的“建议”，使用RtlCreateUserThread()——特别是，如果你打算鼓捣一些比简单的“injectAllTheThings”程序更复杂的事情的时候。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">完整的源代码，请参阅t_RtlCreateUserThread.cpp。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px; color: rgb(54, 96, 146);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">SetThreadContext()</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这实际上是一个很酷的方法。通过在目标/远程进程中分配一大块内存，以便将特制代码注入目标/远程进程。而该代码是负责加载DLL的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">下面给出的是32位的代码。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:bash;toolbar:false">0x68,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;0xDEADBEEF&nbsp;(placeholder&nbsp;for&nbsp;return&nbsp;address)
+0x9c,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pushfd&nbsp;(save&nbsp;flags&nbsp;and&nbsp;registers)
+0x60,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pushad
+0x68,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;0xDEADBEEF&nbsp;(placeholder&nbsp;for&nbsp;DLL&nbsp;path&nbsp;name)
+0xb8,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;&nbsp;&nbsp;//&nbsp;mov&nbsp;eax,&nbsp;0xDEADBEEF&nbsp;(placeholder&nbsp;for&nbsp;LoadLibrary)
+0xff,&nbsp;0xd0,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;call&nbsp;eax&nbsp;(call&nbsp;LoadLibrary)
+0x61,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;popad&nbsp;(restore&nbsp;flags&nbsp;and&nbsp;registers)
+0x9d,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;popfd
+0xc3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;ret</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">对于64位代码，没有找到任何可用的代码，只好自己动手了，具体如下。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:bash;toolbar:false">0x50,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;rax&nbsp;(save&nbsp;rax)
+0x48,&nbsp;0xB8,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;//&nbsp;mov&nbsp;rax,&nbsp;0CCCCCCCCCCCCCCCCh&nbsp;(placeholder&nbsp;for&nbsp;return&nbsp;address)
+0x9c,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pushfq
+0x51,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;rcx
+0x52,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;rdx
+0x53,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;rbx
+0x55,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;rbp
+0x56,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;rsi
+0x57,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;rdi
+0x41,&nbsp;0x50,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;r8
+0x41,&nbsp;0x51,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;r9
+0x41,&nbsp;0x52,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;r10
+0x41,&nbsp;0x53,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;r11
+0x41,&nbsp;0x54,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;r12
+0x41,&nbsp;0x55,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;r13
+0x41,&nbsp;0x56,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;r14
+0x41,&nbsp;0x57,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;push&nbsp;r15
+0x68,0xef,0xbe,0xad,0xde,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;fastcall&nbsp;convention
+0x48,&nbsp;0xB9,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;//&nbsp;mov&nbsp;rcx,&nbsp;0CCCCCCCCCCCCCCCCh&nbsp;(placeholder&nbsp;for&nbsp;DLL&nbsp;path&nbsp;name)
+0x48,&nbsp;0xB8,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;0xCC,&nbsp;//&nbsp;mov&nbsp;rax,&nbsp;0CCCCCCCCCCCCCCCCh&nbsp;(placeholder&nbsp;for&nbsp;LoadLibrary)
+0xFF,&nbsp;0xD0,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;call&nbsp;rax&nbsp;(call&nbsp;LoadLibrary)
+0x58,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;dummy
+0x41,&nbsp;0x5F,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;r15
+0x41,&nbsp;0x5E,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;r14
+0x41,&nbsp;0x5D,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;r13
+0x41,&nbsp;0x5C,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;r12
+0x41,&nbsp;0x5B,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;r11
+0x41,&nbsp;0x5A,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;r10
+0x41,&nbsp;0x59,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;r9
+0x41,&nbsp;0x58,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;r8
+0x5F,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;rdi
+0x5E,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;rsi
+0x5D,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;rbp
+0x5B,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;rbx
+0x5A,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;rdx
+0x59,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;rcx
+0x9D,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;popfq
+0x58,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pop&nbsp;rax
+0xC3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;ret</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在将这个代码注入目标进程之前，需要填充/修补一些占位符：</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">返回地址（代码完成执行后线程应该恢复的地址）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">DLL路径名。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">LoadLibrary()的地址。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">接下来就是劫持、暂停、注入和恢复线程发挥作用的时候。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我们首先需要连接到目标/远程进程，并将内存分配到目标/远程进程中。请注意，我们需要分配具有读取和写入权限的内存来保存DLL路径名，以及存放加载DLL的汇编代码。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">LPVOID&nbsp;lpDllAddr&nbsp;=&nbsp;VirtualAllocEx(hProcess,&nbsp;NULL,&nbsp;dwSize,&nbsp;MEM_COMMIT,&nbsp;PAGE_EXECUTE_READWRITE);
+stub&nbsp;=&nbsp;VirtualAllocEx(hProcess,&nbsp;NULL,&nbsp;stubLen,&nbsp;MEM_COMMIT,&nbsp;PAGE_EXECUTE_READWRITE);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">接下来，我们需要获得在目标/远程进程上运行的一个线程的上下文（将要注入我们的汇编代码的线程）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">为找到线程，我们可以使用函数getThreadID()，它位于‘auxiliary.cpp’中。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">一旦我们获得了线程id，就可以设置线程上下文了。</span></p><pre class="brush:cpp;toolbar:false">hThread&nbsp;=&nbsp;OpenThread((THREAD_GET_CONTEXT&nbsp;|&nbsp;THREAD_SET_CONTEXT&nbsp;|&nbsp;THREAD_SUSPEND_RESUME),&nbsp;false,&nbsp;threadID);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">接下来，我们需要暂停线程来捕获其上下文。线程的上下文实际上就是其寄存器的状态。我们特别感兴趣的寄存器是EIP / RIP（有时称为IP指令指针）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">由于线程被暂停，所以我们可以更改EIP / RIP的值，并强制它继续在不同的路径（我们的代码洞）中执行。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">ctx.ContextFlags&nbsp;=&nbsp;CONTEXT_CONTROL;
+GetThreadContext(hThread,&nbsp;&amp;ctx);
+DWORD64&nbsp;oldIP&nbsp;=&nbsp;ctx.Rip;
+ctx.Rip&nbsp;=&nbsp;(DWORD64)stub;
+ctx.ContextFlags&nbsp;=&nbsp;CONTEXT_CONTROL;
+WriteProcessMemory(hProcess,&nbsp;(void&nbsp;*)stub,&nbsp;&amp;sc,&nbsp;stubLen,&nbsp;NULL);&nbsp;//&nbsp;write&nbsp;code&nbsp;cave
+SetThreadContext(hThread,&nbsp;&amp;ctx);
+ResumeThread(hThread);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">所以，我们暂停线程，捕获上下文，从中提取EIP / RIP。当我们注入的代码运行完成时，保存的这些数据将用来恢复现场。新的EIP / RIP设置为我们注入的代码位置。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">然后我们使用返回地址、DLL路径名地址和LoadLibrary()地址对所有占位符进行填补。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">一旦线程开始执行，我们的DLL将被加载，它一旦运行完成，将返回到被挂起的位置，并在那里恢复执行。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">如果你想练习调试的话，这里有具体的操作指南。启动要注入的应用程序，如notepad.exe。运行injectAllTheThings_64.exe与x64dbg，如下所示。</span></p><p style="text-indent: 0em; text-align: center;"><img width="640" height="376" src="http://p2.qhimg.com/t016f430e3e32eafac3.png" title="t016f430e3e32eafac3.png" alt="t016f430e3e32eafac3.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">也就是说，我们可以使用以下命令行（具体视您的环境而定）：</span></p><pre class="brush:bash;toolbar:false">&quot;C:\Users\rui\Documents\Visual&nbsp;Studio&nbsp;2013\Projects\injectAllTheThings\bin\injectAllTheThings_64.exe&quot;&nbsp;-t&nbsp;6&nbsp;notepad.exe&nbsp;&quot;c:\Users\rui\Documents\Visual&nbsp;Studio&nbsp;2013\Projects\injectAllTheThings\bin\dllmain_64.dll&quot;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">在调用WriteProcessMemory()处设置断点，如下所示。</span></p><p style="text-indent: 0em; text-align: center;"><img width="640" height="181" src="http://p7.qhimg.com/t01211a0986f8be0fe4.png" title="t01211a0986f8be0fe4.png" alt="t01211a0986f8be0fe4.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">当代码运行时，断点触发，这时要注意寄存器RDX的内存地址。至于为什么要关注RDX，可以阅读x64调用约定方面的资料。</span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><img src="http://p0.qhimg.com/t01cb123f3f25a95e8c.png" title="t01cb123f3f25a95e8c.png" alt="t01cb123f3f25a95e8c.png" width="640" height="190"/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">利用单步方式（F8）调用WriteProcessMemory()，启动x64dbg的另一个实例，并连接到&#39;notepad.exe&#39;。转到以前复制的地址（RDX中的地址），按“Ctrl + g”，您将看到我们的代码，如下所示。</span></p><p style="text-indent: 0em; text-align: center;"><img width="640" height="436" src="http://p9.qhimg.com/t01515e1bf77a7c9c28.png" title="t01515e1bf77a7c9c28.png" alt="t01515e1bf77a7c9c28.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">太棒了！ 现在，请在这个shellcode的开头设置一个断点。转到被调试进程的injectAllTheThings，让它运行。正如在下面看到的，我们的断点触发，现在可以单步调试代码，进行仔细研究了。</span></p><p style="text-indent: 0em; text-align: center;"><img width="640" height="396" src="http://p8.qhimg.com/t012b550b4dc04de29f.png" title="t012b550b4dc04de29f.png" alt="t012b550b4dc04de29f.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">一旦调用LoadLibrary()了函数，就可以加载我们的DLL了。</span></p><p style="text-indent: 0em; text-align: center;"><img width="640" height="412" src="http://p8.qhimg.com/t01549dce113bb97186.png" title="t01549dce113bb97186.png" alt="t01549dce113bb97186.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这真是太好了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我们的shellcode将返回到之前保存的RIP的地址处，notepad.exe将恢复执行。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">完整的源代码，请参阅t_suspendInjectResume.cpp。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px; color: rgb(54, 96, 146);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">反射型DLL注射</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我还将Stephen Fewer（这种技术的先驱）代码引入了这个“injectAllTheThings”项目，此外，我还构建了一个反射型DLL项目使用这种技术。请注意，我们正在注入的DLL必须使用适当的include和options进行编译。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">由于反射型DLL注入会将整个DLL复制到内存中，因此避免了使用进程注册DLL。我们已经完成了一切繁重的工作。要在DLL中加载内存时获取入口点，只需使用Stephen Fewer的代码即可。他的项目中包含的“LoadRemoteLibraryR（）”函数为我们完成了这些工作。我们使用GetReflectiveLoaderOffset（）来确定我们进程内存中的偏移量，然后使用该偏移加上目标/远程进程（我们写入DLL的位置）中的内存的基地址作为执行起始点。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">有点太复杂了？是的，确实如此。下面是实现这一目标的4个主要步骤。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">1.将DLL头写入内存</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">2.将每个节写入内存（通过解析节表）</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">3.检测import并加载所有其他已导入的DLL</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">4.调用DllMain入口点</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">与其他方法相比，这种技术提供了强大的隐蔽性，并在Metasploit中大量应用。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">如果你想了解更多详情，请访问官方的<a href="https://github.com/stephenfewer/ReflectiveDLLInjection" target="_self">GitHub信息库</a>。此外，请务必阅读<a href="http://www.harmonysecurity.com/files/HS-P005_ReflectiveDllInjection.pdf" target="_self">Stephen Fewer的文章</a>。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">另外，最好读一下<a href="https://github.com/fancycode/MemoryModule/" target="_self">MemoryModule</a>的作者Joachim Bauch写的一篇<a href="https://www.joachim-bauch.de/tutorials/loading-a-dll-from-memory/" target="_self">文章</a>，讲述了如何从内存加载一个DLL，同时，这也是在没有LoadLibrary（）的情况下<a href="https://www.codeproject.com/Tips/430684/Loading-Win-DLLs-manually-without-LoadLibrary" target="_self">手动加载Win32 / 64 DLL的好方法</a>。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">代码</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">当然，还有一些复杂的注入方法，所以后面还会更新injectAllTheThings项目。我最近看到的最有趣的一些是：</span></p><p style="text-indent: 2em;"><a href="https://countercept.com/our-thinking/doublepulsar-usermode-analysis-generic-reflective-dll-loader/" target="_self"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">DOUBLEPULSAR</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">使用的一种方法</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">由<a href="https://twitter.com/zerosum0x0" target="_self">@zerosum0x0</a>编写的，使用SetThreadContext()和<a href="https://zerosum0x0.blogspot.co.uk/2017/07/threadcontinue-reflective-injection.html" target="_self">NtContinue()</a>的反射型DLL注入技术，此处提供了可用的<a href="https://github.com/zerosum0x0/ThreadContinue" target="_self">代码</a>。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我上面描述的所有技术都是我在<a href="https://github.com/fdiskyou/injectAllTheThings/" target="_self">GitHub</a>上提供的一个项目中已经实现的。此外，我还提供了每种技术所需的DLL。下表可以了解实际实现的内容以及使用方法。</span></p><p style="text-indent: 2em; text-align: center;"><img src="http://p7.qhimg.com/t01d602d0cc9db1fbf2.png" title="t01d602d0cc9db1fbf2.png" alt="http://p7.qhimg.com/t01d602d0cc9db1fbf2.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">不用说，为了安全起见，最好始终使用injectAllTheThings_32.exe注入32位进程或使用AllTheThings_64.exe注入64位进程。当然，您也可以使用injectAllTheThings_64.exe注入32位进程。其实我还没有实现这一点，但是我可能稍后会再试一次，你可以试着用<a href="http://blog.rewolf.pl/blog/?p=102" target="_self">WoW64</a>鼓捣一下64位进程。Metasploit的smart_migrate基本上就是这种情况，具体请看<a href="https://github.com/rapid7/meterpreter/blob/5e24206d510a48db284d5f399a6951cd1b4c754b/source/common/arch/win/i386/base_inject.c" target="_self">这里</a>。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">本文涉及的整个项目的所有代码，包括DLL，都可从<a href="https://github.com/fdiskyou/injectAllTheThings/" target="_self">GitHub</a>下载。当然，如果您有兴致的话，也可以自己试着编译32位和64位代码。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://blog.deniable.org/blog/2017/07/16/inject-all-the-things" target="_blank">原文链接：http://blog.deniable.org/blog/2017/07/16/inject-all-the-things</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】DLL注入那些事 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4271" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

