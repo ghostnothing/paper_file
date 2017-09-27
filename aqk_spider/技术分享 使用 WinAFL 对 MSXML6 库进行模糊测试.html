@@ -1,0 +1,744 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】使用 WinAFL 对 MSXML6 库进行模糊测试 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="WinAFL,MSXML,fuzz"/>
+    
+        <meta name="description" content="本文将介绍怎样使用 WinAFL fuzzer 来对 MSXML 库做模糊测试。它是由 Ivan 创造的一个大型 fuzzer，它基于 Icumtuf 创造的使用 DynamoRIO 来测量代码覆盖率的 AFL，和用于内存和进程创建的 Windows API。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】使用 WinAFL 对 MSXML6 库进行模糊测试</h2>
+                <div class="article-msg">
+                    <span class="time">2017-09-22 11:28:23</span>
+                    
+                                        <span class="read">阅读：2998次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4443"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4443" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://symeonp.github.io/2017/09/17/fuzzing-winafl.html "
+                             target="_blank">来源： symeonp.github.io</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=145812086" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t010b843a7ca0ddf316.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=145812086" style="color:#848e99;">天鸽</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center;"><img src="http://p7.qhimg.com/t013f231c0b60537c74.jpg" title="t013f231c0b60537c74.jpg" alt="http://p7.qhimg.com/t013f231c0b60537c74.jpg"/></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">译者：</span><a href="http://bobao.360.cn/member/contribute?uid=145812086" target="_blank" style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong>天鸽</strong></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">MSXML库模糊测试</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这篇博客中，我将介绍怎样使用&nbsp;</span><a href="https://github.com/ivanfratric/winafl" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9); text-decoration: underline;"><span style="color: rgb(227, 108, 9);"><strong>WinAFL</strong></span></a><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;fuzzer </span></strong></span><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">来对 <span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>MSXML</strong></span> 库做模糊测试。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">也许你还没有使用过 WinAFL，它是由<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px; color: rgb(227, 108, 9);"><strong> Ivan</strong></span>（Google&#39;s Project Zero）创造的一个大型 fuzzer，它基于<strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px; color: rgb(227, 108, 9);"> Icumtuf </span></strong>创造的使用 <strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px; color: rgb(227, 108, 9);">DynamoRIO</span></strong> 来测量代码覆盖率的&nbsp;</span><a href="http://lcamtuf.coredump.cx/afl/" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">AFL</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">，和用于内存和进程创建的 Windows API。</span><a href="https://twitter.com/0vercl0k" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">Axel Souchet</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">&nbsp;一直在积极地提供新功能，如最新稳定版中的&nbsp;</span><a href="https://github.com/ivanfratric/winafl/commit/691dc760690750752054794891f75fbce50fee56" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">corpus minimization</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">，将在下一篇博客中介绍的&nbsp;</span><a href="https://github.com/ivanfratric/winafl/commit/8aa1e138dd0284b1da5c844c5d21fc5ebe5d1c45" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">persistent execution mode</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">&nbsp;和&nbsp;</span><a href="https://github.com/ivanfratric/winafl/commit/992a68ba34df152e07453f0b592ff79aa8d4de9a" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">afl-tmin</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">&nbsp;工具。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我们将从创建一个测试框架（test harness）开始，它可以让我们在库中 fuzz 一些解析函数，计算覆盖范围和最小化测试用例，最后以启动 fuzzer 和对结果进行分类来结束。最后，感谢来自 0patch 的 Mitja Kolsek 提供的补丁，它展示了怎样用 0patch 来修补该漏洞！</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">使用上述步骤，我已经在函数&nbsp;msxml6!DTD::findEntityGeneral 中找到了一个 NULL pointer dereference 的问题，我向微软报告后被拒绝，他们认为这不是一个安全问题。公平地说，只有 crash 确实没用，希望有人能发现一些有趣的东西。</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">测试框架</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在做了一些研究的时候，我在</span><a href="https://msdn.microsoft.com/en-us/library/ms754517%28v=vs.85%29.aspx" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">发现了微软提供的一个 C++ 示例代码，它允许我们提供一些 XML 文件并验证其结构。我将使用 Visual Studio 2015 来构建下面的程序，但在之前，我稍微做了点修改，使用了 Ivan 的 charToWChar 方法，它接受一个参数作为一个文件：</span></p><pre class="brush:cpp;toolbar:false">//&nbsp;xmlvalidate_fuzz.cpp&nbsp;:&nbsp;Defines&nbsp;the&nbsp;entry&nbsp;point&nbsp;for&nbsp;the&nbsp;console&nbsp;application.
+//
+#include&nbsp;&quot;stdafx.h&quot;
+#include&nbsp;&lt;stdio.h&gt;
+#include&nbsp;&lt;tchar.h&gt;
+#include&nbsp;&lt;windows.h&gt;
+#import&nbsp;&lt;msxml6.dll&gt;
+extern&nbsp;&quot;C&quot;&nbsp;__declspec(dllexport)&nbsp;&nbsp;int&nbsp;main(int&nbsp;argc,&nbsp;char**&nbsp;argv);
+//&nbsp;Macro&nbsp;that&nbsp;calls&nbsp;a&nbsp;COM&nbsp;method&nbsp;returning&nbsp;HRESULT&nbsp;value.
+#define&nbsp;CHK_HR(stmt)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;do&nbsp;{&nbsp;hr=(stmt);&nbsp;if&nbsp;(FAILED(hr))&nbsp;goto&nbsp;CleanUp;&nbsp;}&nbsp;while(0)
+void&nbsp;dump_com_error(_com_error&nbsp;&amp;e)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t&nbsp;bstrSource(e.Source());
+&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t&nbsp;bstrDescription(e.Description());
+&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;Error\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;\a\tCode&nbsp;=&nbsp;%08lx\n&quot;,&nbsp;e.Error());
+&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;\a\tCode&nbsp;meaning&nbsp;=&nbsp;%s&quot;,&nbsp;e.ErrorMessage());
+&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;\a\tSource&nbsp;=&nbsp;%s\n&quot;,&nbsp;(LPCSTR)bstrSource);
+&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;\a\tDescription&nbsp;=&nbsp;%s\n&quot;,&nbsp;(LPCSTR)bstrDescription);
+}
+_bstr_t&nbsp;validateFile(_bstr_t&nbsp;bstrFile)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Initialize&nbsp;objects&nbsp;and&nbsp;variables.
+&nbsp;&nbsp;&nbsp;&nbsp;MSXML2::IXMLDOMDocument2Ptr&nbsp;pXMLDoc;
+&nbsp;&nbsp;&nbsp;&nbsp;MSXML2::IXMLDOMParseErrorPtr&nbsp;pError;
+&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t&nbsp;bstrResult&nbsp;=&nbsp;L&quot;&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;HRESULT&nbsp;hr&nbsp;=&nbsp;S_OK;
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Create&nbsp;a&nbsp;DOMDocument&nbsp;and&nbsp;set&nbsp;its&nbsp;properties.
+&nbsp;&nbsp;&nbsp;&nbsp;CHK_HR(pXMLDoc.CreateInstance(__uuidof(MSXML2::DOMDocument60),&nbsp;NULL,&nbsp;CLSCTX_INPROC_SERVER));
+&nbsp;&nbsp;&nbsp;&nbsp;pXMLDoc-&gt;async&nbsp;=&nbsp;VARIANT_FALSE;
+&nbsp;&nbsp;&nbsp;&nbsp;pXMLDoc-&gt;validateOnParse&nbsp;=&nbsp;VARIANT_TRUE;
+&nbsp;&nbsp;&nbsp;&nbsp;pXMLDoc-&gt;resolveExternals&nbsp;=&nbsp;VARIANT_TRUE;
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Load&nbsp;and&nbsp;validate&nbsp;the&nbsp;specified&nbsp;file&nbsp;into&nbsp;the&nbsp;DOM.
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;And&nbsp;return&nbsp;validation&nbsp;results&nbsp;in&nbsp;message&nbsp;to&nbsp;the&nbsp;user.
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(pXMLDoc-&gt;load(bstrFile)&nbsp;!=&nbsp;VARIANT_TRUE)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pError&nbsp;=&nbsp;pXMLDoc-&gt;parseError;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bstrResult&nbsp;=&nbsp;_bstr_t(L&quot;Validation&nbsp;failed&nbsp;on&nbsp;&quot;)&nbsp;+&nbsp;bstrFile&nbsp;+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t(L&quot;\n=====================&quot;)&nbsp;+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t(L&quot;\nReason:&nbsp;&quot;)&nbsp;+&nbsp;_bstr_t(pError-&gt;Getreason())&nbsp;+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t(L&quot;\nSource:&nbsp;&quot;)&nbsp;+&nbsp;_bstr_t(pError-&gt;GetsrcText())&nbsp;+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t(L&quot;\nLine:&nbsp;&quot;)&nbsp;+&nbsp;_bstr_t(pError-&gt;Getline())&nbsp;+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t(L&quot;\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bstrResult&nbsp;=&nbsp;_bstr_t(L&quot;Validation&nbsp;succeeded&nbsp;for&nbsp;&quot;)&nbsp;+&nbsp;bstrFile&nbsp;+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t(L&quot;\n======================\n&quot;)&nbsp;+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t(pXMLDoc-&gt;xml)&nbsp;+&nbsp;_bstr_t(L&quot;\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+CleanUp:
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;bstrResult;
+}
+wchar_t*&nbsp;charToWChar(const&nbsp;char*&nbsp;text)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;size_t&nbsp;size&nbsp;=&nbsp;strlen(text)&nbsp;+&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;wchar_t*&nbsp;wa&nbsp;=&nbsp;new&nbsp;wchar_t[size];
+&nbsp;&nbsp;&nbsp;&nbsp;mbstowcs(wa,&nbsp;text,&nbsp;size);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;wa;
+}
+int&nbsp;main(int&nbsp;argc,&nbsp;char**&nbsp;argv)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(argc&nbsp;&lt;&nbsp;2)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;Usage:&nbsp;%s&nbsp;&lt;xml&nbsp;file&gt;\n&quot;,&nbsp;argv[0]);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;HRESULT&nbsp;hr&nbsp;=&nbsp;CoInitialize(NULL);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(SUCCEEDED(hr))
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;try
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t&nbsp;bstrOutput&nbsp;=&nbsp;validateFile(charToWChar(argv[1]));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MessageBoxW(NULL,&nbsp;bstrOutput,&nbsp;L&quot;noNamespace&quot;,&nbsp;MB_OK);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;catch&nbsp;(_com_error&nbsp;&amp;e)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dump_com_error(e);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CoUninitialize();
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">请注意下面的代码片段：</span></p><pre class="brush:cpp;toolbar:false">extern&nbsp;&quot;C&quot;&nbsp;__declspec(dllexport)&nbsp;&nbsp;int&nbsp;main(int&nbsp;argc,&nbsp;char**&nbsp;argv);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">本质上，这允许我们使用 target_method 参数，DynamoRIO 将尝试为给定的</span><a href="http://dynamorio.org/docs/group__drsyms.html#ga2e6f4d91b65fc835c047c8ca23c83d06%29" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">符号名（symbol name）</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">检索地址，如</span><a href="https://github.com/ivanfratric/winafl/blob/372a9746fb84a4c3a7656e7b79bf7e8c0c146142/winafl.c#L525" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这里</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">所示。<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我们可以按照 README 中使用的偏移方法，但是由于 ASLR 和所有这些东西，我们希望对模糊测试进行扩展，将二进制文件复制到许多台虚拟机里，并能使用相同的命令来进行 fuzz。指令 extern &quot;C&quot; 将 unmange 函数名，并使其看起来更漂亮。<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">要确定 DynamoRIO 确实可以使用此方法，输入下面的命令：</span></p><pre class="brush:bash;toolbar:false">dumpbin&nbsp;/EXPORTS&nbsp;xmlvalidate_fuzz.exe</pre><p style="text-align: center;"><img src="http://p2.qhimg.com/t01023118a03c190070.png" title="t0124242695d53d480e.png" alt="http://p0.qhimg.com/t0124242695d53d480e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">现在让我们赶快运行二进制文件并观察输出。你应该会得到下面的输出：</span></p><p style="text-align: center;"><img src="http://p7.qhimg.com/t01eae76fe0560439b7.png" title="t01a68be160b2cc2029.png" alt="t01a68be160b2cc2029.png" width="800" height="330"/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">代码覆盖</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="color: rgb(54, 96, 146); font-size: 18px;"><strong><span style="color: rgb(54, 96, 146); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">WinAFL</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">由于要测试的库是闭源的，所以我们将通过 WinAFL 使用 DynamoRIO 的代码覆盖库功能：</span></p><pre class="brush:bash;toolbar:false">C:\DRIO\bin32\drrun.exe&nbsp;-c&nbsp;winafl.dll&nbsp;-debug&nbsp;-coverage_module&nbsp;msxml6.dll&nbsp;-target_module&nbsp;xmlvalidate.exe&nbsp;-target_method&nbsp;main&nbsp;-fuzz_iterations&nbsp;10&nbsp;-nargs&nbsp;2&nbsp;--&nbsp;C:\xml_fuzz_initial\xmlvalidate.exe&nbsp;C:\xml_fuzz_initial\nn-valid.xml</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">WinAFL 将执行二进制文件十次。一旦完成，请返回到 winafl 的文件夹并检查日志文件：</span></p><p style="text-align: center;"><img src="http://p9.qhimg.com/t015bb3f848185d0fb2.png" title="t015bb3f848185d0fb2.png" alt="http://p9.qhimg.com/t015bb3f848185d0fb2.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">从输出中我们看到运行似乎一切正常！在文件的右侧，那些点描述了 DLL 的覆盖范围，如果你向下滚动，将会看到我们确实覆盖了许多的函数，因为我们在整个文件中获得了更多的点。我们在搜索大量的代码时，这是一个非常好的迹象，我们已经快要正确地定位到 MSXML6 的库。</span></p><p style="text-indent: 2em;"><span style="color: rgb(54, 96, 146); font-size: 18px;"><strong><span style="color: rgb(54, 96, 146); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Lighthouse- IDA Pro 的代码覆盖资源管理器</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这个插件将帮助我们更好地了解我们命中的函数，并使用 IDA 对覆盖范围进行了很好的概述。这是一个很好的插件，且具有良好的文档，由 Markus Gaasedelen (@gaasedelen) 所开发。请确保下载了最新版的&nbsp;</span><a href="https://github.com/DynamoRIO/dynamorio/releases/download/release_7_0_0_rc1/DynamoRIO-Windows-7.0.0-RC1.zip" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">DynamoRIO 7</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">，并按照</span><a href="https://github.com/gaasedelen/lighthouse" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这里</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">的说明进行安装。幸运的是，我们从文档中获得了两个样本测试用例，一个有效一个无效。让我们输入有效的一个并观察覆盖情况。为此，运行下面的命令：</span></p><pre class="brush:bash;toolbar:false">C:\DRIO7\bin64\drrun.exe&nbsp;-t&nbsp;drcov&nbsp;--&nbsp;xmlvalidate.exe&nbsp;nn-valid.xml</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">下一步启动 IDA，加载 msxml6.dll 并确保获得了符号！现在，检查是否有一个 .log 文件被创建，并在 IDA 中依次点击</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">File -&gt; Load File -&gt; Code Coverage File(s) 打开它。一旦覆盖文件被加载，它将高亮出测试用例命中的所有函数。</span></p><p style="text-indent: 2em;"><span style="color: rgb(54, 96, 146); font-size: 18px;"><strong><span style="color: rgb(54, 96, 146); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">测试用例最小化</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">现在是时候测试 XML 文件了（尽可能小）。我使用了一个稍微偏黑客的 joxean find_samples.py 版本的脚本。一旦你得到了几个测试用例，就可以最小化初始 seed 文件。可以使用下面的命令完成：</span></p><pre class="brush:bash;toolbar:false">python&nbsp;winafl-cmin.py&nbsp;--working-dir&nbsp;C:\winafl\bin32&nbsp;-D&nbsp;C:\DRIO\bin32&nbsp;-t&nbsp;100000&nbsp;-i&nbsp;C:\xml_fuzz\samples&nbsp;-o&nbsp;C:\minset_xml&nbsp;-coverage_module&nbsp;msxml6.dll&nbsp;-target_module&nbsp;xmlvalidate.exe&nbsp;-target_method&nbsp;fuzzme&nbsp;-nargs&nbsp;1&nbsp;--&nbsp;C:\xml_fuzz\xmlvalidate.exe&nbsp;@@</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">你会看到下面的输出：</span></p><pre class="brush:plain;toolbar:false">corpus&nbsp;minimization&nbsp;tool&nbsp;for&nbsp;WinAFL&nbsp;by&nbsp;&lt;0vercl0k@tuxfamily.org&gt;&nbsp;
+Based&nbsp;on&nbsp;WinAFL&nbsp;by&nbsp;&lt;ifratric@google.com&gt;&nbsp;
+Based&nbsp;on&nbsp;AFL&nbsp;by&nbsp;&lt;lcamtuf@google.com&gt;&nbsp;
+[+]&nbsp;CWD&nbsp;changed&nbsp;to&nbsp;C:\winafl\bin32.&nbsp;
+[*]&nbsp;Testing&nbsp;the&nbsp;target&nbsp;binary...&nbsp;
+[!]&nbsp;Dry-run&nbsp;failed,&nbsp;2&nbsp;executions&nbsp;resulted&nbsp;differently:&nbsp;
+Tuples&nbsp;matching?&nbsp;False&nbsp;
+Return&nbsp;codes&nbsp;matching?&nbsp;True</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我不太确定，但我认为 winafl-cmin.py 脚本期望初始 seed 文件指向相同的代码路径，也就是我们必须一次有效的测试用例，和一次无效的测试用例。可能是我错了，也可能是有一个 bug。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我们使用下面的 bash 脚本来确定一下“好的”和“坏的”XML 测试用例。</span></p><pre class="brush:bash;toolbar:false">$&nbsp;for&nbsp;file&nbsp;in&nbsp;*;&nbsp;do&nbsp;printf&nbsp;&quot;====&nbsp;FILE:&nbsp;$file&nbsp;=====\n&quot;;&nbsp;/cygdrive/c/xml_fuzz/xmlvalidate.exe&nbsp;$file&nbsp;;sleep&nbsp;1;&nbsp;done</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">下面的截图显示了我的运行结果：</span></p><p style="text-align: center;"><img src="http://p7.qhimg.com/t019acfe1966bd9b11c.png" title="t0141152c38a67f19d4.png" alt="t0141152c38a67f19d4.png" width="800" height="430"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">随意尝试一下，看看是哪些文件导致了这个问题（你的可能会有所不同）。一旦确定，再次运行上面的命令，希望你能得到下面的结果：</span></p><p style="text-align: center;"><img src="http://p2.qhimg.com/t01964afc07167867c4.png" title="t01964afc07167867c4.png" alt="http://p2.qhimg.com/t01964afc07167867c4.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">你看，初始用例包含 76 个文件，最小化后缩减至 26 个。感谢 Axel！</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">使用最小化后的测试用例，我们来编写一个可以自动化执行所有代码覆盖的 python 脚本：</span>import sys</p><pre class="brush:python;toolbar:false">import&nbsp;os
+testcases&nbsp;=&nbsp;[]
+for&nbsp;root,&nbsp;dirs,&nbsp;files&nbsp;in&nbsp;os.walk(&quot;.&quot;,&nbsp;topdown=False):
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;name&nbsp;in&nbsp;files:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;name.endswith(&quot;.xml&quot;):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;testcase&nbsp;=&nbsp;&nbsp;os.path.abspath(os.path.join(root,&nbsp;name))
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;testcases.append(testcase)
+for&nbsp;testcase&nbsp;in&nbsp;testcases:
+&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[*]&nbsp;Running&nbsp;DynamoRIO&nbsp;for&nbsp;testcase:&nbsp;&quot;,&nbsp;testcase
+&nbsp;&nbsp;&nbsp;&nbsp;os.system(&quot;C:\\DRIO7\\bin32\\drrun.exe&nbsp;-t&nbsp;drcov&nbsp;--&nbsp;C:\\xml_fuzz\\xmlvalidate.exe&nbsp;%s&quot;&nbsp;%&nbsp;testcase)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">上面的脚本在我使用的用例里生成了下面的输出：</span></p><p style="text-align: center;"><img src="http://p3.qhimg.com/t01ff9b6baea7292092.png" title="t0101b34b17ffa05b37.png" alt="http://p7.qhimg.com/t0101b34b17ffa05b37.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">和前面一样，使用 IDA 打开 File -&gt; Load File -&gt; Code Coverage File(s) 菜单下的所有 .log 文件。</span></p><p style="text-align: center;"><img src="http://p0.qhimg.com/t012fde1ca6d6141bb5.png" title="t012fde1ca6d6141bb5.png" alt="http://p0.qhimg.com/t012fde1ca6d6141bb5.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">有趣的是，请注意存在多少个 parse 函数，如果你在覆盖范围内徘徊，将会看到我们已经设法得到了大量有趣的代码。<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">由于我们确实得到了不错的代码覆盖率，让我们继续前进，最终 fuzz 它！</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我所做的就是 fuzz，fuzz，fuzz</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">让我们启动 fuzzer：</span></p><pre class="brush:bash;toolbar:false">afl-fuzz.exe&nbsp;-i&nbsp;C:\minset_xml&nbsp;-o&nbsp;C:\xml_results&nbsp;-D&nbsp;C:\DRIO\bin32\&nbsp;-t&nbsp;20000&nbsp;--&nbsp;-coverage_module&nbsp;MSXML6.dll&nbsp;-target_module&nbsp;xmlvalidate.exe&nbsp;-target_method&nbsp;main&nbsp;-nargs&nbsp;2&nbsp;--&nbsp;C:\xml_fuzz\xmlvalidate.exe&nbsp;@@</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">运行上面的命令后得到下面的输出：</span></p><p style="text-align: center;"><img src="http://p4.qhimg.com/t014e4d423a934f6f38.png" title="t01e9f0a984134084e7.png" alt="t01e9f0a984134084e7.png" width="800" height="420"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">正如你看到的，初始代码就是做这个工作，但速度非常慢。每三秒执行一次将消耗大量的时间才能得到正确的结果。有趣的是，我曾经就是在这种速度下（在 afl/winafl 时代之前，使用 python 和 radamsa），在三天的测试中发现了 bug！<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">让我们尽可能地从拖慢 fuzz 速度的部分解脱出来。如果你曾经做过 Windows 编程，就会知道下面一行初始化了一个 COM 对象，这可能就是速度的瓶颈：</span></p><pre class="brush:bash;toolbar:false">HRESULT&nbsp;hr&nbsp;=&nbsp;CoInitialize(NULL);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这一行确实是一个主要的问题，因此我们来重构代码，我们将创建一个 fuzzme 方法，该方法将在 COM 初始化调用之后接受文件名作为一个参数。重构的代码如下：</span></p><pre class="brush:cpp;toolbar:false">---&nbsp;cut&nbsp;---
+extern&nbsp;&quot;C&quot;&nbsp;__declspec(dllexport)&nbsp;_bstr_t&nbsp;fuzzme(wchar_t*&nbsp;filename);
+_bstr_t&nbsp;fuzzme(wchar_t*&nbsp;filename)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t&nbsp;bstrOutput&nbsp;=&nbsp;validateFile(filename);
+&nbsp;&nbsp;&nbsp;&nbsp;//bstrOutput&nbsp;+=&nbsp;validateFile(L&quot;nn-notValid.xml&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;//MessageBoxW(NULL,&nbsp;bstrOutput,&nbsp;L&quot;noNamespace&quot;,&nbsp;MB_OK);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;bstrOutput;
+}
+int&nbsp;main(int&nbsp;argc,&nbsp;char**&nbsp;argv)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(argc&nbsp;&lt;&nbsp;2)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;Usage:&nbsp;%s&nbsp;&lt;xml&nbsp;file&gt;\n&quot;,&nbsp;argv[0]);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;HRESULT&nbsp;hr&nbsp;=&nbsp;CoInitialize(NULL);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(SUCCEEDED(hr))
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;try
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_bstr_t&nbsp;bstrOutput&nbsp;=&nbsp;fuzzme(charToWChar(argv[1]));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;catch&nbsp;(_com_error&nbsp;&amp;e)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dump_com_error(e);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CoUninitialize();
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+}
+---&nbsp;cut&nbsp;---</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">你可以从</span><a href="https://symeonp.github.io/assets/files/xmlvalidate.cpp" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这里</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">得到重构后的版本。使用重构的二进制文件我们来再一次运行 fuzzer，看看是否正确。这一次，我们将传递 fuzzme 作为 target_method，而不是 main，并且只使用一个参数，即文件名。这里，我们使用 lcamtuf 的 xml.dic，来自</span><a href="https://raw.githubusercontent.com/google/oss-fuzz/master/projects/libxml2/xml.dict" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这里</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">。</span></p><pre class="brush:bash;toolbar:false">afl-fuzz.exe&nbsp;-i&nbsp;C:\minset_xml&nbsp;-o&nbsp;C:\xml_results&nbsp;-D&nbsp;C:\DRIO\bin32\&nbsp;-t&nbsp;20000&nbsp;-x&nbsp;xml.dict&nbsp;--&nbsp;-coverage_module&nbsp;MSXML6.dll&nbsp;-target_module&nbsp;xmlvalidate.exe&nbsp;-target_method&nbsp;fuzzme&nbsp;-nargs&nbsp;1&nbsp;--&nbsp;C:\xml_fuzz\xmlvalidate.exe&nbsp;@@</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">一旦你运行脚本，在 VMWare 中几秒钟就出现了下面的输出：<br/></span></p><p style="text-align: center;"><img src="http://p6.qhimg.com/t01ba6de35c7b76bfc2.png" title="t016f9e4e4310dead68.png" alt="t016f9e4e4310dead68.png" width="800" height="420"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">好多了，现在我们让它运行起来然后等待崩溃吧！</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">结果 - 崩溃分类和分析</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">通常，我会尝试用不同的测</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">试用例来 fuzz 这个二进制文件，但幸运的是我不断得到 NULL pointer dereference 的 bug。下面的截图显示了大约 12 天后的结果：</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><br/></span></p><p style="text-align: center;"><img src="http://p8.qhimg.com/t013df6ee2afffe0162.png" title="t013ec54d724fe303e5.png" alt="http://p8.qhimg.com/t013ec54d724fe303e5.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">请注意，总共执行了 33 万次，并发现了 26 次不同的崩溃！</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">为了给结果分类，我使用了 SkyLined 的&nbsp;</span><a href="https://github.com/SkyLined/BugId" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">Bugid</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">&nbsp;工具，这是一个很棒的工具，能为你提供关于崩溃和崩溃利用的详细报告。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">下面是我的 python 代码：</span></p><pre class="brush:python;toolbar:false">import&nbsp;sys
+import&nbsp;os
+sys.path.append(&quot;C:\\BugId&quot;)
+testcases&nbsp;=&nbsp;[]
+for&nbsp;root,&nbsp;dirs,&nbsp;files&nbsp;in&nbsp;os.walk(&quot;.\\fuzzer01\\crashes&quot;,&nbsp;topdown=False):
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;name&nbsp;in&nbsp;files:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;name.endswith(&quot;00&quot;):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;testcase&nbsp;=&nbsp;&nbsp;os.path.abspath(os.path.join(root,&nbsp;name))
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;testcases.append(testcase)
+for&nbsp;testcase&nbsp;in&nbsp;testcases:
+&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[*]&nbsp;Gonna&nbsp;run:&nbsp;&quot;,&nbsp;testcase
+&nbsp;&nbsp;&nbsp;&nbsp;os.system(&quot;C:\\python27\\python.exe&nbsp;C:\\BugId\\BugId.py&nbsp;C:\\Users\\IEUser\\Desktop\\xml_validate_results\\xmlvalidate.exe&nbsp;--&nbsp;%s&quot;&nbsp;%&nbsp;testcase)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">运行上面的脚本得到了下面的输出：<br/></span></p><p style="text-align: center;"><img src="http://p4.qhimg.com/t0196373de3fd18f372.png" title="t0196373de3fd18f372.png" alt="http://p4.qhimg.com/t0196373de3fd18f372.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">一旦我为所有得到的崩溃运行了它，可以很清楚的看到，我们命中的是相同的 bug。为了确认这一点，让我们打开 windbg：</span></p><pre class="brush:plain;toolbar:false">0:000&gt;&nbsp;g
+(a6c.5c0):&nbsp;Access&nbsp;violation&nbsp;-&nbsp;code&nbsp;c0000005&nbsp;(!!!&nbsp;second&nbsp;chance&nbsp;!!!)
+eax=03727aa0&nbsp;ebx=0012fc3c&nbsp;ecx=00000000&nbsp;edx=00000000&nbsp;esi=030f4f1c&nbsp;edi=00000002
+eip=6f95025a&nbsp;esp=0012fbcc&nbsp;ebp=0012fbcc&nbsp;iopl=0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nv&nbsp;up&nbsp;ei&nbsp;pl&nbsp;zr&nbsp;na&nbsp;pe&nbsp;nc
+cs=001b&nbsp;&nbsp;ss=0023&nbsp;&nbsp;ds=0023&nbsp;&nbsp;es=0023&nbsp;&nbsp;fs=003b&nbsp;&nbsp;gs=0000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;efl=00010246
+msxml6!DTD::findEntityGeneral+0x5:
+6f95025a&nbsp;8b4918&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ecx,dword&nbsp;ptr&nbsp;[ecx+18h]&nbsp;ds:0023:00000018=????????
+0:000&gt;&nbsp;kv
+ChildEBP&nbsp;RetAddr&nbsp;&nbsp;Args&nbsp;to&nbsp;Child&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+0012fbcc&nbsp;6f9de300&nbsp;03727aa0&nbsp;00000002&nbsp;030f4f1c&nbsp;msxml6!DTD::findEntityGeneral+0x5&nbsp;(FPO:&nbsp;[Non-Fpo])&nbsp;(CONV:&nbsp;thiscall)&nbsp;[d:\w7rtm\sql\xml\msxml6\xml\dtd\dtd.hxx&nbsp;@&nbsp;236]
+0012fbe8&nbsp;6f999db3&nbsp;03727aa0&nbsp;00000003&nbsp;030c5fb0&nbsp;msxml6!DTD::checkAttrEntityRef+0x14&nbsp;(FPO:&nbsp;[Non-Fpo])&nbsp;(CONV:&nbsp;thiscall)&nbsp;[d:\w7rtm\sql\xml\msxml6\xml\dtd\dtd.cxx&nbsp;@&nbsp;1470]
+0012fc10&nbsp;6f90508f&nbsp;030f4f18&nbsp;0012fc3c&nbsp;00000000&nbsp;msxml6!GetAttributeValueCollapsing+0x43&nbsp;(FPO:&nbsp;[Non-Fpo])&nbsp;(CONV:&nbsp;stdcall)&nbsp;[d:\w7rtm\sql\xml\msxml6\xml\parse\nodefactory.cxx&nbsp;@&nbsp;771]
+0012fc28&nbsp;6f902d87&nbsp;00000003&nbsp;030f4f14&nbsp;6f9051f4&nbsp;msxml6!NodeFactory::FindAttributeValue+0x3c&nbsp;(FPO:&nbsp;[Non-Fpo])&nbsp;(CONV:&nbsp;thiscall)&nbsp;[d:\w7rtm\sql\xml\msxml6\xml\parse\nodefactory.cxx&nbsp;@&nbsp;743]
+0012fc8c&nbsp;6f8f7f0d&nbsp;030c5fb0&nbsp;030c3f20&nbsp;01570040&nbsp;msxml6!NodeFactory::CreateNode+0x124&nbsp;(FPO:&nbsp;[Non-Fpo])&nbsp;(CONV:&nbsp;stdcall)&nbsp;[d:\w7rtm\sql\xml\msxml6\xml\parse\nodefactory.cxx&nbsp;@&nbsp;444]
+0012fd1c&nbsp;6f8f5042&nbsp;010c3f20&nbsp;ffffffff&nbsp;c4fd70d3&nbsp;msxml6!XMLParser::Run+0x740&nbsp;(FPO:&nbsp;[Non-Fpo])&nbsp;(CONV:&nbsp;stdcall)&nbsp;[d:\w7rtm\sql\xml\msxml6\xml\tokenizer\parser\xmlparser.cxx&nbsp;@&nbsp;1165]
+0012fd58&nbsp;6f8f4f93&nbsp;030c3f20&nbsp;c4fd7017&nbsp;00000000&nbsp;msxml6!Document::run+0x89&nbsp;(FPO:&nbsp;[Non-Fpo])&nbsp;(CONV:&nbsp;thiscall)&nbsp;[d:\w7rtm\sql\xml\msxml6\xml\om\document.cxx&nbsp;@&nbsp;1494]
+0012fd9c&nbsp;6f90a95b&nbsp;030ddf58&nbsp;00000000&nbsp;00000000&nbsp;msxml6!Document::_load+0x1f1&nbsp;(FPO:&nbsp;[Non-Fpo])&nbsp;(CONV:&nbsp;thiscall)&nbsp;[d:\w7rtm\sql\xml\msxml6\xml\om\document.cxx&nbsp;@&nbsp;1012]
+0012fdc8&nbsp;6f8f6c75&nbsp;037278f0&nbsp;00000000&nbsp;c4fd73b3&nbsp;msxml6!Document::load+0xa5&nbsp;(FPO:&nbsp;[Non-Fpo])&nbsp;(CONV:&nbsp;thiscall)&nbsp;[d:\w7rtm\sql\xml\msxml6\xml\om\document.cxx&nbsp;@&nbsp;754]
+0012fe38&nbsp;00401d36&nbsp;00000000&nbsp;00000008&nbsp;00000000&nbsp;msxml6!DOMDocumentWrapper::load+0x1ff&nbsp;(FPO:&nbsp;[Non-Fpo])&nbsp;(CONV:&nbsp;stdcall)&nbsp;[d:\w7rtm\sql\xml\msxml6\xml\om\xmldom.cxx&nbsp;@&nbsp;1111]
+--&nbsp;cut&nbsp;--</pre><p style="text-align: center;"><img src="http://p6.qhimg.com/t01bc6452c64e0e9877.png" title="t013d93b306af350078.png" alt="http://p9.qhimg.com/t013d93b306af350078.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">让我们来看一个造成崩溃的 xml：</span></p><pre class="brush:xml;toolbar:false">C:\Users\IEUser\Desktop\xml_validate_results\fuzzer01\crashes&gt;type&nbsp;id_000000_00
+&lt;?xml&nbsp;version=&quot;&amp;a;1.0&quot;?&gt;
+&lt;book&nbsp;xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xsi:noNamespaceSchemaLocation=&quot;nn.xsd&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;id=&quot;bk101&quot;&gt;
+&nbsp;&nbsp;&nbsp;&lt;author&gt;Gambardella,&nbsp;Matthew&lt;/author&gt;
+&nbsp;&nbsp;&nbsp;&lt;title&gt;XML&nbsp;Developer&#39;s&nbsp;Guide&lt;/title&gt;
+&nbsp;&nbsp;&nbsp;&lt;genre&gt;Computer&lt;/genre&gt;
+&nbsp;&nbsp;&nbsp;&lt;price&gt;44.95&lt;/price&gt;
+&nbsp;&nbsp;&nbsp;&lt;publish_date&gt;2000-10-01&lt;/publish_date&gt;
+&nbsp;&nbsp;&nbsp;&lt;description&gt;An&nbsp;in-depth&nbsp;look&nbsp;at&nbsp;creating&nbsp;applications&nbsp;with
+&nbsp;&nbsp;&nbsp;XML.&lt;/description&gt;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">正如你看到的，如果我们在 xml 或者其编码后提供了一些 garbage，就会得到上面的崩溃。Mitja 还将测试用例减到最小，如下所示：</span></p><pre class="brush:xml;toolbar:false">&lt;?xml&nbsp;version=&#39;1.0&#39;&nbsp;encoding=&#39;&amp;aaa;&#39;?&gt;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">对该库进行模糊测试的整个思想，是基于在 IE 上下文中找到一个漏洞并以某种方法触发它。经过一番搜索，让我们使用下面的 Poc（crashme.html），看看它是否会使 IE11 崩溃：</span></p><pre class="brush:xml;toolbar:false">&lt;!DOCTYPE&nbsp;html&gt;
+&lt;html&gt;
+&lt;head&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;script&gt;
+var&nbsp;xmlDoc&nbsp;=&nbsp;new&nbsp;ActiveXObject(&quot;Msxml2.DOMDocument.6.0&quot;);
+xmlDoc.async&nbsp;=&nbsp;false;
+xmlDoc.load(&quot;crashme.xml&quot;);
+if&nbsp;(xmlDoc.parseError.errorCode&nbsp;!=&nbsp;0)&nbsp;{
+&nbsp;&nbsp;&nbsp;var&nbsp;myErr&nbsp;=&nbsp;xmlDoc.parseError;
+&nbsp;&nbsp;&nbsp;console.log(&quot;You&nbsp;have&nbsp;error&nbsp;&quot;&nbsp;+&nbsp;myErr.reason);
+}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;console.log(xmlDoc.xml);
+}
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">在 Python 的 SimpleHTTPServer 中运行它，提供下面的东西：</span></p><p style="text-align: center;"><img src="http://p3.qhimg.com/t01f5e12a967f1b4e4e.png" title="t01f5e12a967f1b4e4e.png" alt="http://p3.qhimg.com/t01f5e12a967f1b4e4e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">Bingo！正如预期的那样，至少在启用了 PageHeap 的情况下，我们能够触发与我们在测试框架中相同的崩溃。小心不要在 Microsoft Outlook 中包含该 xml，因为它也会崩溃！此外，由于它基于库本身，如果产生一个更 sexy 的崩溃，则会增加攻击面！</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">打补丁</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在与 Mitja 通过电子邮件交</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">流后，他向我提供了可以在完全更新的 x64 系统上使用的补丁：</span></p><pre class="brush:plain;toolbar:false">;target&nbsp;platform:&nbsp;Windows&nbsp;7&nbsp;x64
+;
+RUN_CMD&nbsp;C:\Users\symeon\Desktop\xmlvalidate_64bit\xmlvalidate.exe&nbsp;C:\Users\symeon\Desktop\xmlvalidate_64bit\poc2.xml
+MODULE_PATH&nbsp;&quot;C:\Windows\System32\msxml6.dll&quot;
+PATCH_ID&nbsp;200000
+PATCH_FORMAT_VER&nbsp;2
+VULN_ID&nbsp;9999999
+PLATFORM&nbsp;win64
+patchlet_start
+&nbsp;PATCHLET_ID&nbsp;1
+&nbsp;PATCHLET_TYPE&nbsp;2
+&nbsp;
+&nbsp;PATCHLET_OFFSET&nbsp;0xD093D&nbsp;
+&nbsp;PIT&nbsp;msxml6.dll!0xD097D
+&nbsp;&nbsp;
+&nbsp;code_start
+&nbsp;&nbsp;test&nbsp;rbp,&nbsp;rbp&nbsp;;is&nbsp;rbp&nbsp;(this)&nbsp;NULL?
+&nbsp;&nbsp;jnz&nbsp;continue
+&nbsp;&nbsp;jmp&nbsp;PIT_0xD097D
+&nbsp;&nbsp;continue:
+&nbsp;code_end
+patchlet_end</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我们来调试和测试下这个补丁程序，我已经创建了一个账户，并未开发者安装了 0patch 代理，右击上述的 .0pp 文件：</span></p><p style="text-align: center;"><img src="http://p5.qhimg.com/t018fb3f6ecd31fdd8b.png" title="t01cefffe2776c5fa22.png" alt="t01cefffe2776c5fa22.png" width="800" height="400"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">一旦在测试框架中使用了可以导致崩溃的 xml，我立即设置断点：</span></p><p style="text-align: center;"><img src="http://p9.qhimg.com/t015f408ef2f2b2be69.png" title="t0111c595a835cd4e6f.png" alt="t0111c595a835cd4e6f.png" width="800" height="600"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">从上面的代码中看到，rbp 寄存器确实是 null，这将导致 null pointer dereference 的问题。由于我们已经部署了 0patch 代理，实际上它会跳转到 msxml6.dll!0xD097D，从而避免崩溃：</span></p><p style="text-align: center;"><img src="http://p2.qhimg.com/t01644e59145d171863.png" title="t01644e59145d171863.png" alt="http://p2.qhimg.com/t01644e59145d171863.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">太棒了！接下来我在修复后的版本上再次启动 winafl，但是不幸失败了。由于 0patch（钩子函数？）的性质，它与 WinAFL 不兼容，于是崩溃了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">然而，这是一种“DoS 0day”，正如我之前提到的，我在2017年6月向微软提出报告，二十天后收到一下邮件：</span></p><p style="text-align: center;"><img src="http://p9.qhimg.com/t01487dd7ec4062c727.png" title="t01487dd7ec4062c727.png" alt="http://p9.qhimg.com/t01487dd7ec4062c727.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我完全同意这一决定，但我最感兴趣的还是修补掉这个烦人的 bug，以便我可以继续前进。在调试器上花了几个小时之后，我发现唯一可控制的用户输入是编码字符串的长度：</span></p><pre class="brush:plain;toolbar:false">eax=03052660&nbsp;ebx=0012fc3c&nbsp;ecx=00000011&nbsp;edx=00000020&nbsp;esi=03054f24&nbsp;edi=00000002
+eip=6f80e616&nbsp;esp=0012fbd4&nbsp;ebp=0012fbe4&nbsp;iopl=0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nv&nbsp;up&nbsp;ei&nbsp;pl&nbsp;zr&nbsp;na&nbsp;pe&nbsp;nc
+cs=001b&nbsp;&nbsp;ss=0023&nbsp;&nbsp;ds=0023&nbsp;&nbsp;es=0023&nbsp;&nbsp;fs=003b&nbsp;&nbsp;gs=0000&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;efl=00000246
+msxml6!Name::create+0xf:
+6f80e616&nbsp;e8e7e6f9ff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;msxml6!Name::create&nbsp;(6f7acd02)
+0:000&gt;&nbsp;dds&nbsp;esp&nbsp;L3
+0012fbd4&nbsp;&nbsp;00000000
+0012fbd8&nbsp;&nbsp;03064ff8
+0012fbdc&nbsp;&nbsp;00000003
+0:000&gt;&nbsp;dc&nbsp;03064ff8&nbsp;L4
+03064ff8&nbsp;&nbsp;00610061&nbsp;00000061&nbsp;????????&nbsp;????????&nbsp;&nbsp;a.a.a...????????</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">上面的 unicode 字符串其实是来自我们测试用例的开头，其中数字 3 很明显是长度（函数的签名：Name *__stdcall Name::create(String *pS, const wchar_t *pch, int iLen, Atom *pAtomURN)）</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">结论</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如你所见，花一些时间在微软的 API 和文档上是非常值得的！另外，重构一些基本函数并精确定位影响性能的问题也可能对我们的工作有很大的改进！</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我必须感谢 lvan 将 afl 移植到 Windows 并创建了这个令人吃惊的项目。也感谢 Axel 和其他一直积极做贡献的人。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我的同事 Javier 激励我写了这篇博客，Richard 一直在回答我愚蠢的问题，并给我所有的帮助，来自 0patch 的 Mitja 建立了这个补丁，最后 Patroklo 几年前教了我一些模糊测试的技巧！</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考</span></strong></span></p><hr/><p style="text-indent: 2em;"><a href="https://github.com/richinseattle/EvolutionaryKernelFuzzing/blob/master/slides/Evolutionary%20Kernel%20Fuzzing-BH2017-rjohnson-FINAL.pdf" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Evolutionary Kernel Fuzzing-BH2017-rjohnson-FINAL.pdf</a></p><p style="text-indent: 2em;"><span style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><a href="https://labsblog.f-secure.com/2017/06/22/super-awesome-fuzzing-part-one/" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">Super Awesome Fuzzing, Part One</a></span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://symeonp.github.io/2017/09/17/fuzzing-winafl.html " target="_blank">原文链接：https://symeonp.github.io/2017/09/17/fuzzing-winafl.html </a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】使用 WinAFL 对 MSXML6 库进行模糊测试 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4443" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="3c0510d3b39fbf99cfcb4ef0ba2556be">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4467.html" alt="【漏洞预警】SambaBleed：Samba信息泄露漏洞（CVE–2017–12163）预警" target="_blank">【漏洞预警】SambaBleed：Sa...</a></li>
+                                <li><a href="/learning/detail/4456.html" alt="【木马分析】Chrome插件：User–Agent Switcher恶意代码分析报告" target="_blank">【木马分析】Chrome插件：User...</a></li>
+                                <li><a href="/learning/detail/4442.html" alt="【知识】9月19日 - 每日安全知识热点" target="_blank">【知识】9月19日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4448.html" alt="【木马分析】供应链幽灵再现：CCleaner软件攻击分析报告" target="_blank">【木马分析】供应链幽灵再现：CCl...</a></li>
+                                <li><a href="/learning/detail/4469.html" alt="【知识】9月24日 - 每日安全知识热点" target="_blank">【知识】9月24日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4453.html" alt="【技术分享】Is Hajime botnet dead?" target="_blank">【技术分享】Is Hajime bot...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

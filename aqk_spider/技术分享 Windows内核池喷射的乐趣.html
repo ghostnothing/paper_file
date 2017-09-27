@@ -1,0 +1,810 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】Windows内核池喷射的乐趣 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Windows,内核池,喷射"/>
+    
+        <meta name="description" content="Windows内核池喷射是常用的一种方式，本文将会介绍如何找到并查看对象在池空间中的实际分配以及对象本身的一些基本信息。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】Windows内核池喷射的乐趣</h2>
+                <div class="article-msg">
+                    <span class="time">2017-09-21 11:44:42</span>
+                    
+                                        <span class="read">阅读：651次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4439"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4439" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://theevilbit.blogspot.com/2017/09/pool-spraying-fun-part-1.html"
+                             target="_blank">来源： theevilbit.blogspot.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=145812086" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t010b843a7ca0ddf316.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=145812086" style="color:#848e99;">天鸽</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center;"><img src="http://p0.qhimg.com/t01db18f45a7cfed465.jpg" title="t01db18f45a7cfed465.jpg" alt="http://p0.qhimg.com/t01db18f45a7cfed465.jpg"/></p><p style="text-indent: 2em;"><br/></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">译者：</span><a href="http://bobao.360.cn/member/contribute?uid=145812086" target="_blank" style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><strong><span style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">天鸽</span></strong></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 32px; background: white;"><span style="font-weight: 900; font-size: 18px; color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em;"><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前言——Windows内核池喷射</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我计划写这一系列文章已经有一年了，我对这些东西做过一些研究，但是常常会忘记，也没有正确地写下笔记。我想探索的是什么样的对象可以用于内核池喷射，主要关注于它们消耗多少空间，它们拥有什么属性，并且到最后写了一段代码，将池孔大小（<span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>pool hole size</strong></span>）作为输入，然后动态地告诉我们在这里使用什么样的对象能够控制池分配以达到溢出的目的。我思考这一问题已经有段时间了，让我再一次感到兴奋的是当我看到了来自 @steventseeley 的一条推特（</span><a href="https://twitter.com/steventseeley/status/904443608216031233" style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">https://twitter.com/steventseeley/status/904443608216031233</a><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">），我决定把它写出来，另一方面也是我自己的兴趣使然。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">微软有一个很棒的内核对象列表，我们可以通过调用用户模式功能来创建内核对象，尽管它不是很完整，但仍然是一个很好的开始：</span><a href="https://msdn.microsoft.com/library/windows/desktop/ms724485%28v=vs.85%29.aspx" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">https://msdn.microsoft.com/library/windows/desktop/ms724485(v=vs.85).aspx</span></a><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">另一个重要的链接，是一个我们能够找到 <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px; color: rgb(227, 108, 9);"><strong>pool tag</strong></span>（译者注：poll tag是调试时用于识别块的字符）的列表，当查看池分配时也是十分方便的：</span><a href="https://blogs.technet.microsoft.com/yongrhee/2009/06/23/pool-tag-list/" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">https://blogs.technet.microsoft.com/yongrhee/2009/06/23/pool-tag-list/</span></a><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">在这篇文章中，我想探讨的是 Mutex 对象，由于笔记不完整它让我很头疼，我会讲到如何找到并查看对象在池空间中的实际分配以及对象本身的一些基本信息。<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第一部分——环境配置及对象大小</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在设置环境的部分，我们并不需要进行远程内核调试，进行本地内核调试就足够了，因为我们只探索内核内存，目前也就不需要设置任何断点。所以本地调试足以满足我们的需求。为此，我们需要在 Windows 中启用调试：</span></p><pre class="brush:bash;toolbar:false">bcdedit&nbsp;-debug&nbsp;ON</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">之后，需要重启机器。一旦完成，我们就可以启动 WinDBG，转到内核调试，然后选择本地调试。我建议使用下面的命令来加载符号：</span></p><pre class="brush:bash;toolbar:false">.symfix
+.reload</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">此时我们就可以探索内核内存空间了。我将使用 Win7 SP1 x86 进行演示。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">首先，如果我们希望获得更全面的对象列表，可以使用下面的命令：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:bash;toolbar:false">!object&nbsp;\ObjectTypes</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我们会得到这样的东西：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">lkd&gt;&nbsp;!object&nbsp;\ObjectTypes
+Object:&nbsp;8be05880&nbsp;&nbsp;Type:&nbsp;(851466d8)&nbsp;Directory
+&nbsp;&nbsp;&nbsp;&nbsp;ObjectHeader:&nbsp;8be05868&nbsp;(new&nbsp;version)
+&nbsp;&nbsp;&nbsp;&nbsp;HandleCount:&nbsp;0&nbsp;&nbsp;PointerCount:&nbsp;44
+&nbsp;&nbsp;&nbsp;&nbsp;Directory&nbsp;Object:&nbsp;8be05ed0&nbsp;&nbsp;Name:&nbsp;ObjectTypes
+&nbsp;&nbsp;&nbsp;&nbsp;Hash&nbsp;Address&nbsp;&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Name
+&nbsp;&nbsp;&nbsp;&nbsp;----&nbsp;-------&nbsp;&nbsp;----&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;----
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;00&nbsp;&nbsp;851d6900&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TpWorkerFactory
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;851466d8&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Directory
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;01&nbsp;&nbsp;8521a838&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Mutant
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;851cddb0&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Thread
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;03&nbsp;&nbsp;857c7c40&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FilterCommunicationPort
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;04&nbsp;&nbsp;8522a360&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TmTx
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;05&nbsp;&nbsp;851d29c8&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Controller
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;06&nbsp;&nbsp;8521d0b8&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EtwRegistration
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;07&nbsp;&nbsp;851fe9c8&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Profile
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8521a9c8&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Event
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;851467a0&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Type
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;09&nbsp;&nbsp;8521cce0&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Section
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8521a900&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EventPair
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;85146610&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SymbolicLink
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;10&nbsp;&nbsp;851d69c8&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Desktop
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;851cdce8&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;UserApcReserve
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;11&nbsp;&nbsp;85221040&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EtwConsumer
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8520e838&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Timer
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;12&nbsp;&nbsp;8522a8f0&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;File
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;851fe838&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WindowStation
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;14&nbsp;&nbsp;860a6f78&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PcwObject
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;15&nbsp;&nbsp;8521ceb0&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TmEn
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;16&nbsp;&nbsp;851d2838&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Driver
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;18&nbsp;&nbsp;8521db70&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WmiGuid
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;851fe900&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;KeyedEvent
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;19&nbsp;&nbsp;851d2900&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Device
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;851cd040&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Token
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;20&nbsp;&nbsp;85214690&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ALPC&nbsp;Port
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;851cd568&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DebugObject
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;21&nbsp;&nbsp;8522a9b8&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IoCompletion
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;22&nbsp;&nbsp;851cde78&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Process
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;23&nbsp;&nbsp;8521cf78&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TmRm
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;24&nbsp;&nbsp;851d6838&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Adapter
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;26&nbsp;&nbsp;852139a8&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PowerRequest
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;85218448&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Key
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;28&nbsp;&nbsp;851cdf40&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Job
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;30&nbsp;&nbsp;8521c940&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Session
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8522a428&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TmTm
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;31&nbsp;&nbsp;851cdc20&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IoCompletionReserve
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;32&nbsp;&nbsp;8520e9c8&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Callback
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;33&nbsp;&nbsp;85894328&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FilterConnectionPort
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;34&nbsp;&nbsp;8520e900&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Semaphore</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这是一个可以在内核空间中分配的对象的列表。我们可以通过查看更多的细节来探索几个关于它们的重要属性。使用命令 dt nt!_OBJECT_TYPE &lt;object&gt; 我们可以得到关于某对象（object）的更多细节，比如句柄总数等。但是最重要的是 _OBJECT_TYPE_INITIALIZER 结构的偏移量，它将给我们带来极大的方便。让我们看看它为我们提供了 Mutant 对象的哪些我想要的信息：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">lkd&gt;&nbsp;dt&nbsp;nt!_OBJECT_TYPE&nbsp;8521a838
+&nbsp;&nbsp;&nbsp;+0x000&nbsp;TypeList&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;_LIST_ENTRY&nbsp;[&nbsp;0x8521a838&nbsp;-&nbsp;0x8521a838&nbsp;]
+&nbsp;&nbsp;&nbsp;+0x008&nbsp;Name&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;_UNICODE_STRING&nbsp;&quot;Mutant&quot;
+&nbsp;&nbsp;&nbsp;+0x010&nbsp;DefaultObject&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;(null)&nbsp;
+&nbsp;&nbsp;&nbsp;+0x014&nbsp;Index&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0xe&nbsp;&#39;&#39;
+&nbsp;&nbsp;&nbsp;+0x018&nbsp;TotalNumberOfObjects&nbsp;:&nbsp;0x15f
+&nbsp;&nbsp;&nbsp;+0x01c&nbsp;TotalNumberOfHandles&nbsp;:&nbsp;0x167
+&nbsp;&nbsp;&nbsp;+0x020&nbsp;HighWaterNumberOfObjects&nbsp;:&nbsp;0xc4d7
+&nbsp;&nbsp;&nbsp;+0x024&nbsp;HighWaterNumberOfHandles&nbsp;:&nbsp;0xc4ed
+&nbsp;&nbsp;&nbsp;+0x028&nbsp;TypeInfo&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;_OBJECT_TYPE_INITIALIZER
+&nbsp;&nbsp;&nbsp;+0x078&nbsp;TypeLock&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;_EX_PUSH_LOCK
+&nbsp;&nbsp;&nbsp;+0x07c&nbsp;Key&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x6174754d
+&nbsp;&nbsp;&nbsp;+0x080&nbsp;CallbackList&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;_LIST_ENTRY&nbsp;[&nbsp;0x8521a8b8&nbsp;-&nbsp;0x8521a8b8&nbsp;]</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后阅读下 _OBJECT_TYPE_INITIALIZER：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">lkd&gt;&nbsp;dt&nbsp;nt!_OBJECT_TYPE_INITIALIZER&nbsp;8521a838+28
+&nbsp;&nbsp;&nbsp;+0x000&nbsp;Length&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0x50
+&nbsp;&nbsp;&nbsp;+0x002&nbsp;ObjectTypeFlags&nbsp;&nbsp;:&nbsp;0&nbsp;&#39;&#39;
+&nbsp;&nbsp;&nbsp;+0x002&nbsp;CaseInsensitive&nbsp;&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;+0x002&nbsp;UnnamedObjectsOnly&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;+0x002&nbsp;UseDefaultObject&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;+0x002&nbsp;SecurityRequired&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;+0x002&nbsp;MaintainHandleCount&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;+0x002&nbsp;MaintainTypeList&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;+0x002&nbsp;SupportsObjectCallbacks&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;+0x002&nbsp;CacheAligned&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0y0
+&nbsp;&nbsp;&nbsp;+0x004&nbsp;ObjectTypeCode&nbsp;&nbsp;&nbsp;:&nbsp;2
+&nbsp;&nbsp;&nbsp;+0x008&nbsp;InvalidAttributes&nbsp;:&nbsp;0x100
+&nbsp;&nbsp;&nbsp;+0x00c&nbsp;GenericMapping&nbsp;&nbsp;&nbsp;:&nbsp;_GENERIC_MAPPING
+&nbsp;&nbsp;&nbsp;+0x01c&nbsp;ValidAccessMask&nbsp;&nbsp;:&nbsp;0x1f0001
+&nbsp;&nbsp;&nbsp;+0x020&nbsp;RetainAccess&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0
+&nbsp;&nbsp;&nbsp;+0x024&nbsp;PoolType&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;0&nbsp;(&nbsp;NonPagedPool&nbsp;)
+&nbsp;&nbsp;&nbsp;+0x028&nbsp;DefaultPagedPoolCharge&nbsp;:&nbsp;0
+&nbsp;&nbsp;&nbsp;+0x02c&nbsp;DefaultNonPagedPoolCharge&nbsp;:&nbsp;0x50
+&nbsp;&nbsp;&nbsp;+0x030&nbsp;DumpProcedure&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;(null)&nbsp;
+&nbsp;&nbsp;&nbsp;+0x034&nbsp;OpenProcedure&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;(null)&nbsp;
+&nbsp;&nbsp;&nbsp;+0x038&nbsp;CloseProcedure&nbsp;&nbsp;&nbsp;:&nbsp;(null)&nbsp;
+&nbsp;&nbsp;&nbsp;+0x03c&nbsp;DeleteProcedure&nbsp;&nbsp;:&nbsp;0x82afe453&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;&nbsp;nt!ExpDeleteMutant+0
+&nbsp;&nbsp;&nbsp;+0x040&nbsp;ParseProcedure&nbsp;&nbsp;&nbsp;:&nbsp;(null)&nbsp;
+&nbsp;&nbsp;&nbsp;+0x044&nbsp;SecurityProcedure&nbsp;:&nbsp;0x82ca2936&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;long&nbsp;&nbsp;nt!SeDefaultObjectMethod+0
+&nbsp;&nbsp;&nbsp;+0x048&nbsp;QueryNameProcedure&nbsp;:&nbsp;(null)&nbsp;
+&nbsp;&nbsp;&nbsp;+0x04c&nbsp;OkayToCloseProcedure&nbsp;:&nbsp;(null)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这里告诉了我们两个重要的事情：</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">此对象被分配给的池类型 - 在这里是非分页池（NonPagedPool）</span></strong></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">功能偏移（这在实际的漏洞利用部分十分重要）</span></strong></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">之后，我们来分配一个 Mutant 对象，然后在内核池中找到它。我写了一段简短的 Python 代码来实现它：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:python;toolbar:false">from&nbsp;ctypes&nbsp;import&nbsp;*
+from&nbsp;ctypes.wintypes&nbsp;import&nbsp;*
+import&nbsp;os,&nbsp;sys
+kernel32&nbsp;=&nbsp;windll.kernel32
+def&nbsp;alloc_not_named_mutex():
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hHandle&nbsp;=&nbsp;HANDLE(0)
+hHandle&nbsp;=&nbsp;kernel32.CreateMutexA(None,&nbsp;False,&nbsp;None)
+if&nbsp;hHandle&nbsp;==&nbsp;None:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[-]&nbsp;Error&nbsp;while&nbsp;creating&nbsp;mutex&quot;
+&nbsp;&nbsp;sys.exit()
+print&nbsp;hex(hHandle)
+if&nbsp;__name__&nbsp;==&nbsp;&#39;__main__&#39;:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;alloc_not_named_mutex()
+variable&nbsp;=&nbsp;raw_input(&#39;Press&nbsp;any&nbsp;key&nbsp;to&nbsp;exit...&#39;)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这段代码将为我们分配一个未命名的 mutex，打印出它的句柄并等待退出。我们需要等待着，所以我们可以在 WinDBG 中探索内核池，如果进程退出，则mutex 将被破坏。这里我得到了一个 0x70 的句柄，我们来看看怎样在 WinDBG 中找到它。首先我需要找到 Python 进程并切换上下文，可以这样做：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">lkd&gt;&nbsp;!process&nbsp;0&nbsp;0&nbsp;python.exe
+PROCESS&nbsp;86e80930&nbsp;&nbsp;SessionId:&nbsp;1&nbsp;&nbsp;Cid:&nbsp;0240&nbsp;&nbsp;&nbsp;&nbsp;Peb:&nbsp;7ffd4000&nbsp;&nbsp;ParentCid:&nbsp;0f80
+&nbsp;&nbsp;&nbsp;&nbsp;DirBase:&nbsp;bf3fd2e0&nbsp;&nbsp;ObjectTable:&nbsp;a8282b30&nbsp;&nbsp;HandleCount:&nbsp;&nbsp;41.
+&nbsp;&nbsp;&nbsp;&nbsp;Image:&nbsp;python.exe
+lkd&gt;&nbsp;.process&nbsp;86e80930&nbsp;&nbsp;
+Implicit&nbsp;process&nbsp;is&nbsp;now&nbsp;86e80930</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">第一条命令将为我们找到进程，第二条命令将切换上下文。然后我们查询句柄，就能得到内存中对象的地址：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">lkd&gt;&nbsp;!handle&nbsp;70
+PROCESS&nbsp;86e80930&nbsp;&nbsp;SessionId:&nbsp;1&nbsp;&nbsp;Cid:&nbsp;0240&nbsp;&nbsp;&nbsp;&nbsp;Peb:&nbsp;7ffd4000&nbsp;&nbsp;ParentCid:&nbsp;0f80
+&nbsp;&nbsp;&nbsp;&nbsp;DirBase:&nbsp;bf3fd2e0&nbsp;&nbsp;ObjectTable:&nbsp;a8282b30&nbsp;&nbsp;HandleCount:&nbsp;&nbsp;41.
+&nbsp;&nbsp;&nbsp;&nbsp;Image:&nbsp;python.exe
+Handle&nbsp;table&nbsp;at&nbsp;a8282b30&nbsp;with&nbsp;41&nbsp;entries&nbsp;in&nbsp;use
+0070:&nbsp;Object:&nbsp;86e031a8&nbsp;&nbsp;GrantedAccess:&nbsp;001f0001&nbsp;Entry:&nbsp;8c0d80e0
+Object:&nbsp;86e031a8&nbsp;&nbsp;Type:&nbsp;(8521a838)&nbsp;Mutant
+&nbsp;&nbsp;&nbsp;&nbsp;ObjectHeader:&nbsp;86e03190&nbsp;(new&nbsp;version)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HandleCount:&nbsp;1&nbsp;&nbsp;PointerCount:&nbsp;1</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这样我们就可以找到池的位置，细节如下：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">lkd&gt;&nbsp;!pool&nbsp;86e031a8&nbsp;&nbsp;
+Pool&nbsp;page&nbsp;86e031a8&nbsp;region&nbsp;is&nbsp;Nonpaged&nbsp;pool
+&nbsp;86e03000&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;86e03098&nbsp;size:&nbsp;&nbsp;&nbsp;90&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;MmCa
+&nbsp;86e03128&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;90&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;86e03168&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Icp&nbsp;
+*86e03178&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;10&nbsp;&nbsp;(Allocated)&nbsp;*Muta&nbsp;(Protected)
+&nbsp;&nbsp;Pooltag&nbsp;Muta&nbsp;:&nbsp;Mutant&nbsp;objects
+&nbsp;86e031c8&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;86e03208&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">它显示在非分页池中需要 0x50 字节大小的位置。无论我们重复多少次，都是 0x50。看起来确实如此。如果我们将之前的代码放在一个循环中，我们可以看到它能够工作，并且可以进行很棒的堆喷射：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">&nbsp;851ef118&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef168&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef1b8&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef208&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef258&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef2a8&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef2f8&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef348&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef398&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef3e8&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef438&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef488&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef4d8&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef528&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef578&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef5c8&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef618&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef668&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef6b8&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)
+&nbsp;851ef708&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;50&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Muta&nbsp;(Protected)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">那么如果我们给 Mutex 取一个名字，会有什么样的变化？这是另一段 Python 代码：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:python;toolbar:false">def&nbsp;alloc_named_mutex(i):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hHandle&nbsp;=&nbsp;HANDLE(0)
+hHandle&nbsp;=&nbsp;kernel32.CreateMutexA(None,&nbsp;False,&nbsp;&quot;Pool&nbsp;spraying&nbsp;is&nbsp;cool&nbsp;&quot;&nbsp;+&nbsp;str(i))
+if&nbsp;hHandle&nbsp;==&nbsp;None:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;[-]&nbsp;Error&nbsp;while&nbsp;creating&nbsp;mutex&quot;
+&nbsp;&nbsp;sys.exit()
+print&nbsp;hex(hHandle)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我给它传递了一个参数，因为如果我们要使用它来进行喷射，这将是很重要的，因为我们不能创建两个具有相同命名的 mutex。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">一旦我们创建了 mutex，并且我们遵循与之前一样的逻辑，就可以看到其中有点不同：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">*871d39e8&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;30&nbsp;&nbsp;(Allocated)&nbsp;*Muta&nbsp;(Protected)
+&nbsp;&nbsp;Pooltag&nbsp;Muta&nbsp;:&nbsp;Mutant&nbsp;objects</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这一次它需要 0x60 字节，这也是一致的。我们也可以做同样的喷射，但具有不同的大小。这里有一些重要的东西。如果我们看一看池分配，就可以看到这是一个从 pool chunk 的头位置偏移 0x20 的指针，指向 Mutex 的名字：<br/></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">lkd&gt;&nbsp;dd&nbsp;871d39e8&nbsp;
+871d39e8&nbsp;&nbsp;040c0006&nbsp;e174754d&nbsp;00000000&nbsp;00000050
+871d39f8&nbsp;&nbsp;00000000&nbsp;00000000&nbsp;9a06fb38&nbsp;002e002e
+871d3a08&nbsp;&nbsp;aab50528&nbsp;00000000&nbsp;00000002&nbsp;00000001
+871d3a18&nbsp;&nbsp;00000000&nbsp;000a000e&nbsp;86e0bd80&nbsp;99a4fc07
+871d3a28&nbsp;&nbsp;0008bb02&nbsp;00000001&nbsp;871d3a30&nbsp;871d3a30
+871d3a38&nbsp;&nbsp;00000001&nbsp;00000000&nbsp;00000000&nbsp;01d10000
+871d3a48&nbsp;&nbsp;040b000c&nbsp;6d4d6956&nbsp;b299b8c8&nbsp;9a087020
+871d3a58&nbsp;&nbsp;a8246340&nbsp;00000000&nbsp;00000000&nbsp;85d4f0b0
+lkd&gt;&nbsp;dd&nbsp;aab50528
+aab50528&nbsp;&nbsp;006f0050&nbsp;006c006f&nbsp;00730020&nbsp;00720070
+aab50538&nbsp;&nbsp;00790061&nbsp;006e0069&nbsp;00200067&nbsp;00730069
+aab50548&nbsp;&nbsp;00630020&nbsp;006f006f&nbsp;0020006c&nbsp;006f0031
+lkd&gt;&nbsp;dS&nbsp;aab50528
+006c006f&nbsp;&nbsp;&quot;????????????????????????????????&quot;
+006c00af&nbsp;&nbsp;&quot;????????&quot;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我的 WinDBG 看起来是不想打印出对象的名字，但是如果你以十六进制格式查看它的 UNICODE，它就是我们给 Mutex 的命名。如果我们检查这个字符串的存储位置：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">lkd&gt;&nbsp;!pool&nbsp;aab50528
+Pool&nbsp;page&nbsp;aab50528&nbsp;region&nbsp;is&nbsp;Paged&nbsp;pool
+&nbsp;aab50000&nbsp;size:&nbsp;&nbsp;&nbsp;a8&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;CMDa
+&nbsp;aab500a8&nbsp;size:&nbsp;&nbsp;&nbsp;28&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;a8&nbsp;&nbsp;(Free)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.7.
+&nbsp;aab500d0&nbsp;size:&nbsp;&nbsp;&nbsp;28&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;28&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;NtFs
+&nbsp;aab500f8&nbsp;size:&nbsp;&nbsp;&nbsp;28&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;28&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;MmSm
+&nbsp;aab50120&nbsp;size:&nbsp;&nbsp;&nbsp;38&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;28&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;CMnb&nbsp;Process:&nbsp;86ef6760
+&nbsp;aab50158&nbsp;size:&nbsp;&nbsp;100&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;38&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoNm
+&nbsp;aab50258&nbsp;size:&nbsp;&nbsp;&nbsp;38&nbsp;previous&nbsp;size:&nbsp;&nbsp;100&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;CMDa
+&nbsp;aab50290&nbsp;size:&nbsp;&nbsp;&nbsp;38&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;38&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;CMNb&nbsp;(Protected)
+&nbsp;aab502c8&nbsp;size:&nbsp;&nbsp;&nbsp;28&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;38&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;MmSm
+&nbsp;aab502f0&nbsp;size:&nbsp;&nbsp;&nbsp;20&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;28&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;CMNb&nbsp;(Protected)
+&nbsp;aab50310&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;20&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Key&nbsp;&nbsp;(Protected)
+&nbsp;aab50370&nbsp;size:&nbsp;&nbsp;&nbsp;20&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;SeAt
+&nbsp;aab50390&nbsp;size:&nbsp;&nbsp;&nbsp;d8&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;20&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;FMfn
+&nbsp;aab50468&nbsp;size:&nbsp;&nbsp;&nbsp;28&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;d8&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;CMVa
+&nbsp;aab50490&nbsp;size:&nbsp;&nbsp;&nbsp;30&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;28&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;CMVa
+&nbsp;aab504c0&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;30&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Key&nbsp;&nbsp;(Protected)
+*aab50520&nbsp;size:&nbsp;&nbsp;&nbsp;38&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;60&nbsp;&nbsp;(Allocated)&nbsp;*ObNm
+&nbsp;&nbsp;Pooltag&nbsp;ObNm&nbsp;:&nbsp;object&nbsp;names,&nbsp;Binary&nbsp;:&nbsp;nt!ob</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">可以看到它在分页池中！之后我们还会回顾这里，但在这里先透露一些东西：我们可以使用命名的 Mutex 在分页池区域（paged pool area）中创建自定义大小的分配，大小取决于我们给出的名称。这对于在分页池中进行喷射是非常有用的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">第二部分——使用pykd编写脚本</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">正如上一部分中讲到的，获得对象实际大小的过程是相当简单的，但是如果我们需要获得很多对象大小的时候，这将是一个繁重的手工作业，因此为了避免浪费太多时间，此过程应该被自动化执行。手动操作几次当然是有好处的，特别是对初学者而言，但是更多的重复就没有意义了。那么我们如何编写 WinDBG 脚本？用 pykd！pykd 是 WinDBG 的一个很棒的 Python 扩展，它甚至允许在没有手动启动 WinDBG 的情况下编写脚本。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">第一件事就是安装 pykd，这有时很让人头疼。它并不总是像听起来那么简单。如果我们下载预编译的版本，并将 pykd.pyd 文件放在 WinDBG 的 winext 目录下，可能是最简单的方法。请让 WinDBG、Python、VCRedict 和 pykd 的架构相同（x86 或 x64），这一点很重要。你也可以通过 PIP 来安装 pykd，但是我在尝试导入它的时候并没有成功。另外一定要使用最新版本的 Python （2.7.13），当启动 pykd 时，一些较旧的版本（如 2.7.9）会使 WinDBG 退出。至于那些更老版本的 Python（2.7.1），它曾经是可以工作的。但是你一旦这么做，它将成为一个非常强大的扩展。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">于是我写了一个简单的函数来获取对象名称和句柄，并且会查找对象的大小。也许还有其他更优雅的解决方案，但下面的脚本已经可以满足我的需求：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:python;toolbar:false">def&nbsp;find_object_size(handle,name):
+#find&nbsp;windbg.exe&nbsp;process
+wp&nbsp;=&nbsp;dbgCommand(&#39;!process&nbsp;0&nbsp;0&nbsp;windbg.exe&#39;)
+#print&nbsp;wp
+#extract&nbsp;process&nbsp;&quot;address&quot;
+process_tuples&nbsp;=&nbsp;re.findall(&nbsp;r&#39;(PROCESS&nbsp;)([0-9a-f]*)(&nbsp;&nbsp;SessionId)&#39;,&nbsp;wp)
+if&nbsp;process_tuples:
+&nbsp;&nbsp;process&nbsp;=&nbsp;process_tuples[0][1]
+&nbsp;&nbsp;print&nbsp;&quot;Process:&nbsp;&quot;&nbsp;+&nbsp;process
+&nbsp;&nbsp;#switch&nbsp;to&nbsp;process&nbsp;context
+&nbsp;&nbsp;dbgCommand(&quot;.process&nbsp;&quot;&nbsp;+&nbsp;process)
+&nbsp;&nbsp;#find&nbsp;object&nbsp;&quot;address&quot;
+&nbsp;&nbsp;object_ref&nbsp;=&nbsp;dbgCommand(&quot;!handle&nbsp;&quot;&nbsp;+&nbsp;h)
+&nbsp;&nbsp;object_tuples&nbsp;=&nbsp;re.findall(&nbsp;r&#39;(Object:&nbsp;)([0-9a-f]*)(&nbsp;&nbsp;GrantedAccess)&#39;,&nbsp;object_ref)
+&nbsp;&nbsp;if&nbsp;object_tuples:
+&nbsp;&nbsp;&nbsp;obj&nbsp;=&nbsp;object_tuples[0][1]
+&nbsp;&nbsp;&nbsp;print&nbsp;&quot;Object:&nbsp;&quot;&nbsp;+&nbsp;obj
+&nbsp;&nbsp;&nbsp;#find&nbsp;pool
+&nbsp;&nbsp;&nbsp;pools&nbsp;=&nbsp;dbgCommand(&quot;!pool&nbsp;&quot;&nbsp;+&nbsp;obj)
+&nbsp;&nbsp;&nbsp;#print&nbsp;pools
+&nbsp;&nbsp;&nbsp;#find&nbsp;size
+&nbsp;&nbsp;&nbsp;size_re&nbsp;=&nbsp;re.findall(r&#39;(\*[0-9a-f]{8}&nbsp;size:[&nbsp;]*)([0-9a-f]*)(&nbsp;previous)&#39;,pools)
+&nbsp;&nbsp;&nbsp;if&nbsp;size_re:
+&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;name&nbsp;+&nbsp;&quot;&nbsp;objects&#39;s&nbsp;size&nbsp;in&nbsp;kernel:&nbsp;&quot;&nbsp;+&nbsp;size_re[0][1]
+#close&nbsp;handle
+kernel32.CloseHandle(handle)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family:微软雅黑, Microsoft YaHei">第三部分——研究分析</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">脚本将会减轻我们寻找池大小分配的工作。有了这个我会查看下面的对象：</span></p><p style="text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">Event</span></strong></span></p><p style="text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">IoCompletionPort</span></strong></span></p><p style="text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">IoCompletionReserve</span></strong></span></p><p style="text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">Job（已命名的和未命名的）<br/></span></strong></span></p><p style="text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">Semaphore（已命名的和未命名的）</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">从这一点来讲，过程是非常简单的，我们只需要调用相关的用户模式函数，创建一个对象，然后检查大小。我为 WinDBG 创建了一个简短的脚本，它能够自动化创建上述的对象，并检查大小，最后把它们打印出来。我把脚本上传到了这里：</span></p><p style="text-indent: 2em;"><span style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><a href="https://github.com/theevilbit/kex/blob/master/kernel_objects.py" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">https://github.com/theevilbit/kex/blob/master/kernel_objects.py</a></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">使用方法：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">1.&nbsp;&nbsp;&nbsp;&nbsp;启动 WinDBG</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">2.&nbsp;&nbsp;&nbsp;&nbsp;依次点击 Kernel debug -&gt; Local</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">3.&nbsp;&nbsp;&nbsp;&nbsp;执行命令：.load pykd</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">4.&nbsp;&nbsp;&nbsp;&nbsp;命令：!py path_to_the_script</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">结果如下：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">Not&nbsp;Named&nbsp;Mutex&nbsp;objects&#39;s&nbsp;size&nbsp;in&nbsp;kernel:&nbsp;0x50
+Named&nbsp;Mutex&nbsp;objects&#39;s&nbsp;size&nbsp;in&nbsp;kernel:&nbsp;0x60
+Job&nbsp;objects&#39;s&nbsp;size&nbsp;in&nbsp;kernel:&nbsp;0x168
+Job&nbsp;objects&#39;s&nbsp;size&nbsp;in&nbsp;kernel:&nbsp;0x178
+IoCompletionPort&nbsp;objects&#39;s&nbsp;size&nbsp;in&nbsp;kernel:&nbsp;0x98
+Event&nbsp;objects&#39;s&nbsp;size&nbsp;in&nbsp;kernel:&nbsp;0x40
+IoCompletionReserve&nbsp;objects&#39;s&nbsp;size&nbsp;in&nbsp;kernel:&nbsp;0x60
+Not&nbsp;named&nbsp;Semaphore&nbsp;objects&#39;s&nbsp;size&nbsp;in&nbsp;kernel:&nbsp;0x48
+Named&nbsp;Semaphore&nbsp;objects&#39;s&nbsp;size&nbsp;in&nbsp;kernel:&nbsp;0x58</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这样我们就得到了一套不错的可用于内核池喷射的对象。那么什么是“kex”，它在期望什么呢？在后面的文章中你将看到内核中更酷的东西。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">也许我应该在这个系列的开始做一些解释。我想写一些脚本，让我们在进行 Windows 内核利用开发的时候更快，我的第一个脚本是用于内核池喷射的。另外，如果你从来没有看过关于内核池溢出的东西，也没有用过内核池喷射技术。那么可以阅读：</span></p><p style="text-indent: 2em;"><a href="http://trackwatch.com/windows-kernel-pool-spraying/" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">http://trackwatch.com/windows-kernel-pool-spraying/</span></a></p><p style="text-indent: 2em;"><span style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><a href="http://www.fuzzysecurity.com/tutorials/expDev/20.html" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">http://www.fuzzysecurity.com/tutorials/expDev/20.html</a></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">现在我们已经有了一个包含内核对象大小的列表（该脚本也可以在其他平台上运行，尽管可能需要针对 x64 架构做一些修改），我们可以进行自动化的喷射和制造空隙（hole）了。如果我们知道需要多大的空隙的话。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">基本上：</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">1.&nbsp;&nbsp;&nbsp;&nbsp;一旦我们分析了漏洞，就会知道驱动程序将在内核池中分配的对象或缓冲器的大小是多少。</span></strong></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">2.&nbsp;&nbsp;&nbsp;&nbsp;我们需要控制该分配的位置，所以我们需要在池中准备一个给定大小的空隙，以便内核在那儿分配新对象。</span></strong></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">3.&nbsp;&nbsp;&nbsp;&nbsp;如果我们知道大小，就可以简单地计算出什么类型的对象利于喷射，还有我们需要释放掉多少个该对象。</span></strong></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">4.&nbsp;&nbsp;&nbsp;&nbsp;如果我们知道这些所有的东西，就可以进行内核喷射并制造空隙了。</span></strong></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我们需要知道该对象的信息和我们使用溢出覆盖的池头部的信息，之后我会回来再讲的，因为在制造空隙时并不需要这些。我可能会失败，也做了一些准备，我希望覆盖数据也可以自动生成。现在，我只想根据给定的大小去制造空隙。所以我写了一个脚本，可以用于这个目的（请注意，这里是为 Win7 SP1 x86 硬编码的）：</span></p><p style="text-indent: 2em;"><a href="https://github.com/theevilbit/kex/blob/master/spray_helper.py" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">https://github.com/theevilbit/kex/blob/master/spray_helper.py</span></a></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">它会让你输入想要的空隙的大小，然后进行喷射，释放空间并在 WinDBG 中显示该区域。还要注意的是，它仍是使用本地内核调试器，我们无法设置断点，所以存在竞争条件的问题，当我们使用 !pool 命令时，可以像其他内核进程一样在可用空间中分配。我仍然使用本地内核调试器的原因是对于目前阶段的演示来说更简单。当我做真实的利用演示时，就需要进行远程调试了，但在这里我可以直接进行演示。下面是输出：</span></p><pre class="brush:plain;toolbar:false">lkd&gt;&nbsp;!py&nbsp;c:\users\csaby\desktop\spray_helper.py
+Give&nbsp;me&nbsp;the&nbsp;size&nbsp;of&nbsp;the&nbsp;hole&nbsp;in&nbsp;hex:&nbsp;440
+Process:&nbsp;8572bd40
+Object&nbsp;location:&nbsp;857e15f0
+Pool&nbsp;page&nbsp;857e15f0&nbsp;region&nbsp;is&nbsp;Nonpaged&nbsp;pool
+&nbsp;857e1000&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1040&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1080&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e10c0&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1100&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1140&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1180&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e11c0&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1200&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1240&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1280&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e12c0&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1300&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1340&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1380&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e13c0&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1400&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1440&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1480&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e14c0&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1500&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1540&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1580&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;Even&nbsp;(Protected)
+*857e15c0&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;*Even&nbsp;(Protected)
+&nbsp;&nbsp;Pooltag&nbsp;Even&nbsp;:&nbsp;Event&nbsp;objects
+&nbsp;857e1600&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1640&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1680&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e16c0&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1700&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)
+&nbsp;857e1740&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;Even&nbsp;(Protected)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">你可以看到我们有 17 x 0x40，也就是 0x440 的空闲空间，没有必要去处理更多细节。我可以给出任何其他的大小，例如：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">lkd&gt;&nbsp;!py&nbsp;c:\users\csaby\desktop\spray_helper.py
+Give&nbsp;me&nbsp;the&nbsp;size&nbsp;of&nbsp;the&nbsp;hole&nbsp;in&nbsp;hex:&nbsp;260
+Process:&nbsp;8572bd40
+Object&nbsp;location:&nbsp;87b2fe00
+Pool&nbsp;page&nbsp;87b2fe00&nbsp;region&nbsp;is&nbsp;Nonpaged&nbsp;pool
+&nbsp;87b2f000&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f098&nbsp;size:&nbsp;&nbsp;&nbsp;90&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Free)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;....
+&nbsp;87b2f128&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;90&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f1c0&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f258&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f2f0&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f388&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f420&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f4b8&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f550&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f5e8&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f680&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f718&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f7b0&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f848&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f8e0&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2f978&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2fa10&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2faa8&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2fb40&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2fbd8&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2fc70&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2fd08&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Free&nbsp;)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+*87b2fda0&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;*IoCo&nbsp;(Protected)
+&nbsp;&nbsp;Owning&nbsp;component&nbsp;:&nbsp;Unknown&nbsp;(update&nbsp;pooltag.txt)
+&nbsp;87b2fe38&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2fed0&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)
+&nbsp;87b2ff68&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;previous&nbsp;size:&nbsp;&nbsp;&nbsp;98&nbsp;&nbsp;(Allocated)&nbsp;&nbsp;IoCo&nbsp;(Protected)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">可以看到这个喷射正是我们想要的。请注意，这一次使用了不同的对象。如果你测试很多次，请尝试着使用一个会导致不同对象分配的数字，那样你就可以得到更整洁的输出。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">另一个值得注意的事情是，这里制造的空隙不是 100% 可靠的，但我相信已经非常接近了。我做了如下几点：我使用 100000 个对象对内核进行喷射，然后释放掉中间的 X 个。这很可能会让它们一个接着一个，并在我释放掉它们的时候提供给我们需要的空间，为了演示自动化过程，这是最简单的。但如果像下面这样的话会更可靠：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">我尝试制造多个空隙，并释放多个 X，它们可能是彼此相邻的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">有一种方法可以从内核中泄露对象的地址，并计算它们是否相邻，从而释放空间。这是最可靠的方法。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">随着我的进步，我会在将来实现它，但是现在我采用了第一种方法。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">是的，我使用 Python 编码，而不是 Powershell，仅仅是因为我不能在 PS 中写代码，但是我完全同意人们说的，在 PS 中实现会更有意义。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://theevilbit.blogspot.com/2017/09/pool-spraying-fun-part-1.html" target="_blank">原文链接：https://theevilbit.blogspot.com/2017/09/pool-spraying-fun-part-1.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】Windows内核池喷射的乐趣 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4439" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="93c27e4eb29843c928f972253797775a">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4416.html" alt="【漏洞预警】Microsoft .NET Framework漏洞（CVE–2017–8759）预警" target="_blank">【漏洞预警】Microsoft .NE...</a></li>
+                                <li><a href="/learning/detail/4425.html" alt="【安全报告】XShellGhost事件技术回顾报告" target="_blank">【安全报告】XShellGhost事件...</a></li>
+                                <li><a href="/learning/detail/4424.html" alt="【知识】9月16日 - 每日安全知识热点" target="_blank">【知识】9月16日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4418.html" alt="【技术分享】利用威胁情报数据平台拓展APT攻击线索一例" target="_blank">【技术分享】利用威胁情报数据平台拓...</a></li>
+                                <li><a href="/learning/detail/4417.html" alt="【知识】9月15日 - 每日安全知识热点" target="_blank">【知识】9月15日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4427.html" alt="【知识】9月17日 - 每日安全知识热点" target="_blank">【知识】9月17日 - 每日安全知识热...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

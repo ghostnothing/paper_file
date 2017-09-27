@@ -1,0 +1,854 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】如何枚举Windows中的进程、线程以及映像加载通知回调例程 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Windows,进程,线程"/>
+    
+        <meta name="description" content="如果你想跟随本文的脚步，我建议你跟我一样使用Windows x64 10.0.15063（创造者更新版）中的系统文件。本文所使用的伪代码以及反汇编代码都是在这个发行版的基础上编写的。如果你还没有搭建内核调试环境，不要担忧，我们给出了一个教程，一步一步教你如何使用WindDbg以及VMware搭建基本的内核调试环境。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】如何枚举Windows中的进程、线程以及映像加载通知回调例程</h2>
+                <div class="article-msg">
+                    <span class="time">2017-09-22 16:41:07</span>
+                    
+                                        <span class="read">阅读：3809次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4459"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4459" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="http://www.triplefault.io/2017/09/enumerating-process-thread-and-image.html"
+                             target="_blank">来源： triplefault.io</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2819002922" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t0104d1b8b4ca36e961.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2819002922" style="color:#848e99;">興趣使然的小胃</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><img src="http://p0.qhimg.com/t0123e48680d82c37d7.png" title="t011a07f09e5adf4e90.png" alt="http://p3.qhimg.com/t011a07f09e5adf4e90.png"/></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">译者：</span><a href="http://bobao.360.cn/member/contribute?uid=2819002922" target="_blank" style="text-decoration: underline; color: rgb(0, 112, 192); line-height: 28px; font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">興趣使然的小胃</span></a></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em;"><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一、前言</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">大多数人都知道，Windows包含内核模式下的各种回调例程，驱动开发者可以使用这些例程接收各种事件通知。本文将介绍其中某些函数的工作机制。具体说来，我们会研究进程创建及终止回调例程（<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff559951(v=vs.85).aspx" target="_self">nt!PsSetCreateProcessNotifyRoutine</a>、 <a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff559953(v=vs.85).aspx" target="_self">nt!PsSetCreateProcessNotifyRoutineEx</a>和<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/mt805891(v=vs.85).aspx" target="_self">nt!PsSetCreateProcessNotifyRoutineEx2</a>）、线程创建及终止回调例程（<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff559954(v=vs.85).aspx" target="_self">nt!PsSetCreateThreadNotifyRoutine</a>和<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/dn957857(v=vs.85).aspx" target="_self">nt!PsSetCreateThreadNotifyRoutineEx</a>）以及映像加载通知回调例程（<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff559957(v=vs.85).aspx" target="_self">nt!PsSetLoadImageNotifyRoutine</a>）的内部工作原理。此外，我们也会提供一个便于操作的WinDbg脚本，你可以利用这个脚本枚举这几种回调例程。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果你想跟随本文的脚步，我建议你跟我一样使用Windows x64 10.0.15063（创造者更新版）中的系统文件。本文所使用的伪代码以及反汇编代码都是在这个发行版的基础上编写的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果你还没有搭建内核调试环境，不要担忧，我们给出了一个<a href="http://www.triplefault.io/2017/07/setting-up-kernel-debugging-using.html" target="_self">教程</a>，一步一步教你如何使用WindDbg以及VMware搭建基本的内核调试环境。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">二、回调例程的作用</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在某些事件发生时，驱动开发者可以使用这些回调例程来接收事件的通知。比如，<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff559951(v=vs.85).aspx" target="_self">nt!PsSetCreateProcessNotifyRoutine</a>这个基本的进程创建回调会注册一个用户定义的函数指针（“<strong>NotifyRoutine</strong>”），每当进程创建或者删除时，Windows都会调用这个函数指针。作为事件通知的一部分，用户提供的这个处理函数可以获得大量信息。在我们的演示案例中，这些信息包括父进程的PID（如果父进程存在的话）、实际进程的PID以及一个布尔值，标识进程处于创建还是终止状态。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">安全软件可以利用这些回调来仔细检查主机上运行的代码。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">三、深入分析</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">3.1 已公开的API</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">万事开头难，我们先得找个出发点。没有什么比官方文档中的函数更适合上手，我们选择的是<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff559951(v=vs.85).aspx" target="_self">nt!PsSetCreateProcessNotifyRoutine</a>这个函数。MSDN称这个例程自Windows 2000起就一直存在。<a href="https://www.reactos.org/" target="_self">ReactOS</a>似乎很早以前就已经<a href="https://doxygen.reactos.org/dd/dbe/psnotify_8c.html#a3253d05870ac48d9fa4c0886343d12cb" target="_self">实现</a>了这个例程。接下来，我们会具体分析从Windows 2000到现在的这17年中，这个函数发生过什么变化（如果这么多年这些函数的确发生过变化的话）。</span></p><pre class="brush:cpp;toolbar:false">NTSTATUS&nbsp;__stdcall&nbsp;PsSetCreateProcessNotifyRoutine(PVOID&nbsp;NotifyRoutine,&nbsp;BOOLEAN&nbsp;Remove)
+{
+&nbsp;&nbsp;return&nbsp;PspSetCreateProcessNotifyRoutine(NotifyRoutine,&nbsp;Remove&nbsp;!=&nbsp;0);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个函数似乎会调用一个nt!PspSetCreateProcessNotifyRoutine例程。实际上，其他类似的函数（<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff559953(v=vs.85).aspx" target="_self">nt!PsSetCreateProcessNotifyRoutineEx</a>及<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/mt805891(v=vs.85).aspx" target="_self">nt!PsSetCreateProcessNotifyRoutineEx2</a>）也会调用这个例程：</span></p><p style="text-align: center;"><img src="http://p0.qhimg.com/t01cc22700a3a409dbc.png" title="t015f8a9c8f88bdbcab.png" alt="http://p7.qhimg.com/t015f8a9c8f88bdbcab.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">唯一的区别在于传递给nt!PspSetCreateProcessNotifyRoutine的第二个参数。这些参数属于有效的标识符。在基础函数（<strong>nt!PsSetCreateProcessNotifyRoutine</strong>）中，根据“Remove”参数的状态，这些标识的值为1或者0。如果“Remove”为TRUE，那么Flags=1。如果“Remove”为FALSE，那么Flags=0。在扩展函数（<strong>nt!PsSetCreateProcessNotifyRoutineEx</strong>）中，这些标识的值为2或者3。</span></p><pre class="brush:cpp;toolbar:false">NTSTATUS&nbsp;__fastcall&nbsp;PsSetCreateProcessNotifyRoutineEx(PVOID&nbsp;NotifyRoutine,&nbsp;BOOLEAN&nbsp;Remove)
+{
+&nbsp;&nbsp;return&nbsp;PspSetCreateProcessNotifyRoutine(NotifyRoutine,&nbsp;(Remove&nbsp;!=&nbsp;0)&nbsp;+&nbsp;2);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于<strong>nt!PsSetCreateProcessNotifyRoutineEx2</strong>而言，这些标识的值为6或者7：</span></p><pre class="brush:cpp;toolbar:false">NTSTATUS&nbsp;__fastcall&nbsp;PsSetCreateProcessNotifyRoutineEx2(int&nbsp;NotifyType,&nbsp;PVOID&nbsp;NotifyInformation,&nbsp;BOOLEAN&nbsp;Remove)
+{
+&nbsp;&nbsp;NTSTATUS&nbsp;result;&nbsp;//&nbsp;eax
+
+&nbsp;&nbsp;if&nbsp;(&nbsp;NotifyType&nbsp;)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Only&nbsp;PsCreateProcessNotifySubsystems&nbsp;is&nbsp;supported.
+&nbsp;&nbsp;&nbsp;&nbsp;result&nbsp;=&nbsp;STATUS_INVALID_PARAMETER;
+&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;result&nbsp;=&nbsp;PspSetCreateProcessNotifyRoutine(NotifyInformation,&nbsp;(Remove&nbsp;!=&nbsp;0)&nbsp;+&nbsp;6);
+&nbsp;&nbsp;return&nbsp;result;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">因此，我们可以推测出传递给nt!PspSetCreateProcessNotifyRoutine函数的标识符具体定义如下：</span></p><pre class="brush:cpp;toolbar:false">#define&nbsp;FLAG_REMOVE_FROM_ARRAY&nbsp;0x1
+
+//&nbsp;This&nbsp;is&nbsp;why&nbsp;flags&nbsp;from&nbsp;PsSetCreateProcessNotifyRoutineEx&nbsp;can&nbsp;have&nbsp;a&nbsp;value&nbsp;of&nbsp;2&nbsp;or&nbsp;3
+//&nbsp;FLAG_IS_EXTENDED&nbsp;=&nbsp;0x2
+//&nbsp;FLAG_IS_EXTENDED&nbsp;|&nbsp;FLAG_REMOVE_FROM_ARRAY&nbsp;=&nbsp;0x3
+#define&nbsp;FLAG_IS_EXTENDED&nbsp;0x2
+
+//&nbsp;This&nbsp;is&nbsp;why&nbsp;flags&nbsp;from&nbsp;nt!PsSetCreateProcessNotifyRoutineEx2&nbsp;can&nbsp;have&nbsp;a&nbsp;value&nbsp;of&nbsp;6&nbsp;or&nbsp;7
+//&nbsp;FLAG_IS_EXTENDED2&nbsp;=&nbsp;0x6
+//&nbsp;FLAG_IS_EXTENDED2&nbsp;|&nbsp;FLAG_REMOVE_FROM_ARRAY&nbsp;=&nbsp;0x7
+#define&nbsp;FLAG_IS_EXTENDED2&nbsp;(0x4&nbsp;|&nbsp;FLAG_IS_EXTENDED)</pre><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.2 未公开文档</span></strong></span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">nt!PspSetCreateProcessNotifyRoutine</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">稍微有点复杂，该函数的具体定义如下，我建议你还是在另一个<a href="https://gist.github.com/nmulasmajic/a14b2d51596a4c6fb261fc8f8e83b279" target="_self">窗口</a>中好好阅读这段代码，便于理解。</span></p><pre class="brush:cpp;toolbar:false">NTSTATUS&nbsp;__fastcall&nbsp;PspSetCreateProcessNotifyRoutine(PVOID&nbsp;NotifyRoutine,&nbsp;DWORD&nbsp;Flags)
+{
+&nbsp;&nbsp;BOOL&nbsp;bIsRemove;
+&nbsp;&nbsp;BOOL&nbsp;bIsExRoutine;
+&nbsp;&nbsp;DWORD&nbsp;UpperFlagBits;
+&nbsp;&nbsp;DWORD&nbsp;LdrDataTableEntryFlags;
+&nbsp;&nbsp;_EX_CALLBACK_ROUTINE_BLOCK&nbsp;*NewCallBackBlock;
+&nbsp;&nbsp;_ETHREAD&nbsp;*CurrentThread;
+&nbsp;&nbsp;size_t&nbsp;Index;
+&nbsp;&nbsp;_EX_CALLBACK_ROUTINE_BLOCK&nbsp;*CallBackBlock;
+
+&nbsp;&nbsp;//&nbsp;Copy&nbsp;over&nbsp;everything&nbsp;to&nbsp;UpperFlagBits&nbsp;from&nbsp;Flags,&nbsp;but&nbsp;bit&nbsp;0.
+&nbsp;&nbsp;UpperFlagBits&nbsp;=&nbsp;((DWORD)Flags&nbsp;&amp;&nbsp;0xFFFFFFFE);
+&nbsp;&nbsp;
+&nbsp;&nbsp;//&nbsp;Check&nbsp;if&nbsp;bit&nbsp;1&nbsp;is&nbsp;set.&nbsp;This&nbsp;will&nbsp;only&nbsp;be&nbsp;true&nbsp;if&nbsp;the&nbsp;caller&nbsp;is&nbsp;PsSetCreateProcessNotifyRoutineEx
+&nbsp;&nbsp;//&nbsp;or&nbsp;PsSetCreateProcessNotifyRoutineEx2.
+&nbsp;&nbsp;bIsExRoutine&nbsp;=&nbsp;(Flags&nbsp;&amp;&nbsp;2);
+&nbsp;&nbsp;
+&nbsp;&nbsp;//&nbsp;Bit&nbsp;0&nbsp;will&nbsp;be&nbsp;set&nbsp;if&nbsp;&quot;Remove&quot;&nbsp;==&nbsp;TRUE&nbsp;from&nbsp;the&nbsp;caller.
+&nbsp;&nbsp;bIsRemove&nbsp;=&nbsp;(Flags&nbsp;&amp;&nbsp;1);
+&nbsp;&nbsp;
+&nbsp;&nbsp;//&nbsp;Bit&nbsp;0&nbsp;is&nbsp;set.&nbsp;We&nbsp;want&nbsp;to&nbsp;remove&nbsp;a&nbsp;callback.
+&nbsp;&nbsp;if&nbsp;(bIsRemove)
+&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Disable&nbsp;APCs.
+&nbsp;&nbsp;&nbsp;&nbsp;CurrentThread&nbsp;=&nbsp;(_ETHREAD&nbsp;*)KeGetCurrentThread();
+&nbsp;&nbsp;&nbsp;&nbsp;--CurrentThread-&gt;Tcb.KernelApcDisable;
+&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;Index&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(&nbsp;1&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CallBackBlock&nbsp;=&nbsp;ExReferenceCallBackBlock(&amp;PspCreateProcessNotifyRoutine[Index]);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;CallBackBlock&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;/*&nbsp;Is&nbsp;it&nbsp;the&nbsp;same&nbsp;routine?&nbsp;*/&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ExGetCallBackBlockRoutine(CallBackBlock)&nbsp;==&nbsp;NotifyRoutine
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Is&nbsp;it&nbsp;the&nbsp;same&nbsp;type?&nbsp;e.g.&nbsp;PsSetCreateProcessNotifyRoutineEx&nbsp;vs&nbsp;PsSetCreateProcessNotifyRoutineEx2&nbsp;vs&nbsp;PsSetCreateProcessNotifyRoutine.&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp;&nbsp;(_DWORD)ExGetCallBackBlockContext(CallBackBlock)&nbsp;==&nbsp;(_DWORD)UpperFlagBits
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Did&nbsp;we&nbsp;successfully&nbsp;NULL&nbsp;it&nbsp;out?&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp;&nbsp;ExCompareExchangeCallBack(&amp;PspCreateProcessNotifyRoutine[Index],&nbsp;NULL,&nbsp;CallBackBlock)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Decrement&nbsp;global&nbsp;count.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;bIsExRoutine&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_InterlockedDecrement(&amp;PspCreateProcessNotifyRoutineExCount);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_InterlockedDecrement(&amp;PspCreateProcessNotifyRoutineCount);
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ExDereferenceCallBackBlock(&amp;PspCreateProcessNotifyRoutine[Index],&nbsp;CallBackBlock);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;KiLeaveCriticalRegionUnsafe(CurrentThread);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ExWaitForCallBacks(CallBackBlock);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ExFreePoolWithTag(CallBackBlock,&nbsp;0);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;STATUS_SUCCESS;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ExDereferenceCallBackBlock(&amp;PspCreateProcessNotifyRoutine[Index],&nbsp;CallBackBlock);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Index++;
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Maximum&nbsp;callbacks&nbsp;==&nbsp;64
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;Index&nbsp;&gt;=&nbsp;0x40&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;KiLeaveCriticalRegionUnsafe(CurrentThread);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;STATUS_PROCEDURE_NOT_FOUND;&nbsp;//&nbsp;Could&nbsp;not&nbsp;find&nbsp;entry&nbsp;to&nbsp;remove.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;}
+&nbsp;&nbsp;else&nbsp;//&nbsp;We&nbsp;want&nbsp;to&nbsp;add&nbsp;a&nbsp;callback.
+&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;bIsExRoutine&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LdrDataTableEntryFlags&nbsp;=&nbsp;0x20;&nbsp;//&nbsp;&quot;Ex&quot;&nbsp;routine&nbsp;must&nbsp;have&nbsp;_KLDR_DATA_TABLE_ENTRY.IntegrityCheck&nbsp;bit&nbsp;set.
+&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LdrDataTableEntryFlags&nbsp;=&nbsp;0;
+&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!MmVerifyCallbackFunctionCheckFlags(NotifyRoutine,&nbsp;LdrDataTableEntryFlags)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;STATUS_ACCESS_DENIED;
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Allocate&nbsp;new&nbsp;data&nbsp;structure.
+&nbsp;&nbsp;&nbsp;&nbsp;NewCallBackBlock&nbsp;=&nbsp;ExAllocateCallBack(NotifyRoutine,&nbsp;UpperFlagBits);
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!NewCallBackBlock&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;STATUS_INSUFFICIENT_RESOURCES;
+&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;Index&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(&nbsp;!ExCompareExchangeCallBack(&amp;PspCreateProcessNotifyRoutine[Index],&nbsp;NewCallBackBlock,&nbsp;NULL)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Index++;
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;Index&nbsp;&gt;=&nbsp;0x40&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;No&nbsp;space&nbsp;for&nbsp;callbacks.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ExFreePoolWithTag(NewCallBackBlock,&nbsp;0);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;STATUS_INVALID_PARAMETER;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;Increment&nbsp;global&nbsp;counters.
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;bIsExRoutine&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_InterlockedIncrement(&amp;PspCreateProcessNotifyRoutineExCount);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!(PspNotifyEnableMask&nbsp;&amp;&nbsp;4)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_interlockedbittestandset(&amp;PspNotifyEnableMask,&nbsp;2u);&nbsp;//&nbsp;Have&nbsp;&quot;Ex&quot;&nbsp;callbacks.
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_InterlockedIncrement(&amp;PspCreateProcessNotifyRoutineCount);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(&nbsp;!(PspNotifyEnableMask&nbsp;&amp;&nbsp;2)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_interlockedbittestandset(&amp;PspNotifyEnableMask,&nbsp;1u);&nbsp;//&nbsp;Have&nbsp;base-type&nbsp;of&nbsp;callbacks.
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;STATUS_SUCCESS;
+&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">幸运的是，从Windows 2000起，与回调例程有关的许多内部数据结构并没有发生改动。<a href="https://www.reactos.org/" target="_self">ReactOS</a>的前辈们已经给出过这些结构的定义，因此在可能的情况下，我们会使用这些结构定义，以避免重复劳动。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">每个回调都对应一个全局数组，该数组最多可以包含64个元素。在我们的案例中，用于进程创建回调的数组的起始元素为<strong>nt!PspCreateProcessNotifyRoutine</strong>。数组中的每个元素均为EXCALLBACK类型。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">//&nbsp;Source:&nbsp;https://doxygen.reactos.org/de/d22/ndk_2extypes_8h_source.html#l00545
+
+//
+//&nbsp;Internal&nbsp;Callback&nbsp;Handle
+//
+typedef&nbsp;struct&nbsp;_EX_CALLBACK
+{
+&nbsp;&nbsp;&nbsp;&nbsp;EX_FAST_REF&nbsp;RoutineBlock;
+}&nbsp;EX_CALLBACK,&nbsp;*PEX_CALLBACK;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为了避免同步问题，系统使用了nt!ExReferenceCallBackBlock来安全获取底层回调对象的引用（EXCALLBACKROUTINEBLOCK，如下所示）。我们以非线程安全形式的代码重现这一过程：</span><br/></p><pre class="brush:cpp;toolbar:false">/*
+&nbsp;&nbsp;&nbsp;&nbsp;nt!_EX_CALLBACK
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;RoutineBlock&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;_EX_FAST_REF
+*/
+_EX_CALLBACK*&nbsp;CallBack&nbsp;=&nbsp;&amp;PspCreateProcessNotifyRoutine[Index];
+
+/*
+&nbsp;&nbsp;&nbsp;&nbsp;kd&gt;&nbsp;dt&nbsp;nt!_EX_FAST_REF
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;Object&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;Ptr64&nbsp;Void
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;RefCnt&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;Pos&nbsp;0,&nbsp;4&nbsp;Bits
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+0x000&nbsp;Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;Uint8B
+*/
+_EX_FAST_REF&nbsp;ReferenceObject&nbsp;=&nbsp;CallBack-&gt;RoutineBlock;
+
+//&nbsp;We&nbsp;need&nbsp;to&nbsp;find&nbsp;the&nbsp;location&nbsp;of&nbsp;the&nbsp;actual&nbsp;&quot;Object&quot;&nbsp;from&nbsp;the
+//&nbsp;_EX_FAST_REF&nbsp;structure.&nbsp;This&nbsp;is&nbsp;a&nbsp;union,&nbsp;where&nbsp;the&nbsp;lower&nbsp;4&nbsp;bits
+//&nbsp;are&nbsp;the&nbsp;&quot;RefCnt&quot;.&nbsp;So,&nbsp;this&nbsp;means&nbsp;we&#39;re&nbsp;interested&nbsp;in&nbsp;the&nbsp;remaining
+//&nbsp;60&nbsp;bits.
+
+//&nbsp;Strip&nbsp;off&nbsp;the&nbsp;&quot;RefCnt&quot;&nbsp;bits.
+_EX_CALLBACK_ROUTINE_BLOCK*&nbsp;CallBackBlock&nbsp;=&nbsp;(_EX_CALLBACK_ROUTINE_BLOCK*)(ReferenceObject.Value&nbsp;&amp;&nbsp;0xFFFFFFFFFFFFFFF0);</pre><pre class="brush:cpp;toolbar:false">//&nbsp;Source:&nbsp;https://doxygen.reactos.org/db/d49/xdk_2extypes_8h_source.html#l00179
+
+typedef&nbsp;struct&nbsp;_EX_RUNDOWN_REF&nbsp;{
+&nbsp;&nbsp;_ANONYMOUS_UNION&nbsp;union&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;volatile&nbsp;ULONG_PTR&nbsp;Count;
+&nbsp;&nbsp;&nbsp;&nbsp;volatile&nbsp;PVOID&nbsp;Ptr;
+&nbsp;&nbsp;}&nbsp;DUMMYUNIONNAME;
+}&nbsp;EX_RUNDOWN_REF,&nbsp;*PEX_RUNDOWN_REF;
+
+//&nbsp;Source:&nbsp;https://doxygen.reactos.org/de/d22/ndk_2extypes_8h_source.html#l00535
+
+//
+//&nbsp;Internal&nbsp;Callback&nbsp;Object
+//
+typedef&nbsp;struct&nbsp;_EX_CALLBACK_ROUTINE_BLOCK
+{
+&nbsp;&nbsp;&nbsp;&nbsp;EX_RUNDOWN_REF&nbsp;RundownProtect;
+&nbsp;&nbsp;&nbsp;&nbsp;PEX_CALLBACK_FUNCTION&nbsp;Function;
+&nbsp;&nbsp;&nbsp;&nbsp;PVOID&nbsp;Context;
+}&nbsp;EX_CALLBACK_ROUTINE_BLOCK,&nbsp;*PEX_CALLBACK_ROUTINE_BLOCK;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们想要删除某个回调对象（“Remove”为TRUE），我们要确保在数组中找到正确的EXCALLBACKROUTINEBLOCK。具体的方法是，首先使用nt!ExGetCallBackBlockRoutine来检查目标“NotifyRoutine”是否与当前的EXCALLBACK_ROUTINE相匹配：</span></p><pre class="brush:cpp;toolbar:false">PVOID&nbsp;__fastcall&nbsp;ExGetCallBackBlockRoutine(_EX_CALLBACK_ROUTINE_BLOCK&nbsp;*CallBackBlock)
+{
+&nbsp;&nbsp;return&nbsp;CallBackBlock-&gt;Function;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">随后，使用<strong>nt!ExGetCallBackBlockContext</strong>检查目标类型是否正确（即是否使用正确的nt!PsSetCreateProcessNotifyRoutine/Ex/Ex2创建而得）：</span><br/></p><pre class="brush:cpp;toolbar:false">PVOID&nbsp;__fastcall&nbsp;ExGetCallBackBlockContext(_EX_CALLBACK_ROUTINE_BLOCK&nbsp;*CallBackBlock)
+{
+&nbsp;&nbsp;return&nbsp;CallBackBlock-&gt;Context;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">此时，我们已经找到了数组中的那个元素。我们需要通过<strong>nt!ExCompareExchangeCallback</strong>将EXCALLBACK的值设置为NULL，减少其对应的全局计数值（为nt!PspCreateProcessNotifyRoutineExCount或者nt!PspCreateProcessNotifyRoutineCount），通过nt!ExDereferenceCallBackBlock解除EXCALLBACKROUTINEBLOCK的引用，等待使用EXCALLBACK的其他代码（nt!ExWaitForCallBacks），最后释放内存（nt!ExFreePoolWithTag）。从这个过程中，我们可知微软为了避免释放在用的回调对象做了许多工作。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果遍历所有64个元素后，我们依然无法在nt!PspCreateProcessNotifyRoutine数组中找到需要删除的元素，那么系统就会返回STATUSPROCEDURENOT_FOUND错误信息。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">另一方面，如果我们想要往回调数组中添加新的元素，过程会稍微简单点。nt!MmVerifyCallbackFunctionCheckFlags函数会执行完整性检查，以确保已加载模块中存在“NotifyRoutine”。这样一来，未链接的驱动（或shellcode）就无法收到回调事件。</span></p><pre class="brush:cpp;toolbar:false">BOOL&nbsp;__fastcall&nbsp;MmVerifyCallbackFunctionCheckFlags(PVOID&nbsp;NotifyRoutine,&nbsp;DWORD&nbsp;Flags)
+{
+&nbsp;&nbsp;struct&nbsp;_KTHREAD&nbsp;*CurrentThread;&nbsp;//&nbsp;rbp
+&nbsp;&nbsp;BOOL&nbsp;bHasValidFlags;&nbsp;//&nbsp;ebx
+&nbsp;&nbsp;_KLDR_DATA_TABLE_ENTRY&nbsp;*Entry;&nbsp;//&nbsp;rax
+
+&nbsp;&nbsp;if&nbsp;(&nbsp;MiGetSystemRegionType(NotifyRoutine)&nbsp;==&nbsp;1&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;0;
+&nbsp;&nbsp;CurrentThread&nbsp;=&nbsp;KeGetCurrentThread();
+&nbsp;&nbsp;bHasValidFlags&nbsp;=&nbsp;0;
+&nbsp;&nbsp;--CurrentThread-&gt;KernelApcDisable;
+&nbsp;&nbsp;ExAcquireResourceSharedLite(&amp;PsLoadedModuleResource,&nbsp;1u);
+&nbsp;&nbsp;Entry&nbsp;=&nbsp;MiLookupDataTableEntry(NotifyRoutine,&nbsp;1u);
+&nbsp;&nbsp;if&nbsp;(&nbsp;Entry&nbsp;&amp;&amp;&nbsp;(!Flags&nbsp;||&nbsp;Entry-&gt;Flags&nbsp;&amp;&nbsp;Flags)&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;bHasValidFlags&nbsp;=&nbsp;1;
+&nbsp;&nbsp;ExReleaseResourceLite(&amp;PsLoadedModuleResource);
+&nbsp;&nbsp;KeLeaveCriticalRegionThread(CurrentThread);
+&nbsp;&nbsp;return&nbsp;bHasValidFlags;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过完整性检查后，系统会使用nt!ExAllocateCallBack来分配一个EXCALLBACKROUTINEBLOCK。这个函数可以用来确认EXCALLBACKROUTINEBLOCK结构的大小及布局：</span></p><pre class="brush:cpp;toolbar:false">_EX_CALLBACK_ROUTINE_BLOCK&nbsp;*__fastcall&nbsp;ExAllocateCallBack(PEX_CALLBACK_FUNCTION&nbsp;Function,&nbsp;PVOID&nbsp;Context)
+{
+&nbsp;&nbsp;_EX_CALLBACK_ROUTINE_BLOCK&nbsp;*CallbackBlock;
+
+&nbsp;&nbsp;CallbackBlock&nbsp;=&nbsp;(_EX_CALLBACK_ROUTINE_BLOCK&nbsp;*)ExAllocatePoolWithTag(
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NonPagedPoolNx,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sizeof(_EX_CALLBACK_ROUTINE_BLOCK),
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#39;brbC&#39;);
+&nbsp;&nbsp;if&nbsp;(&nbsp;CallbackBlock&nbsp;)
+&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;CallbackBlock-&gt;Function&nbsp;=&nbsp;Function;
+&nbsp;&nbsp;&nbsp;&nbsp;CallbackBlock-&gt;Context&nbsp;=&nbsp;Context;
+&nbsp;&nbsp;&nbsp;&nbsp;ExInitializePushLock(&amp;CallbackBlock-&gt;RundownProtect);
+&nbsp;&nbsp;}
+&nbsp;&nbsp;
+&nbsp;&nbsp;return&nbsp;CallbackBlock;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">随后，系统会使用<strong>nt!ExCompareExchangeCallBack</strong>将新分配的EXCALLBACKROUTINEBLOCK添加到<strong>nt!PspCreateProcessNotifyRoutine</strong>数组中的空闲（NULL）位置（需要确保数组没有超过64个元素大小限制）。最后，对应的全局计数值会增加计数，<strong>nt!PspNotifyEnableMask</strong>中也会设置一个全局标识，表明系统中注册了用户指定类型的回调函数。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.3 其他回调</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">幸运的是，线程以及映像创建回调与进程回调非常类似，它们使用了相同的底层数据结构。唯一的区别在于，线程创建/终止回调存储在nt!PspCreateThreadNotifyRoutine数组中，而映像加载通知回调存储在<strong>nt!PspLoadImageNotifyRoutine</strong>中。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">四、实用脚本</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">现在我们可以将这些信息综合利用起来。我们可以使用WinDbg创建一个简单便捷的脚本来自动枚举进程、线程以及镜像回调例程。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我选择使用其他方法，而不去使用WinDbg自带的脚本引擎来完成这个任务。WinDbg中有个非常棒的第三方扩展PyKd，可以在WinDbg中运行Python脚本。安装这个扩展的过程非常简单，你只需要使用正确版本的Python即可（如64位的WinDbg需要安装64位版）。</span></p><p style="text-indent: 2em;"></p><pre class="brush:python;toolbar:false">&#39;&#39;&#39;&nbsp;Module&nbsp;Name:&nbsp;enumwincallbacks.py
+Abstract:
+&nbsp;&nbsp;&nbsp;&nbsp;Iterates&nbsp;over&nbsp;the&nbsp;nt!PspCreateProcessNotifyRoutine,
+&nbsp;&nbsp;&nbsp;&nbsp;nt!PspCreateThreadNotifyRoutine,&nbsp;and&nbsp;nt!PspLoadImageNotifyRoutine&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;callback&nbsp;arrays.
+Requirements:
+&nbsp;&nbsp;&nbsp;&nbsp;WinDbg:&nbsp;https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/
+&nbsp;&nbsp;&nbsp;&nbsp;PyKd:&nbsp;https://pykd.codeplex.com/
+Author:
+&nbsp;&nbsp;&nbsp;&nbsp;Nemanja&nbsp;(Nemi)&nbsp;Mulasmajic&nbsp;&lt;nm@triplefault.io&gt;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;http://triplefault.io
+&#39;&#39;&#39;&nbsp;from&nbsp;pykd&nbsp;import&nbsp;*&nbsp;import&nbsp;argparse
+Discovers&nbsp;the&nbsp;size&nbsp;of&nbsp;a&nbsp;pointer&nbsp;for&nbsp;this&nbsp;system.
+SIZEOFPOINTER&nbsp;=&nbsp;(8&nbsp;if&nbsp;(is64bitSystem())&nbsp;else&nbsp;4)
+The&nbsp;number&nbsp;of&nbsp;potential&nbsp;callback&nbsp;objects&nbsp;in&nbsp;the&nbsp;array.
+MAXIMUMNUMBEROF_CALLBACKS&nbsp;=&nbsp;0
+def&nbsp;readptr(memory):&nbsp;&#39;&#39;&#39;&nbsp;Read&nbsp;a&nbsp;pointer&nbsp;of&nbsp;memory.&nbsp;&#39;&#39;&#39;&nbsp;try:&nbsp;return&nbsp;(ptrPtr(memory))&nbsp;except:&nbsp;print&nbsp;&quot;ERROR:&nbsp;Could&nbsp;not&nbsp;read&nbsp;{}&nbsp;bytes&nbsp;from&nbsp;location&nbsp;{:#x}.&quot;.format(SIZEOF_POINTER,&nbsp;memory)&nbsp;exit(-4)
+def&nbsp;read_dword(memory):&nbsp;&#39;&#39;&#39;&nbsp;Read&nbsp;a&nbsp;DWORD&nbsp;of&nbsp;memory.&nbsp;&#39;&#39;&#39;&nbsp;try:&nbsp;return&nbsp;(ptrDWord(memory))&nbsp;except:&nbsp;print&nbsp;&quot;ERROR:&nbsp;Could&nbsp;not&nbsp;read&nbsp;4&nbsp;bytes&nbsp;from&nbsp;location&nbsp;{:#x}.&quot;.format(memory)&nbsp;exit(-5)
+def&nbsp;getaddressfromfastref(EXFASTREF):&nbsp;&#39;&#39;&#39;&nbsp;Given&nbsp;a&nbsp;EXFAST_REF&nbsp;structure,&nbsp;this&nbsp;function&nbsp;will&nbsp;extract&nbsp;the&nbsp;pointer&nbsp;to&nbsp;the&nbsp;raw&nbsp;object.&nbsp;&#39;&#39;&#39;
+#&nbsp;kd&gt;&nbsp;dt&nbsp;nt!_EX_FAST_REF
+#&nbsp;&nbsp;&nbsp;+0x000&nbsp;Object&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;Ptr64&nbsp;Void
+#&nbsp;&nbsp;&nbsp;+0x000&nbsp;RefCnt&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;Pos&nbsp;0,&nbsp;4&nbsp;Bits
+#&nbsp;&nbsp;&nbsp;+0x000&nbsp;Value&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;Uint8B
+#&nbsp;Remove&nbsp;the&nbsp;last&nbsp;4&nbsp;bits&nbsp;of&nbsp;the&nbsp;pointer.
+return&nbsp;((_EX_FAST_REF&nbsp;&gt;&gt;&nbsp;4)&nbsp;&lt;&lt;&nbsp;4)
+def&nbsp;enumerateovercallbacks(array):&nbsp;&#39;&#39;&#39;&nbsp;Given&nbsp;the&nbsp;base&nbsp;of&nbsp;a&nbsp;callback&nbsp;array,&nbsp;this&nbsp;function&nbsp;will&nbsp;enumerate&nbsp;over&nbsp;all&nbsp;valid&nbsp;callback&nbsp;entries.&nbsp;&#39;&#39;&#39;&nbsp;for&nbsp;i&nbsp;in&nbsp;xrange(MAXIMUMNUMBEROFCALLBACKS):&nbsp;#&nbsp;Get&nbsp;the&nbsp;i&#39;th&nbsp;entry&nbsp;in&nbsp;the&nbsp;array.&nbsp;entry&nbsp;=&nbsp;(array&nbsp;+&nbsp;(i&nbsp;*&nbsp;SIZEOFPOINTER))&nbsp;entry&nbsp;=&nbsp;readptr(entry)
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Not&nbsp;currently&nbsp;in&nbsp;use;&nbsp;skipping.
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;entry&nbsp;==&nbsp;0:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;continue
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Extract&nbsp;just&nbsp;the&nbsp;object&nbsp;pointer&nbsp;from&nbsp;the&nbsp;_EX_FAST_REF&nbsp;structure.
+&nbsp;&nbsp;&nbsp;&nbsp;callback_object&nbsp;=&nbsp;get_address_from_fastref(entry)
+&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;{}:&nbsp;_EX_CALLBACK_ROUTINE_BLOCK&nbsp;{:#x}&quot;.format(i,&nbsp;callback_object)
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;_EX_CALLBACK_ROUTINE_BLOCK
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;&nbsp;&nbsp;+0x000&nbsp;RundownProtect&nbsp;&nbsp;&nbsp;:&nbsp;EX_RUNDOWN_REF
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;&nbsp;&nbsp;+0x008&nbsp;Function&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;PVOID
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;&nbsp;&nbsp;+0x010&nbsp;Context&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;PVOID
+&nbsp;&nbsp;&nbsp;&nbsp;rundown_protect&nbsp;=&nbsp;read_ptr(callback_object&nbsp;+&nbsp;(SIZE_OF_POINTER&nbsp;*&nbsp;0))
+&nbsp;&nbsp;&nbsp;&nbsp;callback_function&nbsp;=&nbsp;read_ptr(callback_object&nbsp;+&nbsp;(SIZE_OF_POINTER&nbsp;*&nbsp;1))
+&nbsp;&nbsp;&nbsp;&nbsp;context&nbsp;=&nbsp;read_ptr(callback_object&nbsp;+&nbsp;(SIZE_OF_POINTER&nbsp;*&nbsp;2))
+&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;\tRundownProtect:&nbsp;{:#x}&quot;.format(rundown_protect)
+&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;\tFunction:&nbsp;{:#x}&nbsp;({})&quot;.format(callback_function,&nbsp;findSymbol(callback_function))
+&nbsp;&nbsp;&nbsp;&nbsp;type&nbsp;=&nbsp;&quot;&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;context&nbsp;==&nbsp;0:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;type&nbsp;=&nbsp;&quot;(Normal)&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;elif&nbsp;context&nbsp;==&nbsp;2:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;type&nbsp;=&nbsp;&quot;(Extended)&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;elif&nbsp;context&nbsp;==&nbsp;6:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;type&nbsp;=&nbsp;&quot;(Extended&nbsp;#2)&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;else:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;type&nbsp;=&nbsp;&quot;(Unknown)&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;print&nbsp;&quot;\tContext:&nbsp;{:#x}&nbsp;{}&quot;.format(context,&nbsp;type)
+def&nbsp;getaddressfrom_symbol(mod,&nbsp;name):&nbsp;&#39;&#39;&#39;&nbsp;Attempts&nbsp;to&nbsp;locate&nbsp;the&nbsp;address&nbsp;of&nbsp;a&nbsp;given&nbsp;symbol&nbsp;in&nbsp;a&nbsp;module.&nbsp;&#39;&#39;&#39;&nbsp;try:&nbsp;return&nbsp;(mod.offset(name))&nbsp;except:&nbsp;print&nbsp;&quot;ERROR:&nbsp;Failed&nbsp;to&nbsp;retrieve&nbsp;the&nbsp;address&nbsp;of&nbsp;{}!{}.&nbsp;Are&nbsp;symbols&nbsp;loaded?&quot;.format(m.name(),&nbsp;name)&nbsp;exit(-3)
+parser&nbsp;=&nbsp;argparse.ArgumentParser(description=&#39;Iterates&nbsp;over&nbsp;the&nbsp;nt!PspCreateProcessNotifyRoutine,&nbsp;nt!PspCreateThreadNotifyRoutine,&nbsp;and&nbsp;nt!PspLoadImageNotifyRoutine&nbsp;callback&nbsp;arrays.&#39;)
+parser.addargument(&quot;-p&quot;,&nbsp;action=&quot;storefalse&quot;,&nbsp;default=True,&nbsp;dest=&quot;processcallbacks&quot;,&nbsp;help=&quot;Exludes&nbsp;iteration&nbsp;of&nbsp;the&nbsp;process&nbsp;callback&nbsp;array&nbsp;(nt!PspCreateProcessNotifyRoutine).&quot;)&nbsp;parser.addargument(&quot;-t&quot;,&nbsp;action=&quot;storefalse&quot;,&nbsp;default=True,&nbsp;dest=&quot;threadcallbacks&quot;,&nbsp;help=&quot;Excludes&nbsp;iteration&nbsp;of&nbsp;the&nbsp;thread&nbsp;callback&nbsp;array&nbsp;(nt!PspCreateThreadNotifyRoutine).&quot;)&nbsp;parser.addargument(&quot;-i&quot;,&nbsp;action=&quot;storefalse&quot;,&nbsp;default=True,&nbsp;dest=&quot;image_callbacks&quot;,&nbsp;help=&quot;Excludes&nbsp;iteration&nbsp;of&nbsp;the&nbsp;image&nbsp;load&nbsp;callback&nbsp;array&nbsp;(nt!PspLoadImageNotifyRoutine).&quot;)
+args&nbsp;=&nbsp;parser.parse_args()
+Must&nbsp;be&nbsp;kernel&nbsp;debugging&nbsp;to&nbsp;use&nbsp;this.
+if&nbsp;not&nbsp;isKernelDebugging()&nbsp;and&nbsp;not&nbsp;isLocalKernelDebuggerEnabled():&nbsp;print&nbsp;&quot;ERROR:&nbsp;This&nbsp;script&nbsp;can&nbsp;only&nbsp;be&nbsp;used&nbsp;while&nbsp;kernel&nbsp;debugging.&quot;&nbsp;exit(-1)
+try:&nbsp;mod&nbsp;=&nbsp;module(&quot;nt&quot;)&nbsp;except:&nbsp;print&nbsp;&quot;ERROR:&nbsp;Could&nbsp;not&nbsp;find&nbsp;the&nbsp;base&nbsp;address&nbsp;of&nbsp;ntoskrnl.&nbsp;Are&nbsp;symbols&nbsp;loaded?&quot;&nbsp;exit(-2)
+spacer&nbsp;=&nbsp;&quot;=&quot;&nbsp;*&nbsp;100
+ver&nbsp;=&nbsp;getSystemVersion()
+Vista+&nbsp;can&nbsp;store&nbsp;64&nbsp;entries&nbsp;in&nbsp;the&nbsp;callback&nbsp;array.
+Older&nbsp;versions&nbsp;of&nbsp;Windows&nbsp;can&nbsp;only&nbsp;store&nbsp;8.
+MAXIMUMNUMBEROF_CALLBACKS&nbsp;=&nbsp;(64&nbsp;if&nbsp;(ver.buildNumber&nbsp;&gt;=&nbsp;6000)&nbsp;else&nbsp;8)
+For&nbsp;process&nbsp;callbacks.
+if&nbsp;args.processcallbacks:&nbsp;PspCreateProcessNotifyRoutine&nbsp;=&nbsp;getaddressfromsymbol(mod,&nbsp;&quot;PspCreateProcessNotifyRoutine&quot;)&nbsp;PspCreateProcessNotifyRoutineCount&nbsp;=&nbsp;readdword(getaddressfromsymbol(mod,&nbsp;&quot;PspCreateProcessNotifyRoutineCount&quot;))
+if&nbsp;ver.buildNumber&nbsp;&gt;=&nbsp;6001:&nbsp;#&nbsp;Vista&nbsp;SP1+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;PspCreateProcessNotifyRoutineExCount&nbsp;=&nbsp;read_dword(get_address_from_symbol(mod,&nbsp;&quot;PspCreateProcessNotifyRoutineExCount&quot;))
+else:
+&nbsp;&nbsp;&nbsp;&nbsp;PspCreateProcessNotifyRoutineExCount&nbsp;=&nbsp;0
+print&nbsp;&quot;\nIterating&nbsp;over&nbsp;the&nbsp;nt!PspCreateProcessNotifyRoutine&nbsp;array&nbsp;at&nbsp;{:#x}.&quot;.format(PspCreateProcessNotifyRoutine)
+print&nbsp;&quot;Expecting&nbsp;{}&nbsp;nt!PspCreateProcessNotifyRoutineCount&nbsp;and&nbsp;{}&nbsp;nt!PspCreateProcessNotifyRoutineExCount&nbsp;entries.&quot;.format(PspCreateProcessNotifyRoutineCount,&nbsp;PspCreateProcessNotifyRoutineExCount)
+print&nbsp;spacer
+enumerate_over_callbacks(PspCreateProcessNotifyRoutine)
+print&nbsp;spacer
+For&nbsp;thread&nbsp;callbacks.
+if&nbsp;args.threadcallbacks:&nbsp;PspCreateThreadNotifyRoutine&nbsp;=&nbsp;getaddressfromsymbol(mod,&nbsp;&quot;PspCreateThreadNotifyRoutine&quot;)&nbsp;PspCreateThreadNotifyRoutineCount&nbsp;=&nbsp;readdword(getaddressfromsymbol(mod,&nbsp;&quot;PspCreateThreadNotifyRoutineCount&quot;))
+if&nbsp;ver.buildNumber&nbsp;&gt;=&nbsp;10240:&nbsp;#&nbsp;Windows&nbsp;10+
+&nbsp;&nbsp;&nbsp;&nbsp;PspCreateThreadNotifyRoutineNonSystemCount&nbsp;=&nbsp;read_dword(get_address_from_symbol(mod,&nbsp;&quot;PspCreateThreadNotifyRoutineNonSystemCount&quot;))
+else:
+&nbsp;&nbsp;&nbsp;&nbsp;PspCreateThreadNotifyRoutineNonSystemCount&nbsp;=&nbsp;0
+print&nbsp;&quot;\nIterating&nbsp;over&nbsp;the&nbsp;nt!PspCreateThreadNotifyRoutine&nbsp;array&nbsp;at&nbsp;{:#x}.&quot;.format(PspCreateThreadNotifyRoutine)
+print&nbsp;&quot;Expecting&nbsp;{}&nbsp;nt!PspCreateThreadNotifyRoutineCount&nbsp;and&nbsp;{}&nbsp;nt!PspCreateThreadNotifyRoutineNonSystemCount&nbsp;entries.&quot;.format(PspCreateThreadNotifyRoutineCount,&nbsp;PspCreateThreadNotifyRoutineNonSystemCount)
+print&nbsp;spacer
+enumerate_over_callbacks(PspCreateThreadNotifyRoutine)
+print&nbsp;spacer
+For&nbsp;image&nbsp;callbacks.
+if&nbsp;args.imagecallbacks:&nbsp;PspLoadImageNotifyRoutine&nbsp;=&nbsp;getaddressfromsymbol(mod,&nbsp;&quot;PspLoadImageNotifyRoutine&quot;)&nbsp;PspLoadImageNotifyRoutineCount&nbsp;=&nbsp;readdword(getaddressfromsymbol(mod,&nbsp;&quot;PspLoadImageNotifyRoutineCount&quot;))
+print&nbsp;&quot;\nIterating&nbsp;over&nbsp;the&nbsp;nt!PspLoadImageNotifyRoutine&nbsp;array&nbsp;at&nbsp;{:#x}.&quot;.format(PspLoadImageNotifyRoutine)
+print&nbsp;&quot;Expecting&nbsp;{}&nbsp;nt!PspLoadImageNotifyRoutineCount&nbsp;entries.&quot;.format(PspLoadImageNotifyRoutineCount)
+print&nbsp;spacer
+enumerate_over_callbacks(PspLoadImageNotifyRoutine)
+print&nbsp;spacer</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; font-size: 16px;">这个脚本读起来应该没什么困难，我已经尽量在代码中给出了足够多的注释。这段代码的兼容性也不错，可以兼容从XP以来的所有Windows系统（32位及64位都兼容）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在WinDbg中使用“!py”命令运行这段脚本后，输出结果如下所示：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">kd&gt;&nbsp;!py&nbsp;&quot;C:\Users\root\Desktop\WinDbgScripts\enumwin_callbacks.py&quot;
+Iterating&nbsp;over&nbsp;the&nbsp;nt!PspCreateProcessNotifyRoutine&nbsp;array&nbsp;at&nbsp;0xfffff8036e6042d0.
+Expecting&nbsp;6&nbsp;nt!PspCreateProcessNotifyRoutineCount&nbsp;and&nbsp;4&nbsp;nt!PspCreateProcessNotifyRoutineExCount&nbsp;entries.
+0:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8c84b660&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff8036e3979f0&nbsp;(nt!ViCreateProcessCallback)&nbsp;Context:&nbsp;0x0&nbsp;(Normal)&nbsp;1:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8c8f1410&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff8099e9358a0&nbsp;(cng!CngCreateProcessNotifyRoutine)&nbsp;Context:&nbsp;0x0&nbsp;(Normal)&nbsp;2:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8dd607a0&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff8099f33bcf0&nbsp;(WdFilter!MpCreateProcessNotifyRoutineEx)&nbsp;Context:&nbsp;0x6&nbsp;(Extended&nbsp;#2)&nbsp;3:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8dd6db60&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff8099de7a0c0&nbsp;(ksecdd!KsecCreateProcessNotifyRoutine)&nbsp;Context:&nbsp;0x0&nbsp;(Normal)&nbsp;4:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8d7c9670&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff8099ee88080&nbsp;(tcpip!CreateProcessNotifyRoutineEx)&nbsp;Context:&nbsp;0x6&nbsp;(Extended&nbsp;#2)&nbsp;5:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8e05b070&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff8099f2ec860&nbsp;(iorate!IoRateProcessCreateNotify)&nbsp;Context:&nbsp;0x2&nbsp;(Extended)&nbsp;6:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8e0736a0&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff8099e8c8b30&nbsp;(CI!IPEProcessNotify)&nbsp;Context:&nbsp;0x0&nbsp;(Normal)&nbsp;7:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8cb9e440&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff8099f4e2e60&nbsp;(dxgkrnl!DxgkProcessNotify)&nbsp;Context:&nbsp;0x2&nbsp;(Extended)&nbsp;8:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8e3ed150&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff809a0e13ecc&nbsp;(vm3dmp+13ecc)&nbsp;Context:&nbsp;0x0&nbsp;(Normal)&nbsp;9:&nbsp;EXCALLBACKROUTINE_BLOCK&nbsp;0xffffc98b8eec1a30&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff809a07ebbe0&nbsp;(peauth+2bbe0)
+Context:&nbsp;0x0&nbsp;(Normal)
+Iterating&nbsp;over&nbsp;the&nbsp;nt!PspCreateThreadNotifyRoutine&nbsp;array&nbsp;at&nbsp;0xfffff8036e6040d0.
+Expecting&nbsp;2&nbsp;nt!PspCreateThreadNotifyRoutineCount&nbsp;and&nbsp;0&nbsp;nt!PspCreateThreadNotifyRoutineNonSystemCount&nbsp;entries.
+0:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8dd627a0&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff8099f33c000&nbsp;(WdFilter!MpCreateThreadNotifyRoutine)&nbsp;Context:&nbsp;0x0&nbsp;(Normal)&nbsp;1:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8c8df4a0&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff809a0721ae0&nbsp;(mmcss!CiThreadNotification)
+Context:&nbsp;0x0&nbsp;(Normal)
+Iterating&nbsp;over&nbsp;the&nbsp;nt!PspLoadImageNotifyRoutine&nbsp;array&nbsp;at&nbsp;0xfffff8036e603ed0.
+Expecting&nbsp;2&nbsp;nt!PspLoadImageNotifyRoutineCount&nbsp;entries.
+0:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8dd617a0&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff8099f33fa50&nbsp;(WdFilter!MpLoadImageNotifyRoutine)&nbsp;Context:&nbsp;0x0&nbsp;(Normal)&nbsp;1:&nbsp;EXCALLBACKROUTINEBLOCK&nbsp;0xffffc98b8df671c0&nbsp;RundownProtect:&nbsp;0x20&nbsp;Function:&nbsp;0xfffff8099fb45d60&nbsp;(ahcache!CitmpLoadImageCallback)
+Context:&nbsp;0x0&nbsp;(Normal)</pre><p style="text-indent: 2em;"></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">五、总结</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">理清Windows中系统回调函数的工作原理后，我们就可以做许多有趣的事情。如上所述，我们可以编个程序，遍历每个回调数组，探测已注册的所有回调。这对于安全取证来说非常重要。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">此外，这些底层数组不受<a href="https://en.wikipedia.org/wiki/Kernel_Patch_Protection" target="_self">PatchGuard</a>的保护。为了开发与64位系统上PatchGuard完美兼容的驱动，反病毒产品或多或少都需要注册回调函数，因此恶意软件可以动态禁用（或者替换）已注册的这些回调函数，以禁用安全防护服务。还有其他可能性能够实现相同目的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">非常感谢<a href="https://www.reactos.org/" target="_self">ReactOS</a>精心准备的文档资料。需要着重感谢的是ReactOS的<a href="http://www.alex-ionescu.com/" target="_self">Alex Ionescu</a>，我用到的大多数结构都是他识别出来的。此外，也顺便感谢<a href="https://pykd.codeplex.com/" target="_self">PyKd</a>的<a href="https://pykd.codeplex.com/team/view" target="_self">开发者</a>，在我看来，这个工具比WinDbg原生脚本接口更加好用。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果读者有需要的话，欢迎提出意见及建议。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="http://www.triplefault.io/2017/09/enumerating-process-thread-and-image.html" target="_blank">原文链接：http://www.triplefault.io/2017/09/enumerating-process-thread-and-image.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】如何枚举Windows中的进程、线程以及映像加载通知回调例程 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4459" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="3c0510d3b39fbf99cfcb4ef0ba2556be">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4467.html" alt="【漏洞预警】SambaBleed：Samba信息泄露漏洞（CVE–2017–12163）预警" target="_blank">【漏洞预警】SambaBleed：Sa...</a></li>
+                                <li><a href="/learning/detail/4456.html" alt="【木马分析】Chrome插件：User–Agent Switcher恶意代码分析报告" target="_blank">【木马分析】Chrome插件：User...</a></li>
+                                <li><a href="/learning/detail/4442.html" alt="【知识】9月19日 - 每日安全知识热点" target="_blank">【知识】9月19日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4448.html" alt="【木马分析】供应链幽灵再现：CCleaner软件攻击分析报告" target="_blank">【木马分析】供应链幽灵再现：CCl...</a></li>
+                                <li><a href="/learning/detail/4469.html" alt="【知识】9月24日 - 每日安全知识热点" target="_blank">【知识】9月24日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4453.html" alt="【技术分享】Is Hajime botnet dead?" target="_blank">【技术分享】Is Hajime bot...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

