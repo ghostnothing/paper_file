@@ -1,0 +1,605 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【游戏安全】看我如何通过hook攻击LuaJIT - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Lua,hook,游戏"/>
+    
+        <meta name="description" content="Lua的普及性使得它成为hook的理想目标。此外，由于游戏开发者使用Lua来添加内容及功能，因此游戏所包含的Lua环境就成为拥有大量功能的强大主机环境。出于性能要求，使用LuaJIT来替代vanilla Lua是非常常见的场景。因此，在本文中我会探讨如何攻击LuaJIT。只要稍作修改，这种攻击技术也可以应用于vanilla Lua。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【游戏安全】看我如何通过hook攻击LuaJIT</h2>
+                <div class="article-msg">
+                    <span class="time">2017-09-29 15:54:49</span>
+                    
+                                        <span class="read">阅读：5161次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4487"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4487" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://nickcano.com/hooking-luajit/"
+                             target="_blank">来源： nickcano.com</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2819002922" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t0104d1b8b4ca36e961.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2819002922" style="color:#848e99;">興趣使然的小胃</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><img src="http://p1.qhimg.com/t010cb9f01757ffb85d.png" title="t010cb9f01757ffb85d.png" alt="http://p1.qhimg.com/t010cb9f01757ffb85d.png"/></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">译者：</span><a href="http://bobao.360.cn/member/contribute?uid=2819002922" target="_blank" style="text-decoration-line: none; color: rgb(0, 112, 192); line-height: 28px; font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">興趣使然的小胃</a></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em;"><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一、前言</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如果你在游戏行业摸爬滚打已久，你肯定听说过Lua这个名词。作为一门强大的脚本语言，Lua已经嵌入到数千种视频游戏中，提供了各种API接口，以便工程人员在游戏客户端以及服务器上添加各种功能。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我会不断强调一个观点：为了让攻击技术更加便捷、更加可靠以及更加高效，最好的方法就是攻击游戏引擎，而不是攻击游戏本身。Hook一大堆函数、定位一大堆地址本身是个很好的办法，然而这意味着只要游戏更新版本，你就需要更新你所使用的偏移量。相反，如果你hook了游戏使用的那些库，这些问题就会迎刃而解。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Lua的普及性使得它成为hook的理想目标。此外，由于游戏开发者使用Lua来添加内容及功能，因此游戏所包含的Lua环境就成为拥有大量功能的强大主机环境。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">出于性能要求，使用<a href="http://luajit.org/" target="_self">LuaJIT</a>来替代vanilla Lua是非常常见的场景。因此，在本文中我会探讨如何攻击LuaJIT。只要稍作修改，这种攻击技术也可以应用于vanilla Lua。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">二、注入Lua代码</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为了创建Lua环境，我们需要调用luaL_newstate返回一个lua_State对象，然后将其作为参数，调用luaL_openlibs即可。有人可能想通过劫持luaL_newstate的执行来注入代码，然而这种方法并不能奏效。因为此时程序库还没有加载，因此加载脚本不会起到任何作用。然而，我们可以劫持<strong>luaopen_jit</strong>函数，这个函数正是打开程序库时所调用的最后一个函数（参考<a href="https://github.com/LuaDist/luajit/blob/master/src/lib_init.c#L18-L30" target="_self">此处</a>）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">动态链接LuaJIT时，我们可以查找<strong>导出表</strong>来定位这个函数：</span></p><p style="text-align: center;"><img src="http://p1.qhimg.com/t013a3bab7b01871fa8.png" title="t01e5fd413bc1fc0df0.png" alt="http://p1.qhimg.com/t01e5fd413bc1fc0df0.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">静态链接LuaJIT时，我们可以使用一些特征字符串来进行定位：</span></p><p style="text-align: center;"><img src="http://p9.qhimg.com/t0150953daf1408d0e2.png" title="t01269755b2029eba06.png" alt="http://p9.qhimg.com/t01269755b2029eba06.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一旦找到这个函数，hook就不是件难事。然而，在hook之前，我们需要找到两个函数：<strong>luaL_loadfilex</strong>这个函数用来加载我们的Lua脚本，<strong>lua_pcall</strong>这个函数用来执行Lua脚本。动态链接时，我们可以在导出表中找到这两个函数；静态链接时，我们可以使用“=stdin”字符串来定位第一个函数（参考<a href="https://github.com/LuaDist/luajit/blob/master/src/lj_load.c#L99" target="_self">此处</a>）：</span></p><p style="text-align: center;"><img src="http://p5.qhimg.com/t01a4bfc5ca1627c4ac.png" title="t019ae20ae15c7cbe7e.png" alt="http://p4.qhimg.com/t019ae20ae15c7cbe7e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">定位第二个函数需要多费点功夫，因为该函数没有关联某个特征字符串。然而幸运的是，该函数在内部调用时（参考此处），位于“=(debug command)”之后：</span></p><p style="text-align: center;"><img src="http://p1.qhimg.com/t01546c1df8f7b99f5d.png" title="t01b96bfffab9e4a0ec.png" alt="http://p8.qhimg.com/t01b96bfffab9e4a0ec.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">注意，上图中我们还能观察到<strong>luaL_loadbuffer</strong>函数的地址，牢记这一点，回头要用到。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">识别出这些地址后，我们就可以开始写hook代码了：</span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;void*&nbsp;lua_State;
+
+typedef&nbsp;int&nbsp;(*_luaL_loadfilex)(lua_State&nbsp;*L,&nbsp;const&nbsp;char&nbsp;*filename,&nbsp;const&nbsp;char&nbsp;*mode);
+_luaL_loadfilex&nbsp;luaL_loadfilex;
+
+typedef&nbsp;int&nbsp;(*_luaopen_jit)(lua_State&nbsp;*L);
+_luaopen_jit&nbsp;luaopen_jit_original;
+
+typedef&nbsp;int&nbsp;(*_lua_pcall)(lua_State&nbsp;*L,&nbsp;int&nbsp;nargs,&nbsp;int&nbsp;nresults,&nbsp;int&nbsp;errfunc);
+_lua_pcall&nbsp;lua_pcall;
+
+int&nbsp;luaopen_jit_hook(lua_State&nbsp;*L)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;ret_val&nbsp;=&nbsp;luaopen_jit_original(L);
+&nbsp;&nbsp;&nbsp;&nbsp;luaL_loadfilex(L,&nbsp;&quot;C:\\test.lua&quot;,&nbsp;NULL)&nbsp;||&nbsp;lua_pcall(L,&nbsp;0,&nbsp;-1,&nbsp;0);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;ret_val;
+}
+
+BOOL&nbsp;APIENTRY&nbsp;DllMain(HMODULE&nbsp;mod,&nbsp;DWORD&nbsp;reason,&nbsp;LPVOID&nbsp;res)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(reason)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;DLL_PROCESS_ATTACH:&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;luaL_loadfilex&nbsp;=&nbsp;(_luaL_loadfilex)LOADFILEEX_ADDR;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lua_pcall&nbsp;=&nbsp;(_lua_pcall)PCALL_ADDR;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HookCode(OPENJIT_ADDR,&nbsp;luaopen_jit_hook,&nbsp;(void**)&amp;luaopen_jit_original);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;TRUE;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我的hook代码如上所示，使用的是自己开发的hook引擎。你可以使用<a href="https://www.microsoft.com/en-us/research/project/detours/" target="_self">Detours</a>或者自己的引擎。需要牢记的是，hook点应该位于DLL中，以便注入到进程中。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在，创建Lua环境时，“<strong>C:\test.lua</strong>”就会被加载到这个环境中。通常情况下，我首先会注入代码，使用<strong>debug.sethook</strong>来劫持对Lua函数的所有调用以及相应的参数，以便后续分析：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">lua&nbsp;jit.off()
+FILEPATH&nbsp;=&nbsp;&quot;C:\LuaJitHookLogs\&quot;&nbsp;STARTINGTIME&nbsp;=&nbsp;os.clock()&nbsp;GDUMPED&nbsp;=&nbsp;false
+function&nbsp;dumpGlobals()&nbsp;local&nbsp;fname&nbsp;=&nbsp;FILEPATH&nbsp;..&nbsp;&quot;globals&quot;&nbsp;..&nbsp;STARTING_TIME&nbsp;..&nbsp;&quot;.txt&quot;&nbsp;local&nbsp;globalsFile&nbsp;=&nbsp;io.open(fname,&nbsp;&quot;w&quot;)&nbsp;globalsFile:write(table.show(G,&nbsp;&quot;G&quot;))&nbsp;globalsFile:flush()&nbsp;globalsFile:close()&nbsp;end
+function&nbsp;trace(event,&nbsp;line)&nbsp;local&nbsp;info&nbsp;=&nbsp;debug.getinfo(2)
+if&nbsp;not&nbsp;info&nbsp;then&nbsp;return&nbsp;end
+if&nbsp;not&nbsp;info.name&nbsp;then&nbsp;return&nbsp;end
+if&nbsp;string.len(info.name)&nbsp;&lt;=&nbsp;1&nbsp;then&nbsp;return&nbsp;end
+if&nbsp;(not&nbsp;GDUMPED)&nbsp;then
+&nbsp;&nbsp;&nbsp;&nbsp;dumpGlobals()
+&nbsp;&nbsp;&nbsp;&nbsp;GDUMPED&nbsp;=&nbsp;true
+end
+local&nbsp;fname&nbsp;=&nbsp;FILE_PATH&nbsp;..&nbsp;&quot;trace_&quot;&nbsp;..&nbsp;STARTING_TIME&nbsp;..&nbsp;&quot;.txt&quot;
+local&nbsp;traceFile&nbsp;=&nbsp;io.open(fname,&nbsp;&quot;a&quot;)
+traceFile:write(info.name&nbsp;..&nbsp;&quot;()\n&quot;)
+local&nbsp;a&nbsp;=&nbsp;1
+while&nbsp;true&nbsp;do
+&nbsp;&nbsp;&nbsp;&nbsp;local&nbsp;name,&nbsp;value&nbsp;=&nbsp;debug.getlocal(2,&nbsp;a)
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;name&nbsp;then&nbsp;break&nbsp;end
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;not&nbsp;value&nbsp;then&nbsp;break&nbsp;end
+&nbsp;&nbsp;&nbsp;&nbsp;traceFile:write(tostring(name)&nbsp;..&nbsp;&quot;:&nbsp;&quot;&nbsp;..&nbsp;tostring(value)&nbsp;..&nbsp;&quot;\n&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;a&nbsp;=&nbsp;a&nbsp;+&nbsp;1
+end
+traceFile:flush()
+traceFile:close()
+end&nbsp;debug.sethook(trace,&nbsp;&quot;c&quot;)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这段代码可以提取到一堆有价值的全局信息以及跟踪信息，存放在“</span><strong style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">C:\LuaJitHookLogs\</strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">”目录下。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">三、详细分析</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">如果你非常熟悉Lua，你可以跳过这个部分，不然的话，你可以跟着我分析这个脚本的具体内容。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先，我调用了jit.off函数，因为debug库无法劫持由jit引擎实时编译的那些调用代码。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在dumpGlobals函数内部，我将名为_G的表打印出来。这是个全局对象表，Lua使用这个表来跟踪全局域内的所有内容，并将跟踪结果以“key, value”键值对形式保存在该表中。你肯定能够想到，这个表的价值非常高。根据你的具体情况，你可能需要晚一点再调用dumpGlobals函数，因为有些游戏在调用第一个函数时并没有把所有的全局变量分配完毕。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我使用了<strong>debug.sethook(trace, &quot;c&quot;)</strong>语句，使Lua在每个函数调用完成之前调用trace这个函数。在trace函数内部，我调用了<strong>debug.getinfo(2)</strong>以获取被劫持的函数名称。由于trace函数为当前正在使用的函数，也就是说该函数在栈上的级别为1，因此被劫持的函数的级别为2。然后我循环调用了debug.getlocal(2, a)，其中a的值从1开始不断累加，直至该语句返回空值（nil）为止。通过这种方式，我们可以循环遍历级别为2的栈，找到所有的本地变量，并将查找结果以键值对的形式保存起来。对某个游戏这样处理后，我找到了如下信息，你可以根据这些信息猜到这是哪个游戏：</span></p><pre class="brush:bash;toolbar:false">type()
+(*temporary):&nbsp;table:&nbsp;074FA7D0
+{
+&nbsp;&nbsp;&nbsp;&nbsp;IsDestroyed&nbsp;=&nbsp;false,
+&nbsp;&nbsp;&nbsp;&nbsp;NumOfSpawnDisables&nbsp;=&nbsp;0,
+&nbsp;&nbsp;&nbsp;&nbsp;SpawnOrderMinionNames&nbsp;=&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;Super&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;Melee&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;Cannon&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;Caster&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;},
+&nbsp;&nbsp;&nbsp;&nbsp;WillSpawnSuperMinion&nbsp;=&nbsp;0,
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们可以调用type来确定对象的类型，但对象本身就可以告诉我们关于该游戏的一些有趣信息。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果我们愿意的话，我们可以使用debug.setlocal将参数改成某些函数。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">四、劫持Lua代码</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在许多情况下，我们需要劫持整个Lua脚本。通过这种方式，我们不需要将跟踪结果拼接起来，就可以详细分析游戏所用的脚本，理解脚本具体功能。Lua代码可以以文件或者缓冲区的形式加载到LuaJIT环境中。由于分析磁盘上的文件比较容易，因此我们会重点关注使用缓冲区的这种情况以及luaL_loadbuffer这个函数。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个函数实际上有两种表现形式：分别为luaL_loadbuffer以及luaL_loadbufferex。这两个函数基本相同，第一个函数会调用第二个函数，只不过会把最后一个参数设为NULL（<a href="https://github.com/LuaDist/luajit/blob/master/src/lj_load.c#L146-L155" target="_self">参考此处</a>）。你可以会认为，只要hook luaL_loadbufferex这个函数，我们就可以搞定这两种情况，然而事实并非如此。由于LuaJIT主要是针对性能优化而设计的，因此通常情况下luaL_loadbufferex会以内联形式使用。然而，这两个函数最终都会调用如下这个函数（<a href="https://github.com/LuaDist/luajit/blob/master/src/lj_load.c#L48-L62" target="_self">参考此处</a>）：</span></p><pre class="brush:cpp;toolbar:false">int&nbsp;lua_loadx(lua_State&nbsp;*L,&nbsp;lua_Reader&nbsp;reader,&nbsp;void&nbsp;*data,&nbsp;const&nbsp;char&nbsp;*chunkname,&nbsp;const&nbsp;char&nbsp;*mode);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">LuaJIT偏向于使用内联代码，导致这个函数也变成内联形式。然而，这里最有用的是lua_Reader reader，这个回调函数知道如何将void *data转换为包含Lua代码的缓冲区。当LuaJIT加载位于缓冲区中的代码时，reader变为reader_string的地址（<a href="https://github.com/LuaDist/luajit/blob/master/src/lj_load.c#L127-L135" target="_self">参考此处</a>），而void *data所指向的char*字符串即为具体的Lua代码。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">reader_string</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">不是内联函数，因为它的地址可以作为回调指针来传递，因此我们可以在luaL_loadbuffer内部找到这个地址：</span></p><p style="text-align: center;"><img src="http://p9.qhimg.com/t01f995a7aaeabaf8df.png" title="t01f995a7aaeabaf8df.png" alt="http://p3.qhimg.com/t01f995a7aaeabaf8df.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">利用这个地址，我们可以构造一个hook，来劫持并显示已加载的所有Lua缓冲区：</span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;const&nbsp;char*&nbsp;(*_reader_string)(lua_State&nbsp;*L,&nbsp;void&nbsp;*ud,&nbsp;size_t&nbsp;*size);
+_reader_string&nbsp;reader_string_original;
+
+const&nbsp;char*&nbsp;reader_string_hook(lua_State&nbsp;*L,&nbsp;void&nbsp;*ud,&nbsp;size_t&nbsp;*size)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(((size_t*)ud)[1]&nbsp;&gt;&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MessageBoxA(NULL,&nbsp;((char**)ud)[0],&nbsp;&quot;LuaJITHook&quot;,&nbsp;MB_OK);
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;reader_string_original(L,&nbsp;ud,&nbsp;size);
+}
+
+//&nbsp;from&nbsp;DllMain&nbsp;DLL_PROCESS_ATTACH
+HookCode(READERSTRING_ADDR,&nbsp;reader_string_hook,&nbsp;(void**)&amp;reader_string_original);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当然使用对话框来显示并不是优雅的解决办法，不要在意这个细节，你理解我的意思就可以了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">五、总结</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这种方法非常强大。许多游戏提供了Lua脚本功能，可以实现自动化、拉高游戏视图以及ESP（透视）黑科技等。不同的游戏使用Lua的方法有所不同，但他们的工作原理都与本文的例子相似。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">你可以在这段hook代码的基础上进行修改，添加扫描功能，自动定位这些函数，比如，你可以使用<a href="https://github.com/nickcano/XenoScan" target="_self">XenoScan</a>这个库来完成这个任务。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如果你有什么意见或者建议，可以随时发表评论，也可以关注我的<a href="https://twitter.com/nickcano93" target="_self">推特</a>了解我最新发布的信息。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://nickcano.com/hooking-luajit/" target="_blank">原文链接：https://nickcano.com/hooking-luajit/</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【游戏安全】看我如何通过hook攻击LuaJIT - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4487" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="86c40da76667b73d4595c63e81eafd83">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4496.html" alt="【漏洞预警】Mac OS X存在Javascript沙箱绕过漏洞，可造成任意文件读取！（含PoC）" target="_blank">【漏洞预警】Mac OS X存在Jav...</a></li>
+                                <li><a href="/learning/detail/4495.html" alt="【漏洞分析】BlueBorne 蓝牙漏洞深入分析与PoC" target="_blank">【漏洞分析】BlueBorne 蓝牙漏...</a></li>
+                                <li><a href="/learning/detail/4488.html" alt="【漏洞预警】Linux PIE/stack 内存破坏漏洞(CVE–2017–1000253)预警" target="_blank">【漏洞预警】Linux PIE/sta...</a></li>
+                                <li><a href="/learning/detail/4473.html" alt="【技术分享】看我如何利用企业邮箱搞定上百企业内网或内部账号" target="_blank">【技术分享】看我如何利用企业邮箱搞...</a></li>
+                                <li><a href="/learning/detail/4489.html" alt="【技术分享】Android SO自动化逆向探究" target="_blank">【技术分享】Android SO自动化...</a></li>
+                                <li><a href="/learning/detail/4481.html" alt="【技术分享】Linux应急响应姿势浅谈" target="_blank">【技术分享】Linux应急响应姿势浅谈</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://appscan.360.cn/  " alt="360显危镜" target="_blank">360显危镜</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

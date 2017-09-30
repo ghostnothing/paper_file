@@ -1,0 +1,1242 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【漏洞分析】BlueBorne 蓝牙漏洞深入分析与PoC - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="BlueBorne,蓝牙,poc,cve"/>
+    
+        <meta name="description" content="本文分析了之前armis爆出的Blueborne的一系列蓝牙漏洞。先明确了此次蓝牙漏洞涉及到的协议栈的哪些层（HCI，L2CAP，BNEP，SDP），然后介绍了Linux中的BlueZ架构和Android中的BlueDroid架构下代码的具体分布。最后基于漏洞和PoC的编写过程从源码角度逐一进行了详细分析，并给出了PoC。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【漏洞分析】BlueBorne 蓝牙漏洞深入分析与PoC</h2>
+                <div class="article-msg">
+                    <span class="time">2017-09-28 17:21:29</span>
+                    
+                                        <span class="read">阅读：25810次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4495"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4495" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=198462" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t016e187ed5db047210.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=198462" style="color:#848e99;">360 Vulpecker Team</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><img src="http://p0.qhimg.com/t013393c12943c04d2f.jpg" title="t01c6cb1bc11a15dd45.jpg" alt="http://p5.qhimg.com/t01c6cb1bc11a15dd45.jpg"/></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">作者：huahuaisadog @ 360VulpeckerTeam</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x00</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">前些天，armis爆出了一系列蓝牙的漏洞，<strong>无接触无感知接管系统</strong>的能力有点可怕，而且基本上影响所有的蓝牙设备，危害不可估量，可以看这里（<a href="https://www.armis.com/blueborne/">https://www.armis.com/blueborne/</a>&nbsp; ）来了解一下它的逆天能力：只要手机开启了蓝牙，就可能被远程控制。现在手机这么多，利用这个漏洞写出蠕虫化的工具，那么可能又是一个手机版的低配wannacry了。我们360Vulpecker Team在了解到这些相关信息后，快速进行了跟进分析。 armis给出了他们的whitepaper，对蓝牙架构和这几个漏洞的分析可以说非常详尽了，先膜一发。不过他们没有给出这些漏洞的PoC或者是exp，只给了一个针对Android的“BlueBorne检测app&quot;，但是逆向这个发现<strong>仅仅是检测了系统的补丁日期</strong>。于是我来拾一波牙慧，把这几个漏洞再分析一下，然后把poc编写出来：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">* CVE-2017-1000250 Linux bluetoothd进程信息泄露&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">* CVE-2017-1000251 Linux 内核栈溢出&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">* CVE-2017-0785 Android com.android.bluetooth进程信息泄露&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">* CVE-2017-0781 Android com.android.bluetooth进程堆溢出&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">* CVE-2017-0782 Android com.android.bluetooth进程堆溢出</span></p><p style="text-indent: 2em;"><span style="color: rgb(255, 0, 0);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以上PoC代码均在</span></strong></span></p><p style="text-indent: 2em;"><span style="color: rgb(255, 0, 0);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><a href="https://github.com/marsyy/littl_tools/tree/master/bluetooth">https://github.com/marsyy/littl_tools/tree/master/bluetooth</a>&nbsp;</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">由于也是因为这几个漏洞才从零开始搞蓝牙，所以应该有些分析不到位的地方，还请各路大牛斧正。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x01 蓝牙架构及代码分布</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这里首先应该祭出armis的paper里的图：&nbsp;</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><img src="http://p5.qhimg.com/t01fa596689092bd57a.png" title="t01bd01aa0bc6b2c85f.png" alt="http://p9.qhimg.com/t01bd01aa0bc6b2c85f.png"/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">图上把蓝牙的各个层次关系描述得很详尽，不过我们这里暂时只需要关心这么几层：<strong>HCI，L2CAP，BNEP，SDP</strong>。BNEP和SDP是比较上层的服务，HCI在最底层，直接和蓝牙设备打交道。而承载在蓝牙服务和底层设备之间的桥梁，也就是L2CAP层了。每一层都有它协议规定的数据组织结构，所有层的数据包组合在一起，就是一个完整的蓝牙包（一个SDP包为例）：&nbsp;</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><img src="http://p8.qhimg.com/t01e98008068e7ff50b.png" title="t015eecf71515b3fada.png" alt="http://p0.qhimg.com/t015eecf71515b3fada.png"/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">虽然协议规定的架构是图上说的那样，但是具体实现是有不同的，Linux用的<strong>BlueZ</strong>，而现在的Android用的<strong>BlueDroid</strong>，也就针对这两种架构说一说代码的具体分布。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">BlueZ</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在Linux里，用的是BlueZ架构，由<strong>bluetoothd</strong>来提供BNEP,SDP这些比较上层的服务，而L2CAP层则是放在内核里面。对于BlueZ我们对SDP和L2CAP挨个分析。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1， 实现SDP服务的代码在代码目录的<strong>/src/sdp</strong>，其中<strong>sdp-client.c</strong>是它的客户端，<strong>sdp-server.c</strong>是它的服务端。我们要分析的漏洞都是远程的漏洞，所以<strong>问题是出在服务端里面</strong>，我们重点关注服务端。而服务端最核心的代码，应该是它对接受到的数据包的处理的过程，这个过程由<strong>sdp-request.c</strong>来实现。当L2CAP层有SDP数据后，会触发sdp-server.c的<strong>io_session_event</strong>函数，来获取这个数据包，交由<strong>sdp-request.c</strong>的<strong>handle_request</strong>函数处理(怎么处理的，后续漏洞分析的时候再讲)：</span></p><pre class="brush:cpp;toolbar:false">static&nbsp;gboolean&nbsp;io_session_event(GIOChannel&nbsp;*chan,&nbsp;GIOCondition&nbsp;cond,&nbsp;gpointer&nbsp;data)
+{
+	...
+	len&nbsp;=&nbsp;recv(sk,&nbsp;&amp;hdr,&nbsp;sizeof(sdp_pdu_hdr_t),&nbsp;MSG_PEEK);&nbsp;//获取SDP的头部数据，获得SDP数据大小
+	if&nbsp;(len&nbsp;&lt;&nbsp;0&nbsp;||&nbsp;(unsigned&nbsp;int)&nbsp;len&nbsp;&lt;&nbsp;sizeof(sdp_pdu_hdr_t))&nbsp;{
+		sdp_svcdb_collect_all(sk);
+		return&nbsp;FALSE;
+	}
+
+	size&nbsp;=&nbsp;sizeof(sdp_pdu_hdr_t)&nbsp;+&nbsp;ntohs(hdr.plen);
+	buf&nbsp;=&nbsp;malloc(size);
+	if&nbsp;(!buf)
+		return&nbsp;TRUE;
+
+	len&nbsp;=&nbsp;recv(sk,&nbsp;buf,&nbsp;size,&nbsp;0);&nbsp;&nbsp;//获得完整数据包
+	...
+	handle_request(sk,&nbsp;buf,&nbsp;len);
+
+	return&nbsp;TRUE;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2， L2CAP层的代码在内核里，这里我以Linux 4.2.8这份代码为例。l2cap层主要由<strong> /net/bluetooth/l2capcore.c</strong>和<strong>/net/bluetooth/l2cap_sock.c</strong>来实现。<strong>l2cap_core.c</strong>实现了L2CAP协议的主要内容，</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">l2cap_sock.c</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">通过注册sock协议的方式提供了这一层针对userspace的接口。同样的我们关心一个L2CAP对接受到数据包后的处理过程，L2CAP的数据是由HCI层传过来的，在</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">hci_core.c</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">hci_rx_work</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">函数里&nbsp;</span></p><pre class="brush:cpp;toolbar:false">static&nbsp;void&nbsp;hci_rx_work(struct&nbsp;work_struct&nbsp;*work)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;((skb&nbsp;=&nbsp;skb_dequeue(&amp;hdev-&gt;rx_q)))&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Send&nbsp;copy&nbsp;to&nbsp;monitor&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hci_send_to_monitor(hdev,&nbsp;skb);
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(bt_cb(skb)-&gt;pkt_type)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;HCI_EVENT_PKT:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BT_DBG(&quot;%s&nbsp;Event&nbsp;packet&quot;,&nbsp;hdev-&gt;name);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hci_event_packet(hdev,&nbsp;skb);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;HCI_ACLDATA_PKT:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BT_DBG(&quot;%s&nbsp;ACL&nbsp;data&nbsp;packet&quot;,&nbsp;hdev-&gt;name);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hci_acldata_packet(hdev,&nbsp;skb);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;HCI_SCODATA_PKT:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BT_DBG(&quot;%s&nbsp;SCO&nbsp;data&nbsp;packet&quot;,&nbsp;hdev-&gt;name);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hci_scodata_packet(hdev,&nbsp;skb);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kfree_skb(skb);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">收到数据后，会判断pkt_type，符合L2CAP层的type是<strong>HCI_ACLDATA_PKT</strong>，函数会走到<strong>hci_acldata_packet</strong>，这个函数会把HCI的数据剥离之后，把L2CAP数据交给L2CAP层的<strong>l2cap_recv_acldata</strong>：</span></p><pre class="brush:cpp;toolbar:false;">static&nbsp;void&nbsp;hci_acldata_packet(struct&nbsp;hci_dev&nbsp;*hdev,&nbsp;struct&nbsp;sk_buff&nbsp;*skb)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;skb_pull(skb,&nbsp;HCI_ACL_HDR_SIZE);
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(conn)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hci_conn_enter_active_mode(conn,&nbsp;BT_POWER_FORCE_ACTIVE_OFF);
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Send&nbsp;to&nbsp;upper&nbsp;protocol&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l2cap_recv_acldata(conn,&nbsp;skb,&nbsp;flags);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BT_ERR(&quot;%s&nbsp;ACL&nbsp;packet&nbsp;for&nbsp;unknown&nbsp;connection&nbsp;handle&nbsp;%d&quot;,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hdev-&gt;name,&nbsp;handle);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;kfree_skb(skb);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">同样的，对于L2CAP层对数据的细致处理，我们还是等后续和漏洞来一块进行分析。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">BlueDroid</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在现在的Android里，用的是<strong>BlueDroid</strong>架构。这个和BlueZ架构有很大不同的一点是：<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>BlueDroid将L2CAP层放在了userspace</strong></span>。SDP，BNEP，L2CAP统统都由<strong>com.android.bluetooth</strong>这个进程管理。而BlueDroid代码的核心目录在Android源码目录下的 <strong>/sytem/bt</strong> ，这个目录的核心产物是<strong>bluetooth.default.so</strong>，这个so集成所有Android蓝牙相关的服务，而且这个so没有导出任何相关接口函数，只导出了几个协议相关的全局变量供使用，所以想根据so来本地检测本机是否有BlueDrone漏洞，是一件比较困难的事情。对于BlueDroid，由于android的几个漏洞出在BNEP服务和SDP服务，所以也就主要就针对这两块。值得注意的是，在Android里，<strong>不论是64位还是32位的系统，这个bluetooth.default.so都是用的32位的</strong>。文章里这部分代码都基于<strong>Android7.1.2</strong>的源码。&nbsp;</span></p><p style="text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1，BlueDroid的SDP服务的代码，在/system/bt/stack/sdp 文件夹里，其中sdp服务端对数据包的处理由sdp-server.c实现</span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。SDP连接建立起来后，在收到SDP数据包之后呢，会触发回调函数</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">sdp_data_ind</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，这个函数会把数据包交个<strong>sdp-server.c</strong>的</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">sdp_server_handle_client_req</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">函数进行处理:&nbsp;</span></p><pre class="brush:cpp;toolbar:false">static&nbsp;void&nbsp;sdp_data_ind&nbsp;(UINT16&nbsp;l2cap_cid,&nbsp;BT_HDR&nbsp;*p_msg)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;tCONN_CB&nbsp;&nbsp;&nbsp;&nbsp;*p_ccb;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;((p_ccb&nbsp;=&nbsp;sdpu_find_ccb_by_cid&nbsp;(l2cap_cid))&nbsp;!=&nbsp;NULL)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(p_ccb-&gt;con_state&nbsp;==&nbsp;SDP_STATE_CONNECTED)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(p_ccb-&gt;con_flags&nbsp;&amp;&nbsp;SDP_FLAGS_IS_ORIG)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sdp_disc_server_rsp&nbsp;(p_ccb,&nbsp;p_msg);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sdp_server_handle_client_req&nbsp;(p_ccb,&nbsp;p_msg);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;...
+}</pre><p style="text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">2，BlueDroid的BNEP服务的代码主要在/system/bt/stack/bnep/bnepmain.c</span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">。BNEP连接建立起来后，再收到BNEP的包，和SDP类似，会触发回调函数</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">bnep_data_ind</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">，这个函数包含了所有对BNEP请求的处理，漏洞也是发生在这里，具体的代码我们后续会分析。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x02 漏洞分析以及PoC写法</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">蓝牙的预备知识差不多了，主要是找数据包的入口。我们再基于漏洞和PoC的编写过程来详细分析其中的处理过程，和相关蓝牙操作的代码该怎么写。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2017-1000251</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个是Linux L2CAP层的漏洞，那么就是内核里面的。先不着急看漏洞，先看L2CAP层如何工作。在一个L2CAP连接的过程中，我们抓取了它的数据包来分析，L2CAP是怎么建立起连接的：&nbsp;</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p0.qhimg.com/t0194b724c02b075871.png" title="t014a8a6b2e37ab09de.png" alt="http://p0.qhimg.com/t014a8a6b2e37ab09de.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">我们注意这么几个包： </span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">sent_infomation_request</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"> , </span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">send_connection_request</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">, </span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">send_configure_request</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。抓包可以看到，在一次完整的L2CAP连接的建立过程中，发起连接的机器，会主动送出这么几个包。其中</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">infomation_request</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">是为了得到对方机器的名称等信息，connection_request是为了建立L2CAP真正的连接，主要是为了确定双方的CHANNEL ID，后续的数据包传输都要跟着这个channel id 走（图上的SCID, DCID），这个channel也就是我们所说的连接。在</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">connection_request</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">处理完毕之后，连接状态将变成 BT_CONNECT2 。随后机器会发起configure_request,这一步就到了armis的paper第十页所说的configuration &nbsp;process:&nbsp;</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t01ea93fbf1848191bd.png" title="t01fa98634a99581d7e.png" alt="http://p4.qhimg.com/t01fa98634a99581d7e.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个过程完成后，整个L2CAP层的连接也就建立完成。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从上述过程看，可以发现L2CAP层连接的建立，主要是对上述三个请求的发起和处理。而我们的漏洞，也其实就发生在configuration &nbsp;process。我们先分析接收端收到这三个请求后，处理的逻辑在哪里，也就是我们前文提到的L2CAP对接受到的数据的处理过程：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1，在</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">l2cap_recv_acldata</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接收到数据后，数据包会传给l2cap_recv_frame&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2，</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">l2cap_recv_frame</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">会取出检查L2CAP的头部数据，然后检查根据头部里的cid字段，来选择处理逻辑：&nbsp;</span></p><pre class="brush:cpp;toolbar:false">static&nbsp;void&nbsp;l2cap_recv_frame(struct&nbsp;l2cap_conn&nbsp;*conn,&nbsp;struct&nbsp;sk_buff&nbsp;*skb)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;skb_pull(skb,&nbsp;L2CAP_HDR_SIZE);
+&nbsp;&nbsp;&nbsp;&nbsp;cid&nbsp;=&nbsp;__le16_to_cpu(lh-&gt;cid);
+&nbsp;&nbsp;&nbsp;&nbsp;len&nbsp;=&nbsp;__le16_to_cpu(lh-&gt;len);
+
+&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(cid)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_CID_SIGNALING:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l2cap_sig_channel(conn,&nbsp;skb);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_CID_CONN_LESS:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;psm&nbsp;=&nbsp;get_unaligned((__le16&nbsp;*)&nbsp;skb-&gt;data);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;skb_pull(skb,&nbsp;L2CAP_PSMLEN_SIZE);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l2cap_conless_channel(conn,&nbsp;psm,&nbsp;skb);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_CID_LE_SIGNALING:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l2cap_le_sig_channel(conn,&nbsp;skb);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;default:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l2cap_data_channel(conn,&nbsp;cid,&nbsp;skb);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">3，底层L2CAP的连接，cid固定是L2CAP_CID_SIGNALING，于是会走l2cap_sig_channel，l2cap_sig_channel得到的是剥离了头部的L2CAP的数据，这一部将把数据里的cmd头部解析并剥离，再传给l2cap_bredr_sig_cmd进行处理：</span></p><pre class="brush:cpp;toolbar:false">static&nbsp;inline&nbsp;void&nbsp;l2cap_sig_channel(struct&nbsp;l2cap_conn&nbsp;*conn,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;sk_buff&nbsp;*skb)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(len&nbsp;&gt;=&nbsp;L2CAP_CMD_HDR_SIZE)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;u16&nbsp;cmd_len;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy(&amp;cmd,&nbsp;data,&nbsp;L2CAP_CMD_HDR_SIZE);&nbsp;&nbsp;//取得cmd头部数据
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;+=&nbsp;L2CAP_CMD_HDR_SIZE;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;len&nbsp;&nbsp;-=&nbsp;L2CAP_CMD_HDR_SIZE;
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cmd_len&nbsp;=&nbsp;le16_to_cpu(cmd.len);&nbsp;&nbsp;//取得cmd的大小
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err&nbsp;=&nbsp;l2cap_bredr_sig_cmd(conn,&nbsp;&amp;cmd,&nbsp;cmd_len,&nbsp;data);&nbsp;//传给l2cap_bredr_sig_cmd处理
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data&nbsp;+=&nbsp;cmd_len;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;len&nbsp;&nbsp;-=&nbsp;cmd_len;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+drop:
+&nbsp;&nbsp;&nbsp;&nbsp;kfree_skb(skb);
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">到这里，我们应该能得出L2CAP协议的数据结构：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p9.qhimg.com/t013cef5472d84ad03e.png" title="t01523dad1233c3f538.png" alt="http://p1.qhimg.com/t01523dad1233c3f538.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4， 随后数据进入到了l2cap_bredr_sig_cmd函数进行处理。这里也就是处理L2CAP各种请求的核心函数了：&nbsp;</span></p><pre class="brush:cpp;toolbar:false">static&nbsp;inline&nbsp;int&nbsp;l2cap_bredr_sig_cmd(struct&nbsp;l2cap_conn&nbsp;*conn,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;l2cap_cmd_hdr&nbsp;*cmd,&nbsp;u16&nbsp;cmd_len,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;u8&nbsp;*data)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;err&nbsp;=&nbsp;0;
+
+&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(cmd-&gt;code)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_CONN_REQ:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err&nbsp;=&nbsp;l2cap_connect_req(conn,&nbsp;cmd,&nbsp;cmd_len,&nbsp;data);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_CONN_RSP:
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_CREATE_CHAN_RSP:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l2cap_connect_create_rsp(conn,&nbsp;cmd,&nbsp;cmd_len,&nbsp;data);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_CONF_REQ:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err&nbsp;=&nbsp;l2cap_config_req(conn,&nbsp;cmd,&nbsp;cmd_len,&nbsp;data);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_CONF_RSP:&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l2cap_config_rsp(conn,&nbsp;cmd,&nbsp;cmd_len,&nbsp;data);&nbsp;&nbsp;//漏洞函数
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_INFO_REQ:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;err&nbsp;=&nbsp;l2cap_information_req(conn,&nbsp;cmd,&nbsp;cmd_len,&nbsp;data);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_INFO_RSP:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l2cap_information_rsp(conn,&nbsp;cmd,&nbsp;cmd_len,&nbsp;data);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;err;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">好了，接下来终于可以分析漏洞了。我们的漏洞发生在对<strong>L2CAP_CONFIG_RSP（config response）</strong><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个cmd的处理上。其实</span></span><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞分析armis的paper已经写的很详尽了，我这里也就权当翻译了吧，然后再加点自己的理解。那么来看</span><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">l2cap_config_rsp</span><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">:&nbsp;</span></p><pre class="brush:cpp;toolbar:false">static&nbsp;inline&nbsp;int&nbsp;l2cap_config_rsp(struct&nbsp;l2cap_conn&nbsp;*conn,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;l2cap_cmd_hdr&nbsp;*cmd,&nbsp;u16&nbsp;cmd_len,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;u8&nbsp;*data)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;l2cap_conf_rsp&nbsp;*rsp&nbsp;=&nbsp;(struct&nbsp;l2cap_conf_rsp&nbsp;*)data;
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;scid&nbsp;&nbsp;&nbsp;=&nbsp;__le16_to_cpu(rsp-&gt;scid);&nbsp;&nbsp;&nbsp;//从包中剥离出scid
+&nbsp;&nbsp;&nbsp;&nbsp;flags&nbsp;&nbsp;=&nbsp;__le16_to_cpu(rsp-&gt;flags);&nbsp;&nbsp;//从包中剥离出flag
+&nbsp;&nbsp;&nbsp;&nbsp;result&nbsp;=&nbsp;__le16_to_cpu(rsp-&gt;result);&nbsp;//从包中剥离出result
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(result)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_CONF_SUCCESS:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l2cap_conf_rfc_get(chan,&nbsp;rsp-&gt;data,&nbsp;len);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;clear_bit(CONF_REM_CONF_PEND,&nbsp;&amp;chan-&gt;conf_state);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_CONF_PENDING:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;set_bit(CONF_REM_CONF_PEND,&nbsp;&amp;chan-&gt;conf_state);
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(test_bit(CONF_LOC_CONF_PEND,&nbsp;&amp;chan-&gt;conf_state))&nbsp;{&nbsp;&nbsp;//判断conf_state是否是CONF_LOC_CONF_PEND
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;buf[64];&nbsp;//buf数组大小64字节
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;len&nbsp;=&nbsp;l2cap_parse_conf_rsp(chan,&nbsp;rsp-&gt;data,&nbsp;len,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;buf,&nbsp;&amp;result);&nbsp;&nbsp;&nbsp;//data仍然是包中数据，len也是包中数据。
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;done;
+&nbsp;&nbsp;&nbsp;&nbsp;...</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当收到的数据包里，满足<strong>result == L2CAP_CONF_PENDING</strong>，且自身的连接状态<strong>conf_state == CONF_LOC_CONF_PEND</strong>的时候，会走到 <strong>l2cap_parse_conf_rsp</strong>函数里，而且传过去的buf是个长度为64的数据，参数len ，参数rsp-&gt;data都是由包中的内容来任意确定。那么在<strong>l2cap_parse_conf_rsp</strong>函数里：</span></p><pre class="brush:cpp;toolbar:false">static&nbsp;int&nbsp;l2cap_parse_conf_rsp(struct&nbsp;l2cap_chan&nbsp;*chan,&nbsp;void&nbsp;*rsp,&nbsp;int&nbsp;len,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*data,&nbsp;u16&nbsp;*result)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;l2cap_conf_req&nbsp;*req&nbsp;=&nbsp;data;
+&nbsp;&nbsp;&nbsp;&nbsp;void&nbsp;*ptr&nbsp;=&nbsp;req-&gt;data;
+&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;type,&nbsp;olen;
+&nbsp;&nbsp;&nbsp;&nbsp;unsigned&nbsp;long&nbsp;val;
+
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(len&nbsp;&gt;=&nbsp;L2CAP_CONF_OPT_SIZE)&nbsp;{&nbsp;//len没有被检查，由接收到的包内容控制
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;len&nbsp;-=&nbsp;l2cap_get_conf_opt(&amp;rsp,&nbsp;&amp;type,&nbsp;&amp;olen,&nbsp;&amp;val);
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(type)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_CONF_MTU:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(val&nbsp;&lt;&nbsp;L2CAP_DEFAULT_MIN_MTU)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*result&nbsp;=&nbsp;L2CAP_CONF_UNACCEPT;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chan-&gt;imtu&nbsp;=&nbsp;L2CAP_DEFAULT_MIN_MTU;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chan-&gt;imtu&nbsp;=&nbsp;val;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;l2cap_add_conf_opt(&amp;ptr,&nbsp;L2CAP_CONF_MTU,&nbsp;2,&nbsp;chan-&gt;imtu);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}
+
+static&nbsp;void&nbsp;l2cap_add_conf_opt(void&nbsp;**ptr,&nbsp;u8&nbsp;type,&nbsp;u8&nbsp;len,&nbsp;unsigned&nbsp;long&nbsp;val)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;l2cap_conf_opt&nbsp;*opt&nbsp;=&nbsp;*ptr;
+&nbsp;&nbsp;&nbsp;&nbsp;opt-&gt;type&nbsp;=&nbsp;type;
+&nbsp;&nbsp;&nbsp;&nbsp;opt-&gt;len&nbsp;&nbsp;=&nbsp;len;
+
+&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(len)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;1:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*((u8&nbsp;*)&nbsp;opt-&gt;val)&nbsp;&nbsp;=&nbsp;val;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;2:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;put_unaligned_le16(val,&nbsp;opt-&gt;val);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;4:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;put_unaligned_le32(val,&nbsp;opt-&gt;val);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+
+&nbsp;&nbsp;&nbsp;&nbsp;default:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy(opt-&gt;val,&nbsp;(void&nbsp;*)&nbsp;val,&nbsp;len);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;*ptr&nbsp;+=&nbsp;L2CAP_CONF_OPT_SIZE&nbsp;+&nbsp;len;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">仔细阅读这个函数的代码可以知道，这个函数的功能就是<strong>根据传进来的包，来构造将要发出去的包</strong>。而数据的出口就是传进去的64字节大小的buf。但是对传入的包的数据的长度并没有做检验，那么当len很大时，就会一直往出口buf里写数据，比如有64个<strong>L2CAP_CONF_MTU</strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">类型的opt，那么就会往buf里写上<strong>64*(L2CAP_CONF_OPT_SIZE + 2)</strong>个字节，那么显然这里就发生了溢出。由于buf是栈上定义的数据结构，那么这里就是一个栈溢出。 不过值得注意的是，代码要走进去，需要<strong>conf_state == CONF_LOC_CONF_PEND</strong>，这个状态是在处理<strong>L2CAP_CONF_REQ</strong>数据包的时候设置的：</span></p><pre class="brush:cpp;toolbar:false">static&nbsp;int&nbsp;l2cap_parse_conf_req(struct&nbsp;l2cap_chan&nbsp;*chan,&nbsp;void&nbsp;*data)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;u8&nbsp;remote_efs&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;u16&nbsp;result&nbsp;=&nbsp;L2CAP_CONF_SUCCESS;
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(len&nbsp;&gt;=&nbsp;L2CAP_CONF_OPT_SIZE)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;len&nbsp;-=&nbsp;l2cap_get_conf_opt(&amp;req,&nbsp;&amp;type,&nbsp;&amp;olen,&nbsp;&amp;val);&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hint&nbsp;&nbsp;=&nbsp;type&nbsp;&amp;&nbsp;L2CAP_CONF_HINT;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;type&nbsp;&amp;=&nbsp;L2CAP_CONF_MASK;
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(type)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;L2CAP_CONF_EFS:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;remote_efs&nbsp;=&nbsp;1;&nbsp;&nbsp;//【1】
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(olen&nbsp;==&nbsp;sizeof(efs))
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy(&amp;efs,&nbsp;(void&nbsp;*)&nbsp;val,&nbsp;olen);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+done:
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(result&nbsp;==&nbsp;L2CAP_CONF_SUCCESS)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(remote_efs)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(chan-&gt;local_stype&nbsp;!=&nbsp;L2CAP_SERV_NOTRAFIC&nbsp;&amp;&amp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;efs.stype&nbsp;!=&nbsp;L2CAP_SERV_NOTRAFIC&nbsp;&amp;&amp;&nbsp;&nbsp;&nbsp;//【2】
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;efs.stype&nbsp;!=&nbsp;chan-&gt;local_stype)&nbsp;{
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Send&nbsp;PENDING&nbsp;Conf&nbsp;Rsp&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result&nbsp;=&nbsp;L2CAP_CONF_PENDING;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;set_bit(CONF_LOC_CONF_PEND,&nbsp;&amp;chan-&gt;conf_state);&nbsp;&nbsp;//这里设置CONF_LOC_CONF_PEND
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当收到L2CAP_CONF_REQ的包中包含有L2CAP_CONF_EFS类型的数据【1】，而且L2CAP_CONF_EFS数据的<strong>stype == L2CAP_SERV_NOTRAFIC</strong>【2】的时候，conf_state会被置CONF_LOC_CONF_PEND</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">到这里，这个漏洞触发的思路也就清楚了：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">&nbsp;1，建立和目标机器的L2CAP 连接，这里注意sock_type的选择要是SOCK_RAW，如果不是，内核会自动帮我们完成</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">sent_infomation_request</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">, </span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">send_connection_request</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">, </span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">send_configure_request</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些操作，也就无法触发目标机器的漏洞了。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2，建立SOCK_RAW连接，connect的时候，会自动完成</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">sent_infomation_request</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的操作，不过这个不影响。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3，接下来我们需要完成</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">send_connection_request</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">操作，来确定SCID,DCID。完成这个操作的过程是发送合法的 L2CAP_CONN_REQ数据包。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4，接下来需要发送包含有</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">L2CAP_CONF_EFS</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">类型的数据，而且</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">L2CAP_CONF_EFS</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">数据的stype ==</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">L2CAP_SERV_NOTRAFIC</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的L2CAP_CONF_REQ包，这一步是为了让目标机器的conf_state变成</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">CONF_LOC_CONF_PEND</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5，这里就到了发送cmd_len很长的L2CAP_CONN_RSP包了。这个包的result字段需要是</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">L2CAP_CONF_PENDING</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。那么这个包发过去之后，目标机器就内核栈溢出了，要么重启了，要么死机了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个漏洞是这几个漏洞里，触发最难的。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2017-1000250</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个漏洞是BlueZ的SDP服务里的信息泄露漏洞。这个不像L2CAP层的连接那么复杂，主要就是上层服务，收到数据就进行处理。那么我们也只需要关注处理的函数。 之前说过，BlueZ的SDP收到数据是从</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">io_session_event</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">开始。之后，数据的流向是：</span></p><pre class="brush:bash;toolbar:false">iosessionevent--&gt;handlerequest--&gt;processrequest</pre><p style="text-align: center; text-indent: 0em;"><img src="http://p0.qhimg.com/t017b1cfadbce82a807.png" title="t013279d5ff030cc6ae.png" alt="http://p9.qhimg.com/t013279d5ff030cc6ae.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">有必要介绍一下SDP协议的数据结构： &nbsp;它有一个</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">sdp_pud_hdr</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的头部，头部数据里定义了PUD命令的类型，tid，以及pdu parameter的长度，然后就是具体的parameter。最后一个字段是continuation state，当一个包发不完所要发送的数据的时候，这个字段就会有效。对与这个字段，BlueZ给了它一个定义：</span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint32_t&nbsp;timestamp;
+&nbsp;&nbsp;&nbsp;&nbsp;union&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint16_t&nbsp;maxBytesSent;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint16_t&nbsp;lastIndexSent;
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;cStateValue;
+}&nbsp;sdp_cont_state_t;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于远程的连接，PDU命令类型只能是这三个：</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">SDP_SVC_SEARCH_REQ</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">, </span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">SDP_SVC_ATTR_REQ</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">, </span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">SDP_SVC_SEARCH_ATTR_REQ</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。这个漏洞呢，出现在对SDP_SVC_SEARCH_ATTR_REQ命令的处理函数里面 service_search_attr_req 。这个函数有点长，就直接说它干了啥，不贴代码了：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1， extract_des(pdata, data_left, &amp;pattern, &amp;dtd, SDP_TYPE_UUID);&nbsp;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">解析service search pattern（对应SDP协议数据结构图）&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">2，max = getbe16(pdata); 获得Maximu Attribute Byte&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">3，scanned = extract_des(pdata, data_left, &amp;seq, &amp;dtd, </span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">SDP_TYPE_ATTRID</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">);解析Attribute ID list&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">4，if (</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">sdp_cstate_get</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">(pdata, data_left, &amp;cstate) &lt; 0) ;获取continuation state状态cstate，如果不为0，则将包里的continuation state数据复制给cstate.</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞发生在对cstate状态不为0的时候的处理，我们重点看这部分的代码：&nbsp;</span></p><pre class="brush:cpp;toolbar:false">sdp_buf_t&nbsp;*pCache&nbsp;=&nbsp;sdp_get_cached_rsp(cstate);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(pCache)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint16_t&nbsp;sent&nbsp;=&nbsp;MIN(max,&nbsp;pCache-&gt;data_size&nbsp;-&nbsp;cstate-&gt;cStateValue.maxBytesSent);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pResponse&nbsp;=&nbsp;pCache-&gt;data;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy(buf-&gt;data,&nbsp;pResponse&nbsp;+&nbsp;cstate-&gt;cStateValue.maxBytesSent,&nbsp;sent);&nbsp;//【1】&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;buf-&gt;data_size&nbsp;+=&nbsp;sent;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cstate-&gt;cStateValue.maxBytesSent&nbsp;+=&nbsp;sent;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(cstate-&gt;cStateValue.maxBytesSent&nbsp;==&nbsp;pCache-&gt;data_size)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cstate_size&nbsp;=&nbsp;sdp_set_cstate_pdu(buf,&nbsp;NULL);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cstate_size&nbsp;=&nbsp;sdp_set_cstate_pdu(buf,&nbsp;cstate);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">sdp_get_cached_rsp函数其实是对cstate的timestamp值的检验，如何过这个检验之后再说。当代码走到【1】处的memcpy时，由于<strong>cstate-&gt;maxBytesSent</strong>就是由数据包里的数据所控制，而且没有做任何检验，所以这里可以为任意的uint16t值。那么很明显，这里就出现了一个对pResponse的越界读的操作。而越界读的数据还会通过SDP RESPONSE发送给攻击方，那么一个信息泄露就发生了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">写这个poc需要注意</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">sdp_get_cached_rsp</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的检验的绕过，那么首先需要得到一个timestamp。当一次发送的包不足以发送完所有的数据的时候，会设置cstate状态，所以如果我们发给服务端的包里，max字段非常小，那么服务端就会给我们回应一个带cstate状态的包，这里面会有timestamp:&nbsp;</span></p><pre class="brush:cpp;toolbar:false">if&nbsp;(cstate&nbsp;==&nbsp;NULL)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(buf-&gt;data_size&nbsp;&gt;&nbsp;max)&nbsp;{&nbsp;&nbsp;//max&nbsp;可由接收到的包数据指定
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sdp_cont_state_t&nbsp;newState;
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memset((char&nbsp;*)&amp;newState,&nbsp;0,&nbsp;sizeof(sdp_cont_state_t));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;newState.timestamp&nbsp;=&nbsp;sdp_cstate_alloc_buf(buf);&nbsp;//这里得到一个timestamp
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;buf-&gt;data_size&nbsp;=&nbsp;max;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;newState.cStateValue.maxBytesSent&nbsp;=&nbsp;max;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cstate_size&nbsp;=&nbsp;sdp_set_cstate_pdu(buf,&nbsp;&amp;newState);&nbsp;//回应的包中，写上cstate状态。
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cstate_size&nbsp;=&nbsp;sdp_set_cstate_pdu(buf,&nbsp;NULL);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">所以，我们的poc应该是这个步骤：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1，建立SDP连接。这里我们的socket需要是SOCK_STREAM类型，而且connet的时候，addr的psm字段要是0x0001。关于连接的PSM：&nbsp;</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p4.qhimg.com/t01c3673f9acb1068bb.png" title="t01d0275f3dec54d25e.png" alt="http://p4.qhimg.com/t01d0275f3dec54d25e.png"/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2，发送一个不带cstate状态的数据包，而且指定Maximu Attribute Byte的值非常小。这一步是为了让服务端给我们返回一个带timestamp的包。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3，接收这个带timestamp的包，并将timestamp提取。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4，发送一个带cstate状态的数据包，cstate的timestamp是指定为提取出来的值，服务端memcpy的时候，则就会把pResponse+maxBytesSent的内容发送给我们，读取这个数据包，则就获取了泄露的数据。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2017-0785</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个漏洞也是SDP的信息泄露漏洞，不过是BlueDroid的。与BlueZ的那个是有些类似的。我们也从对SDP数据包的处理函数说起。 SDP数据包会通过sdp_data_ind函数送给</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">sdp_server_handle_client_req</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。与BlueZ一样，这个函数也会根据包中的pud_id来确定具体的处理函数。这个漏洞发生在对</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">SDP_PDU_SERVICE_SEARCH_REQ</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">命令的处理，对包内数据的解析与上文BlueZ中的大同小异，不过注意在BlueDroid中，cstate结构与BlueZ中有些不同：&nbsp;</span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+
+&nbsp;&nbsp;&nbsp;&nbsp;uint16_t&nbsp;cont_offset;
+
+}&nbsp;sdp_cont_state_t;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这里主要看漏洞：</span></p><pre class="brush:cpp;toolbar:false">①,&nbsp;BE_STREAM_TO_UINT16&nbsp;(max_replies,&nbsp;p_req);从包中解析出Maximu&nbsp;Attribute&nbsp;Byte
+
+②，&nbsp;for&nbsp;(num_rsp_handles&nbsp;=&nbsp;0;&nbsp;num_rsp_handles&nbsp;&lt;&nbsp;max_replies;&nbsp;)&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_rec&nbsp;=&nbsp;sdp_db_service_search&nbsp;(p_rec,&nbsp;&amp;uid_seq);
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(p_rec)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rsp_handles[num_rsp_handles++]&nbsp;=&nbsp;p_rec-&gt;record_handle;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+③,&nbsp;/*&nbsp;Check&nbsp;if&nbsp;this&nbsp;is&nbsp;a&nbsp;continuation&nbsp;request&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(*p_req)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(*p_req++&nbsp;!=&nbsp;SDP_CONTINUATION_LEN&nbsp;||&nbsp;(p_req&nbsp;&gt;=&nbsp;p_req_end))
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sdpu_build_n_send_error&nbsp;(p_ccb,&nbsp;trans_num,&nbsp;SDP_INVALID_CONT_STATE,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SDP_TEXT_BAD_CONT_LEN);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BE_STREAM_TO_UINT16&nbsp;(cont_offset,&nbsp;p_req);&nbsp;&nbsp;//从包中得到cont_offset
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(cont_offset&nbsp;!=&nbsp;p_ccb-&gt;cont_offset)&nbsp;&nbsp;//对cont_offset的检验
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sdpu_build_n_send_error&nbsp;(p_ccb,&nbsp;trans_num,&nbsp;SDP_INVALID_CONT_STATE,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SDP_TEXT_BAD_CONT_INX);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rem_handles&nbsp;=&nbsp;num_rsp_handles&nbsp;-&nbsp;cont_offset;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;extract&nbsp;the&nbsp;remaining&nbsp;handles&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;{&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rem_handles&nbsp;=&nbsp;num_rsp_handles;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cont_offset&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_ccb-&gt;cont_offset&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+④，&nbsp;cur_handles&nbsp;=&nbsp;(UINT16)((p_ccb-&gt;rem_mtu_size&nbsp;-&nbsp;SDP_MAX_SERVICE_RSPHDR_LEN)&nbsp;/&nbsp;4);
+
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(rem_handles&nbsp;&lt;=&nbsp;cur_handles)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cur_handles&nbsp;=&nbsp;rem_handles;
+&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;/*&nbsp;Continuation&nbsp;is&nbsp;set&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_ccb-&gt;cont_offset&nbsp;+=&nbsp;cur_handles;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;is_cont&nbsp;=&nbsp;TRUE;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+⑤，&nbsp;for&nbsp;(xx&nbsp;=&nbsp;cont_offset;&nbsp;xx&nbsp;&lt;&nbsp;cont_offset&nbsp;+&nbsp;cur_handles;&nbsp;xx++)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;UINT32_TO_BE_STREAM&nbsp;(p_rsp,&nbsp;rsp_handles[xx]);</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">①，②中代码可以看出，变量</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">num_rsp_handles</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">的值，一定程度上可以由包中的Maximu Attribute Byte字段控制。 ③中代码是对带cstate的包的处理，第一步是对大小的检查，第二步是获得cont_offset，然后对cont_offset进行检查，第三步就到了 </span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">rem_handles = num_rsp_handles - cont_offset</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"> &nbsp;可以思考一种情况，如果</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">num_rsp_handles &lt; cont_offset</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">，那么这个代码就会发生整数的下溢，而</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">num_rsp_handles</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在一定程度上我们可以控制，而且是可以控制它变成０，那么只要cont_offset不为０，这里就会发生整数下溢。发生下溢的结果给了</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">rem_handles</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">，而这个变量代表的是还需要发送的数据数。 在④中，如果</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">rem_handles</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">是发生了下溢的结果，由于它是uint16_t类型，那么它将变成一个很大的数，所以会走到 </span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">pccb-&gt;cont_offset += </span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">cur_handles</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">;,</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">cur_handles</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">是一个固定的值，那么如果这个下溢的过程，发生很多次，pccb-&gt;cont_offset就会变得很大，那么在５处，就会有一个对</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; text-decoration: none;">rsp_handles</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">数组的越界读的产生。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">下面的操作可以让这个越界读发生：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">１，发送一个不带cstate的包， 而且Maximu Attribute Byte字段设置的比较大。那么结果就是rem_handles = num_rsp_handles，而由于max_replies比较大，所以</span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">num_rsp_handles</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">会成为一个比较大的值。只要在④中保证</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">rem_handles</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"> &gt; cur_handles，那么pccb-&gt;cont_offset就会成为一个非０值cur_handles。这一步是为了使得pccb-&gt;</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">cont_offset</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">成为一个非０值。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">２，接收服务端的回应包，这个回应包里的cstate字段将会含有刚刚的pccb-&gt;cont_offset值，我们取得这个值。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">３，发送一个带cstate的包，cont_offset指定为刚刚提取的值，而且设置Maximu Attribute Byte字段为０。那么服务端收到这个包后，就会走到</span><span style="text-decoration: none;"><strong><span style="text-decoration: none; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">rem_handles = num_rsp_handles - cont_offset</span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">从而发生整数下溢，同时pccb-&gt;cont_offset又递增一个cur_handles大小。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">４，重复２和３的过程，那么pccb-&gt;cont_offset将越来越大，从而在⑤出发生越界读，我们提取服务端返回的数据，就可以获得泄露的信息的内容。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2017-0781</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在我们到了BNEP服务。BNEP的协议格式，下面两张图可以说明的很清楚：&nbsp;</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p0.qhimg.com/t01f1a9caed32a953ab.png" title="t019290d4aca0661f3c.png" alt="http://p2.qhimg.com/t019290d4aca0661f3c.png"/></span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p3.qhimg.com/t01dba407c6650628cd.png" title="t015c46c772957ea2f1.png" alt="http://p3.qhimg.com/t015c46c772957ea2f1.png"/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">BlueDroid中BNEP服务对于接受到的数据包的处理也不复杂：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1,解析得到BNEP_TYPE，得到extension位。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2,检查连接状态，如果已经连接则后续可以处理非</span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">BNEP_FRAME_CONTROL</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的包，如果没有建立连接，则后续只处理BNEP_FRAME_CONTROL的包。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3,去BNEP_TYPE对应的处理函数进行处理。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4,对于BNEP_TYPE不是BNEP_FRAME_CONTROL而且有extension位的，还需要对extension的数据进行处理。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">5,调用pan层的回调函数。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">值得注意的是，BNEP连接真正建立起来，需要先处理一个合法的</span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">BNEP_FRAME_CONTROL</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">数据包。 CVE-2017-0781正是连接还没建立起来，在处理</span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">BNEP_FRAME_CONTROL</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">时所发生的问题：&nbsp;</span></p><pre class="brush:cpp;toolbar:false">case&nbsp;BNEP_FRAME_CONTROL:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ctrl_type&nbsp;=&nbsp;*p;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p&nbsp;=&nbsp;bnep_process_control_packet&nbsp;(p_bcb,&nbsp;p,&nbsp;&amp;rem_len,&nbsp;FALSE);
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(ctrl_type&nbsp;==&nbsp;BNEP_SETUP_CONNECTION_REQUEST_MSG&nbsp;&amp;&amp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_bcb-&gt;con_state&nbsp;!=&nbsp;BNEP_STATE_CONNECTED&nbsp;&amp;&amp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;extension_present&nbsp;&amp;&amp;&nbsp;p&nbsp;&amp;&amp;&nbsp;rem_len)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_bcb-&gt;p_pending_data&nbsp;=&nbsp;(BT_HDR&nbsp;*)osi_malloc(rem_len);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy((UINT8&nbsp;*)(p_bcb-&gt;p_pending_data&nbsp;+&nbsp;1),&nbsp;p,&nbsp;rem_len);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_bcb-&gt;p_pending_data-&gt;len&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;rem_len;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_bcb-&gt;p_pending_data-&gt;offset&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上述代码中，malloc了一个remlen的大小，这个是和收到的数据包的长度相关的。可是memcpy的时候，却是从<strong>pbcb-&gt;p_pending_data＋１</strong>开始拷贝数据，那么这里会直接溢出一个<strong>sizeof(*(pbcb-&gt;p_pending_data))</strong>大小的内容。这个大小是8.所以只要代码走到这，就会有一个8字节大小的堆溢出。而要走到这，只需要过那个if的判断条件，而这个if其实是对</span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">BNEP_SETUP_CONNECTION_REQUEST_MSG</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">命令处理失败后的错误处理函数。那么只要发送一个错误的</span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">BNEP_SETUP_CONNECTION_REQUEST_MSG</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">命令包，就可以进入到这段代码了触发堆溢出了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">所以我们得到poc的编写过程：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">１，建立BNEP连接，这个和SDP类似，只是需要指定PSM为BNEP对应的0x000F。&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">２，发送一个BNEPTYPE为</span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">BNEP_FRAME_CONTROL</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，extension字段为１，ctrl_type为</span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">BNEP_SETUP_CONNECTION_REQUEST_MSG</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的错误的BNEP包：&nbsp;</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p8.qhimg.com/t01f234b30e2a95b672.png" title="t015cd3341f4c4b2b67.png" alt="http://p3.qhimg.com/t015cd3341f4c4b2b67.png"/></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2017-0782</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个也是由于BNEP协议引起的漏洞，首先它是个整数溢出，整数溢出导致的后果是堆溢出。 问题出在BNEP对extension字段的处理上：&nbsp;</span></p><pre class="brush:cpp;toolbar:false">UINT8&nbsp;*bnep_process_control_packet&nbsp;(tBNEP_CONN&nbsp;*p_bcb,&nbsp;UINT8&nbsp;*p,&nbsp;UINT16&nbsp;*rem_len,&nbsp;BOOLEAN&nbsp;is_ext)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;UINT8&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;control_type;
+&nbsp;&nbsp;&nbsp;&nbsp;BOOLEAN&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bad_pkt&nbsp;=&nbsp;FALSE;
+&nbsp;&nbsp;&nbsp;&nbsp;UINT16&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;len,&nbsp;ext_len&nbsp;=&nbsp;0;
+
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(is_ext)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ext_len&nbsp;=&nbsp;*p++;&nbsp;【１】
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*rem_len&nbsp;=&nbsp;*rem_len&nbsp;-&nbsp;1;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;control_type&nbsp;=&nbsp;*p++;
+&nbsp;&nbsp;&nbsp;&nbsp;*rem_len&nbsp;=&nbsp;*rem_len&nbsp;-&nbsp;1;
+
+&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(control_type)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;default&nbsp;:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bnep_send_command_not_understood&nbsp;(p_bcb,&nbsp;control_type);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(is_ext)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p&nbsp;+=&nbsp;(ext_len&nbsp;-&nbsp;1);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*rem_len&nbsp;-=&nbsp;(ext_len&nbsp;-&nbsp;1);&nbsp;【２】
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(bad_pkt)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BNEP_TRACE_ERROR&nbsp;(&quot;BNEP&nbsp;-&nbsp;bad&nbsp;ctl&nbsp;pkt&nbsp;length:&nbsp;%d&quot;,&nbsp;*rem_len);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*rem_len&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;NULL;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;p;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上述代码中，【１】的ext_len从数据包中获得，没有长度的检查，可为任意值。而当control_type为一个非法值的时候，会走到【２】,那么这里就很有说法了，我们如果设置ext_len比较大，那么这里就会发生一个整数下溢。从而使得rem_len变成一个很大的uint16_t的值。这个值将会影响后续的处理：</span></p><pre class="brush:cpp;toolbar:false">&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(extension_present&nbsp;&amp;&amp;&nbsp;p&nbsp;&amp;&amp;&nbsp;rem_len)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ext_type&nbsp;=&nbsp;*p;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;extension_present&nbsp;=&nbsp;ext_type&nbsp;&gt;&gt;&nbsp;7;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ext_type&nbsp;&amp;=&nbsp;0x7F;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p++;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rem_len--;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p&nbsp;=&nbsp;bnep_process_control_packet&nbsp;(p_bcb,&nbsp;p,&nbsp;&amp;rem_len,&nbsp;TRUE);　【１】
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;p_buf-&gt;offset&nbsp;+=&nbsp;p_buf-&gt;len&nbsp;-&nbsp;rem_len;　　
+&nbsp;&nbsp;&nbsp;&nbsp;p_buf-&gt;len&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;rem_len;　　【２】
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;...
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(bnep_cb.p_data_buf_cb)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(*bnep_cb.p_data_buf_cb)(p_bcb-&gt;handle,&nbsp;p_src_addr,&nbsp;p_dst_addr,&nbsp;protocol,&nbsp;p_buf,&nbsp;　fw_ext_present);　　【３】
+&nbsp;&nbsp;&nbsp;&nbsp;}
+　　...
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;osi_free(p_buf);
+&nbsp;&nbsp;&nbsp;&nbsp;}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">上面的代码中，【１】处将发生整数下溢出，使得rem_len成为一个很大的值（比如0xfffd），【２】处会将这个值赋值给p_buf-&gt;len。【３】处是回调函数处理这个p_buf，在BlueDroid中这个函数是<strong>pan_data_buf_ind_cb</strong>，这个函数会有一条路径调到<strong>bta_pan_data_buf_ind_cback</strong>，而在这个函数中：</span></p><pre class="brush:cpp;toolbar:false">static&nbsp;void&nbsp;bta_pan_data_buf_ind_cback(UINT16&nbsp;handle,&nbsp;BD_ADDR&nbsp;src,&nbsp;BD_ADDR&nbsp;dst,&nbsp;UINT16&nbsp;protocol,&nbsp;BT_HDR&nbsp;*p_buf,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BOOLEAN&nbsp;ext,&nbsp;BOOLEAN&nbsp;forward)
+{
+&nbsp;&nbsp;&nbsp;&nbsp;tBTA_PAN_SCB&nbsp;*p_scb;
+&nbsp;&nbsp;&nbsp;&nbsp;BT_HDR&nbsp;*p_new_buf;
+
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(sizeof(tBTA_PAN_DATA_PARAMS)&nbsp;&gt;&nbsp;p_buf-&gt;offset)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;offset&nbsp;smaller&nbsp;than&nbsp;data&nbsp;structure&nbsp;in&nbsp;front&nbsp;of&nbsp;actual&nbsp;data&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_new_buf&nbsp;=&nbsp;(BT_HDR&nbsp;*)osi_malloc(PAN_BUF_SIZE);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;memcpy((UINT8&nbsp;*)(p_new_buf&nbsp;+&nbsp;1)&nbsp;+&nbsp;sizeof(tBTA_PAN_DATA_PARAMS),
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(UINT8&nbsp;*)(p_buf&nbsp;+&nbsp;1)&nbsp;+&nbsp;p_buf-&gt;offset,&nbsp;p_buf-&gt;len);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_new_buf-&gt;len&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;p_buf-&gt;len;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p_new_buf-&gt;offset&nbsp;=&nbsp;sizeof(tBTA_PAN_DATA_PARAMS);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;osi_free(p_buf);
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;...
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">memcpy用到了我们传进来的pbuf，而<strong>pbuf-&gt;len</strong>是刚刚下溢之后的很大的值，所以主要保证<strong>tBTA_PAN_DATA_PARAMS</strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><strong>&gt; pbuf-&gt;offset</strong>，这里就会发生一次很大字节的堆溢出。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">代码首先要走到extension的处理，这个的前提是连接状态是</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">BNEP_STATE_CONNECTED</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">。而这个状态的建立，需要服务端先接收一个正确的</span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">BNEP_SETUP_CONNECTION_REQUEST_MSG</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">请求包，同时要想</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">pan_data_buf_ind_cb</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">调用到</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">bta_pan_data_buf_ind_cback</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">产生堆溢出，需要在建立连接的时候指定UUID为</span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">UUID_SERV_CLASS_PANU</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">可以阅读这两个函数来找到这样做的原因，这里就不再贴代码了。清楚这一点之后，我们就可以构造我们的poc了：&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">１，建立BNEP连接，这里只是建立起初步的连接，conn_state还不是</span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">BNEP_STATE_CONNECTED</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，这一步通过connect实现&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">２，发送一个正确的</span><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: none;">BNEP_SETUP_CONNECTION_REQUEST_MSG</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">请求包，同时指定UUID为UUID_SERV_CLASS_PANU。这个包将是这样子：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p3.qhimg.com/t016ac18cd242578315.png" title="t01b9913bfb03125112.png" alt="http://p2.qhimg.com/t01b9913bfb03125112.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3，发送一个extension字段可导致整数下溢的包，而且注意控制pbuf-&gt;offset变得比较小：&nbsp;</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p2.qhimg.com/t0171ee065bcee0d619.png" title="t017b4291f3ee650e5d.png" alt="http://p9.qhimg.com/t017b4291f3ee650e5d.png"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这样PoC就完成了。 <strong>CVE-2017-0781</strong>和<strong>CVE-2017-0782</strong>导致了堆溢出，一般会使得<strong>com.android.bluetooth</strong>崩溃，但是这个进程崩溃系统不会有提醒，需要去logcat来找崩溃的日志。<strong>这是两个很有品质的堆溢出漏洞，结合前面的信息泄露漏洞，是完全可以转化为远程代码执行的。</strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x03</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这篇分析到这里也就结束了，蓝牙出漏洞是个比较危险的事情，希望没有修补的能尽快修补，补丁链接如下：</span></p><p style="text-indent: 2em;"><a href="https://git.kernel.org/pub/scm/bluetooth/bluez.git/commit/?id=9e009647b14e810e06626dde7f1bb9ea3c375d09" target="_self"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2017-1000250</span></a></p><p style="text-indent: 2em;"><a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e860d2c904d1a9f38a24eb44c9f34b8f915a6ea3" target="_self"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2017-1000251</span></a></p><p style="text-indent: 2em;"><a href="https://android.googlesource.com/platform/system/bt/+/226ea26684d4cd609a5b456d3d2cc762453c2d75" target="_self"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2017-0785</span></a></p><p style="text-indent: 2em;"><a href="https://android.googlesource.com/platform/system/bt/+/c513a8ff5cfdcc62cc14da354beb1dd22e56be0e" target="_self"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2017-0781</span></a></p><p style="text-indent: 2em;"><a href="https://android.googlesource.com/platform/system/bt/+/4e47f3db62bab524946c46efe04ed6a2b896b150" target="_self"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">CVE-2017-0782</span></a></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">确定自己是否有漏洞可以用我们提供的poc呀，关于蓝牙漏洞的研究，也希望能和各位多多交流。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考文档:</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">1,<a href="https://www.armis.com/blueborne/">https://www.armis.com/blueborne/</a>&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2,<a href="http://blog.csdn.net/rain0993/article/details/8533246">http://blog.csdn.net/rain0993/article/details/8533246</a>&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3,<a href="https://people.csail.mit.edu/albert/bluez-intro/index.html">https://people.csail.mit.edu/albert/bluez-intro/index.html</a>&nbsp;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">0x04</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">360Vulpecker Team: 隶属于360公司信息安全部，致力于保护公司所有Android App及手机的安全，同时专注于移动安全研究，研究重点为安卓APP安全和安卓OEM手机安全。 团队定制了公司内部安卓产品安全开发规范，自主开发并维护了在线Android应用安全审计系统“360显危镜”，在大大提高工作效率的同时也为开发者提供了便捷的安全自测平台。同时研究发现了多个安卓系统上的通用型漏洞，如通用拒绝服务漏洞、“寄生兽”漏洞等，影响范围几乎包括市面上所有应用。 该团队高度活跃在谷歌、三星、华为等各大手机厂商的致谢名单中，挖掘的漏洞屡次获得CVE编号及致谢，在保证360产品安全的前提下，团队不断对外输出安全技术，为移动互联网安全贡献一份力量。</span></p><p><br/></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/4495.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【漏洞分析】BlueBorne 蓝牙漏洞深入分析与PoC - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4495" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="86c40da76667b73d4595c63e81eafd83">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="17008" user-name="小花小无邪" href="javascript:;">
+                小花小无邪            </a>
+                        <span class="comment-time">2017-09-29 16:52:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="17008">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_17008" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">……</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="17007" user-name="不挖洞的老鼠" href="javascript:;">
+                不挖洞的老鼠            </a>
+                        <span class="comment-time">2017-09-29 16:52:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="17007">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_17007" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@蒸米spark:这个不错</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="17006" user-name="Rj1ng的Ring" href="javascript:;">
+                Rj1ng的Ring            </a>
+                        <span class="comment-time">2017-09-29 16:52:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="17006">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_17006" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@muhe今天划水了么:转发</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/7x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="17005" user-name="机械葫芦娃" href="javascript:;">
+                机械葫芦娃            </a>
+                        <span class="comment-time">2017-09-29 16:52:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="17005">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_17005" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">“CVE-2017-0781和CVE-2017-0782导致了堆溢出，一般会使得com.android.bluetooth崩溃，但是这个进程崩溃系统不会有提醒，需要去logcat来找崩溃的日志。这是两个很有品质的堆溢出漏洞，结合前面的信息泄露漏洞，是完全可以转化为远程代码执行的。”——好文。我还以为有Exploit可以用，然而并没有</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/9x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="17004" user-name="小禾才露尖尖角54" href="javascript:;">
+                小禾才露尖尖角54            </a>
+                        <span class="comment-time">2017-09-29 16:52:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="17004">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_17004" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">不错！</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/7x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="17003" user-name="hac_jinyu00" href="javascript:;">
+                hac_jinyu00            </a>
+                        <span class="comment-time">2017-09-29 16:52:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="17003">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_17003" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@小禾才露尖尖角54:不错！</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16983" user-name="僵尸小红帽" href="javascript:;">
+                僵尸小红帽            </a>
+                        <span class="comment-time">2017-09-28 23:32:09</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16983">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16983" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@李均-selfighter://@Alin的技术笔记:转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/7x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16982" user-name="蒸米spark" href="javascript:;">
+                蒸米spark            </a>
+                        <span class="comment-time">2017-09-28 23:32:09</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16982">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16982" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">这个不错</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/4x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16981" user-name="lkzcwing" href="javascript:;">
+                lkzcwing            </a>
+                        <span class="comment-time">2017-09-28 23:32:09</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16981">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16981" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@蒸米spark: 这个不错</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16978" user-name="77ca1k1k1" href="javascript:;">
+                77ca1k1k1            </a>
+                        <span class="comment-time">2017-09-28 22:22:17</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16978">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16978" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">Blueborne深度分析终于来了！带PoC的 O网页链接</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="4495" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4496.html" alt="【漏洞预警】Mac OS X存在Javascript沙箱绕过漏洞，可造成任意文件读取！（含PoC）" target="_blank">【漏洞预警】Mac OS X存在Jav...</a></li>
+                                <li><a href="/learning/detail/4495.html" alt="【漏洞分析】BlueBorne 蓝牙漏洞深入分析与PoC" target="_blank">【漏洞分析】BlueBorne 蓝牙漏...</a></li>
+                                <li><a href="/learning/detail/4488.html" alt="【漏洞预警】Linux PIE/stack 内存破坏漏洞(CVE–2017–1000253)预警" target="_blank">【漏洞预警】Linux PIE/sta...</a></li>
+                                <li><a href="/learning/detail/4473.html" alt="【技术分享】看我如何利用企业邮箱搞定上百企业内网或内部账号" target="_blank">【技术分享】看我如何利用企业邮箱搞...</a></li>
+                                <li><a href="/learning/detail/4489.html" alt="【技术分享】Android SO自动化逆向探究" target="_blank">【技术分享】Android SO自动化...</a></li>
+                                <li><a href="/learning/detail/4481.html" alt="【技术分享】Linux应急响应姿势浅谈" target="_blank">【技术分享】Linux应急响应姿势浅谈</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://appscan.360.cn/  " alt="360显危镜" target="_blank">360显危镜</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

