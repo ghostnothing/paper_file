@@ -1,0 +1,804 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】ChromeOS基于eCryptfs的用户数据安全保护机制 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="ChromeOS,eCryptfs"/>
+    
+        <meta name="description" content="Chromebook的使用场景模式是允许多人分享使用同一台设备，但是同时也要保护每个用户数据的私密性，使得每个使用者都不允许访问到对方的隐私数据。本文试图从较高的角度阐述ChromeOS是如何通过eCryptfs机制保护用户数据隐私。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】ChromeOS基于eCryptfs的用户数据安全保护机制</h2>
+                <div class="article-msg">
+                    <span class="time">2017-10-11 17:40:19</span>
+                    
+                                        <span class="read">阅读：15745次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4531"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4531" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2911023682" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t00df551a583a87f4e9.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2911023682" style="color:#848e99;">360 icesword lab</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-indent: 2em; text-align: center;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p3.qhimg.com/t01ea06fa72a18b3a60.jpg" title="t0145f1f7939d901a80.jpg" alt="http://p8.qhimg.com/t0145f1f7939d901a80.jpg"/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=2911023682" target="_self"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">suezi@冰刃实验室</span></a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; text-indent: 2em; background-color: rgb(255, 255, 255);"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">投稿方式：发送邮件至<a href="mailto:linwei@360.cn" target="_self" style="text-decoration-line: none; color: rgb(51, 51, 51); line-height: 28px;"><span style="color: rgb(0, 112, 192);">linwei#360.cn</span></a>，或登陆<a href="http://bobao.360.cn/contribute/index" target="_blank" style="text-decoration-line: none; color: rgb(0, 112, 192); line-height: 28px;">网页版</a>在线投稿</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">概述</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Chromebook</span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的使用场景模式是允许多人分享使用同一台设备，但是同时也要保护每个用户数据的私密性，使得每个使用者都不允许访问到对方的隐私数据，包括：账户信息、浏览历史记录和cache、安装的应用程序、下载的内容以及用户自主在本地产生的文本、图片、视频等。本文试图从较高的角度阐述ChromeOS是如何通过<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>eCryptfs</strong></span>机制保护用户数据隐私。</span><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">eCryptfs简介</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">eCryptfs在<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9);"><strong>Linux kernel 2.6.19</strong></span>由IBM公司的Halcrow，Thompson等人引入，在Cryptfs的基础上实现，用于企业级的文件系统加密，支持文件名和文件内容的加密。本质上eCryptfs 就像是一个内核版本的 Pretty Good Privacy（PGP）服务，插在 VFS和下层物理文件系统之间，充当一个“过滤器”的角色。用户应用程序对加密文件的写请求，经系统调用层到达 VFS 层，VFS 转给 eCryptfs 文件系统组件处理，处理完毕后，再转给下层物理文件系统；读请求流程则相反。</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">eCryptfs 的设计受到<span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px; color: rgb(227, 108, 9);"><strong>OpenPGP</strong></span>规范的影响，核心思想：eCryptfs通过一种对称密钥加密算法来加密文件的内容或文件名，如AES-128，密钥 FEK（File Encryption Key）随机产生。而FEK通过用户口令或者公钥进行保护，加密后的FEK称EFEK（Encrypted File Encryption Key），口令/公钥称为 FEFEK（File Encryption Key Encryption Key）。在保存文件时，将包含有EFEK、加密算法等信息的元数据（metadata）放置在文件的头部或者xattr扩展属性里（本文默认以前者做为讲解），打开文件前再解析metadata。</span></p><p style="text-align: center;"><img src="http://p7.qhimg.com/t0135efa854e8e5ba62.png" title="t0165ba07e620fbddaf.png" alt="http://p0.qhimg.com/t0165ba07e620fbddaf.png"/></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图一 eCryptfs的系统架构<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">eCryptfs的系统架构如图一所示，eCryptfs堆叠在EXT4文件系统之上，工作时需要用户程序和内核同时配合，用户程序主要负责获取密钥并通过(add_key/keyctl/request_key)系统调用传送到内核的keyring，当某个应用程序发起对文件的读写操作前，由eCryptfs对其进行加/解密，加/解密的过程中需要调用Kernel的Crypto API（AES/DES etc）来完成。以对目录eCryptfs-test进行加密为例，为方便起见，在Ubuntu系统下测试eCryptfs的建立流程，如图二所示，通过mount指令发起eCryptfs的建立流程，然后在用户应用程序eCryptfs-utils的辅助下输入用于加密FEK的用户口令及选择加密算法等，完成挂载后意味着已经开始对测试目录eCryptfs-test的所有内容进行加密处理。测试中在eCryptfs-test目录下增加需要加密的文件或目录的内容，当用户umount退出对eCryptfs-test目录的挂载后再次查看该目录时，发现包括文件名和文件内容都进行了加密，如图三所示。</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><img src="http://p2.qhimg.com/t012ef7d5bc7a9b0c8a.png" title="t01dd5775d8a3d92024.png" alt="http://p7.qhimg.com/t01dd5775d8a3d92024.png"/></span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图二 eCryptfs使用时的建立流程</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><img src="http://p4.qhimg.com/t0136bd55e4b7e5c9b3.png" title="t01614eb46c579b76b4.png" alt="http://p4.qhimg.com/t01614eb46c579b76b4.png"/></span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图三 eCryptfs加密后的文件</span></p><p style="text-indent: 0em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><img src="http://p9.qhimg.com/t0157e14afb193a442e.png" title="t018013358dad781566.png" alt="http://p4.qhimg.com/t018013358dad781566.png"/></span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图四 eCryptfs对文件的加解密流程<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">实现上，eCryptfs对数据的加/解密流程如图四所示，对称密钥加密算法以块为单位进行加密/解密，如AES-128。eCryptfs 将加密文件分成多个逻辑块，称为 extent，extent 的大小可调，但是不能大于实际物理页，默认值等于物理页的大小，如32位的系统下是 4096 字节。加密文件的头部存放元数据，包括元数据长度、标志位、旗标、EFEK及相应的signature，目前元数据的最小长度为 8192 字节。加/解密开始前，首先解密FEKEK取出FEK。当读入一个 extent 中的任何部分的密文时，整个 extent 被读入 Page Cache，通过 Kernel Crypto API 进行解密；当 extent 中的任何部分的明文数据被写回磁盘时，需要加密并写回整个 extent。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">eCryptfs详述</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">eCryptfs在内核中的实现代码位于kernel/fs/ecryptfs，下面以eCryptfs使用到的关键数据结构、eCryptfs init、eCryptfs mount、file creat、file open、file read、file write的顺序分别介绍eCryptfs是如何工作。另外，eCryptfs还实现了/dev/ecryptfs的misc设备，用于内核与应用程序间的消息传递，如密钥请求与响应，属于非必选项，因此这里不对其进行介绍。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">eCryptfs相关的数据结构</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">eCryptfs关键的数据结构包括eCryptfs 文件系统相关file、dentry、inode、superblock、file_system_type描述、auth token认证令牌描述、eCryptfs加密信息描述等。</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">eCryptfs文件系统相关的数据结构如清单一所示，下文将会重点介绍file_system_type中的mount函数，即ecryptfs_mount。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">清单一 eCryptfs文件系统相关的数据结构</span></strong></p><pre class="brush:cpp;toolbar:false">/*&nbsp;ecryptfs&nbsp;file_system_type&nbsp;*/
+static&nbsp;struct&nbsp;file_system_type&nbsp;ecryptfs_fs_type&nbsp;=&nbsp;{
+.owner&nbsp;=&nbsp;THIS_MODULE,
+.name&nbsp;=&nbsp;&quot;ecryptfs&quot;,
+.mount&nbsp;=&nbsp;ecryptfs_mount,
+.kill_sb&nbsp;=&nbsp;ecryptfs_kill_block_super,
+.fs_flags&nbsp;=&nbsp;0
+};
+/*&nbsp;superblock&nbsp;private&nbsp;data.&nbsp;*/
+struct&nbsp;ecryptfs_sb_info&nbsp;{
+struct&nbsp;super_block&nbsp;*wsi_sb;
+struct&nbsp;ecryptfs_mount_crypt_stat&nbsp;mount_crypt_stat;
+struct&nbsp;backing_dev_info&nbsp;bdi;
+};
+/*&nbsp;inode&nbsp;private&nbsp;data.&nbsp;*/
+struct&nbsp;ecryptfs_inode_info&nbsp;{
+struct&nbsp;inode&nbsp;vfs_inode;
+struct&nbsp;inode&nbsp;*wii_inode;
+struct&nbsp;mutex&nbsp;lower_file_mutex;
+atomic_t&nbsp;lower_file_count;
+struct&nbsp;file&nbsp;*lower_file;
+struct&nbsp;ecryptfs_crypt_stat&nbsp;crypt_stat;
+};
+/*&nbsp;dentry&nbsp;private&nbsp;data.&nbsp;Each&nbsp;dentry&nbsp;must&nbsp;keep&nbsp;track&nbsp;of&nbsp;a&nbsp;lower&nbsp;vfsmount&nbsp;too.&nbsp;*/
+struct&nbsp;ecryptfs_dentry_info&nbsp;{
+struct&nbsp;path&nbsp;lower_path;
+union&nbsp;{
+struct&nbsp;ecryptfs_crypt_stat&nbsp;*crypt_stat;
+struct&nbsp;rcu_head&nbsp;rcu;
+};
+};
+/*&nbsp;file&nbsp;private&nbsp;data.&nbsp;*/
+struct&nbsp;ecryptfs_file_info&nbsp;{
+struct&nbsp;file&nbsp;*wfi_file;
+struct&nbsp;ecryptfs_crypt_stat&nbsp;*crypt_stat;
+};</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">eCryptfs支持对文件名（包括目录名）进行加密，因此特意使用了struct ecryptfs_filename的结构封装文件名，如清单二所示。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">清单二 文件名的数据结构</span></strong></p><pre class="brush:cpp;toolbar:false">struct&nbsp;ecryptfs_filename&nbsp;{
+struct&nbsp;list_head&nbsp;crypt_stat_list;
+u32&nbsp;flags;
+u32&nbsp;seq_no;
+char&nbsp;*filename;
+char&nbsp;*encrypted_filename;
+size_t&nbsp;filename_size;
+size_t&nbsp;encrypted_filename_size;
+char&nbsp;fnek_sig[ECRYPTFS_SIG_SIZE_HEX];
+char&nbsp;dentry_name[ECRYPTFS_ENCRYPTED_DENTRY_NAME_LEN&nbsp;+&nbsp;1];
+};</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">struct ecryptfs_auth_tok用于记录认证令牌信息，包括用户口令和非对称加密两种类型，每种类型都包含有密钥的签名，用户口令类型还包含有算法类型和加盐值等，如清单三所示。为了方便管理，使用时统一将其保存在struct ecryptfs_auth_tok_list_item链表中。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">清单三 认证令牌信息的数据结构</span></strong></p><pre class="brush:cpp;toolbar:false">struct&nbsp;ecryptfs_auth_tok&nbsp;{
+u16&nbsp;version;&nbsp;/*&nbsp;8-bit&nbsp;major&nbsp;and&nbsp;8-bit&nbsp;minor&nbsp;*/
+u16&nbsp;token_type;
+u32&nbsp;flags;
+struct&nbsp;ecryptfs_session_key&nbsp;session_key;
+u8&nbsp;reserved[32];
+union&nbsp;{
+struct&nbsp;ecryptfs_password&nbsp;password;&nbsp;&nbsp;//用户口令类型
+struct&nbsp;ecryptfs_private_key&nbsp;private_key;&nbsp;//非对称加密类型
+}&nbsp;token;
+}
+struct&nbsp;ecryptfs_password&nbsp;{
+u32&nbsp;password_bytes;
+s32&nbsp;hash_algo;
+u32&nbsp;hash_iterations;
+u32&nbsp;session_key_encryption_key_bytes;
+u32&nbsp;flags;
+/*&nbsp;Iterated-hash&nbsp;concatenation&nbsp;of&nbsp;salt&nbsp;and&nbsp;passphrase&nbsp;*/
+u8&nbsp;session_key_encryption_key[ECRYPTFS_MAX_KEY_BYTES];
+u8&nbsp;signature[ECRYPTFS_PASSWORD_SIG_SIZE&nbsp;+&nbsp;1];
+/*&nbsp;Always&nbsp;in&nbsp;expanded&nbsp;hex&nbsp;*/
+u8&nbsp;salt[ECRYPTFS_SALT_SIZE];
+};
+struct&nbsp;ecryptfs_private_key&nbsp;{
+u32&nbsp;key_size;
+u32&nbsp;data_len;
+u8&nbsp;signature[ECRYPTFS_PASSWORD_SIG_SIZE&nbsp;+&nbsp;1];
+char&nbsp;pki_type[ECRYPTFS_MAX_PKI_NAME_BYTES&nbsp;+&nbsp;1];
+u8&nbsp;data[];
+};</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">eCryptfs在mount时会传入全局加解密用到密钥、算法相关数据，并将其保存在struct ecryptfs_mount_crypt_stat，如清单四所示</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">清单四 mount时传入的密钥相关数据结构</span></strong></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">struct&nbsp;ecryptfs_mount_crypt_stat&nbsp;{
+u32&nbsp;flags;
+struct&nbsp;list_head&nbsp;global_auth_tok_list;
+struct&nbsp;mutex&nbsp;global_auth_tok_list_mutex;
+size_t&nbsp;global_default_cipher_key_size;
+size_t&nbsp;global_default_fn_cipher_key_bytes;
+unsigned&nbsp;char&nbsp;global_default_cipher_name[ECRYPTFS_MAX_CIPHER_NAME_SIZE&nbsp;+&nbsp;1];
+unsigned&nbsp;char&nbsp;global_default_fn_cipher_name[
+ECRYPTFS_MAX_CIPHER_NAME_SIZE&nbsp;+&nbsp;1];
+char&nbsp;global_default_fnek_sig[ECRYPTFS_SIG_SIZE_HEX&nbsp;+&nbsp;1];
+};</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">eCryptfs读写文件时首先需要进行加/解密，此时使用的密钥相关数据保存在struct ecryptfs_crypt_stat结构中，其具体数值在open时初始化，部分从mount时的ecryptfs_mount_crypt_stat复制过来，部分从分析加密文件的metadata获取，该数据结构比较关键，贯穿eCryptfs的文件open、read、write、close等流程，如清单五所示。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">清单五 ecryptfs_crypt_stat数据结构</span></strong></p><pre class="brush:cpp;toolbar:false">struct&nbsp;ecryptfs_crypt_stat&nbsp;{
+u32&nbsp;flags;
+unsigned&nbsp;int&nbsp;file_version;
+size_t&nbsp;iv_bytes;
+size_t&nbsp;metadata_size;
+size_t&nbsp;extent_size;&nbsp;/*&nbsp;Data&nbsp;extent&nbsp;size;&nbsp;default&nbsp;is&nbsp;4096&nbsp;*/
+size_t&nbsp;key_size;
+size_t&nbsp;extent_shift;
+unsigned&nbsp;int&nbsp;extent_mask;
+struct&nbsp;ecryptfs_mount_crypt_stat&nbsp;*mount_crypt_stat;
+struct&nbsp;crypto_ablkcipher&nbsp;*tfm;
+struct&nbsp;crypto_hash&nbsp;*hash_tfm;&nbsp;/*&nbsp;Crypto&nbsp;context&nbsp;for&nbsp;generating
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;the&nbsp;initialization&nbsp;vectors&nbsp;*/
+unsigned&nbsp;char&nbsp;cipher[ECRYPTFS_MAX_CIPHER_NAME_SIZE&nbsp;+&nbsp;1];
+unsigned&nbsp;char&nbsp;key[ECRYPTFS_MAX_KEY_BYTES];
+unsigned&nbsp;char&nbsp;root_iv[ECRYPTFS_MAX_IV_BYTES];
+struct&nbsp;list_head&nbsp;keysig_list;
+struct&nbsp;mutex&nbsp;keysig_list_mutex;
+struct&nbsp;mutex&nbsp;cs_tfm_mutex;
+struct&nbsp;mutex&nbsp;cs_hash_tfm_mutex;
+struct&nbsp;mutex&nbsp;cs_mutex;
+};</pre><p style="text-indent: 2em;"><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">eCryptfs init过程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">使用eCryptfs前，首先需要通过内核的配置选项“CONFIG_ECRYPT_FS=y”使能eCryptfs，因为加解密时使用到内核的crypto和keystore接口，所以要确保“CONFIG_CRYPTO=y”，“CONFIG_KEYS=y”，“CONFIG_ENCRYPTED_KEYS=y”，同时使能相应的加解密算法，如AES等。重新编译内核启动后会自动注册eCryptfs，其init的代码如清单六所示。</span><br/></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">清单六 eCryptfs init过程</span></strong></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:cpp;toolbar:false">static&nbsp;int&nbsp;__init&nbsp;ecryptfs_init(void)
+{
+int&nbsp;rc;
+//eCryptfs的extent&nbsp;size不能大于page&nbsp;size
+if&nbsp;(ECRYPTFS_DEFAULT_EXTENT_SIZE&nbsp;&gt;&nbsp;PAGE_CACHE_SIZE)&nbsp;{
+rc&nbsp;=&nbsp;-EINVAL;&nbsp;&nbsp;ecryptfs_printk(KERN_ERR，…);&nbsp;goto&nbsp;out;
+}
+/*为上文列举到的eCryptfs重要的数据结构对象申请内存，如eCryptfs的auth&nbsp;token、superblock、inode、dentry、file、key等*/
+rc&nbsp;=&nbsp;ecryptfs_init_kmem_caches();&nbsp;
+…
+&nbsp;//建立sysfs接口，该接口中的version各bit分别代表eCryptfs支持的能力和属性
+rc&nbsp;=&nbsp;do_sysfs_registration();&nbsp;
+…
+//建立kthread，为后续eCryptfs读写lower&nbsp;file时能借助内核函数得到rw的权限
+rc&nbsp;=&nbsp;ecryptfs_init_kthread();
+…
+//在chromeos中该函数为空，直接返回0
+rc&nbsp;=&nbsp;ecryptfs_init_messaging();
+…
+//初始化kernel&nbsp;crypto
+rc&nbsp;=&nbsp;ecryptfs_init_crypto();
+…
+//注册eCryptfs文件系统
+rc&nbsp;=&nbsp;register_filesystem(&amp;ecryptfs_fs_type);
+…
+return&nbsp;rc;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">eCryptfs mount过程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在使能了eCryptfs的内核，当用户在应用层下发“mount –t ecryptfs src dst options”指令时触发执行上文清单一中的ecryptfs_mount函数进行文件系统的挂载安装并初始化auth token，成功执行后完成对src目录的eCryptfs属性的指定，eCryptfs开始正常工作，此后任何在src目录下新建的文件都会被自动加密处理，若之前该目录已有加密文件，此时会被自动解密。</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">ecryptfs_mount涉及的代码比较多，篇幅有限，化繁为简，函数调用关系如图五所示。</span></p><p style="text-align: center; text-indent: 0em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><img src="http://p9.qhimg.com/t0145b4b226f81e5689.png" title="t01d0b6f619e6c47173.png" alt="http://p2.qhimg.com/t01d0b6f619e6c47173.png"/></span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图五 eCryptfs mount的函数调用关系图<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">从图五可看到mount时首先利用函数ecryptfs_parse_options()对传入的option参数做解析，完成了如下事项：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">1.&nbsp;&nbsp;&nbsp;&nbsp;调用函数ecryptfs_init_mount_crypt_stat()初始化用于保存auth token相关的 struct ecryptfs_mount_crypt_stat 对象；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">2.&nbsp;&nbsp;&nbsp;&nbsp;调用函数ecryptfs_add_global_auth_tok()将从option传入的分别用于FEK和FNEK（File Name Encryption Key，用于文件名加解密）的auth token的signature保存到struct ecryptfs_mount_crypt_stat 对象；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">3.&nbsp;&nbsp;&nbsp;&nbsp;分析option传入参数，初始化struct ecryptfs_mount_crypt_stat 对象的成员，如global_default_cipher_name、global_default_cipher_key_size、flags、global_default_fnek_sig、global_default_fn_cipher_name、global_default_fn_cipher_key_bytes等；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">4.&nbsp;&nbsp;&nbsp;&nbsp;调用函数ecryptfs_add_new_key_tfm()针对FEK和FNEK的加密算法分别初始化相应的kernel crypto tfm接口；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">5.&nbsp;&nbsp;&nbsp;&nbsp;调用函数ecryptfs_init_global_auth_toks()将解析option后得到key sign做为参数利用keyring的request_key接口获取上层应用传入的auth token，并将auth token添加入struct ecryptfs_mount_crypt_stat 的全局链表中，供后续使用。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">接着为eCryptfs创建superblock对象并初始化，具体如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">通过函数sget()创建eCryptfs类型的superblock；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">调用bdi_setup_and_register()函数为eCryptfs的ecryptfs_sb_info 对象初始化及注册数据的回写设备bdi；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">初始化eCryptfs superblock对象的各成员，如s_fs_info、s_bdi、s_op、s_d_op等；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">然后获取当前挂载点的path并判断是否已经是eCryptfs，同时对执行者的权限做出判断；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">再通过ecryptfs_set_superblock_lower()函数将eCryptfs的superblock和当前挂载点上底层文件系统对应的VFS superblock产生映射关系；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">根据传入的mount option参数及VFS映射点superblock的值初始化eCryptfs superblock对象flag成员，如关键的MS_RDONLY属性；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">根据VFS映射点superblock的值初始化eCryptfs superblock对象的其他成员 ，如s_maxbytes、s_blocksize、s_stack_depth；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">最后设置superblock对象的s_magic为ECRYPTFS_SUPER_MAGIC。这可看出eCryptfs在Linux kernel的系统架构中，其依赖于VFS并处于VFS之下层，实际文件系统之上层。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">下一步到创建eCryptfs的inode并初始化，相应工作通过函数ecryptfs_get_inode()完成，具体包括：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">首先获取当前挂载点对应的VFS的inode；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">然后调用函数iget5_locked()在挂载的fs中获取或创建一个eCryptfs的inode，并将该inode与挂载点对应的VFS的inode建立映射关系，与superblock类似，eCryptfs的inode对象的部分初始值从其映射的VFS inode中拷贝，inode operation由函数ecryptfs_inode_set()发起初始化，根据inode是符号链接还是目录文件还是普通文件分别进行不同的i_op 赋值，如ecryptfs_symlink_iops/ecryptfs_dir_iops/ecryptfs_main_iops；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">同时对i_fop file_operations进行赋值，如ecryptfs_dir_fops/ecryptfs_main_fops 。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">然后调用d_make_root()函数为之前创建的superblock设置eCryptfs的根目录s_root。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">最后通过ecryptfs_set_dentry_private()函数为eCryptfs设置dentry。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">加密文件creat过程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">creat过程特指应用层通过creat系统调用创建一个新的加密文件的流程。以应用程序通过creat()函数在以eCryptfs挂载的目录下创建加密文件为例，其函数调用流程如图六所示，creat()通过系统调用进入VFS，后经过层层函数调用，最终调用到eCryptfs层的ecryptfs_create()函数，该部分不属于eCryptfs的重点，不详述。</span></p><p style="text-indent: 0em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p5.qhimg.com/t01f29067652520d956.png" title="t01185f62cd8611a8b9.png" alt="http://p0.qhimg.com/t01185f62cd8611a8b9.png"/></span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图六 create经由VFS调用ecryptfs_create的流程</span></p><p style="text-indent: 0em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><img src="http://p3.qhimg.com/t016b811bcd8d0d3e52.png" title="t011d4c89c4bff14c13.png" alt="http://p9.qhimg.com/t011d4c89c4bff14c13.png"/></span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图七 eCryptfs创建加密文件的函数调用过程<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">eCryptfs层通过ecryptfs_create() 函数完成最终的加密文件的创建，关键代码的调用流程如图七所示，以代码做为视图，分为三大步骤：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">一、通过ecryptfs_do_create()函数创建eCryptfs 文件的inode并初始化；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">二、通过函数ecryptfs_initialize_file()将新创建的文件初始化成eCryptfs加密文件的格式，添加入诸如加密算法、密钥信息等，为后续的读写操作初始化好crypto接口；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">三、通过d_instantiate()函数将步骤一生成的inode信息初始化相应的dentry。具体如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; color: rgb(54, 96, 146);"><strong>一．为新文件创建inode</strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">首先借助ecryptfs_dentry_to_lower()函数根据eCryptfs和底层文件系统（在chromeos里就是ext4）的映射关系获取到底层文件系统的dentry值。然后调用vfs_create()函数在底层文件系统上创建inode，紧接着利用__ecryptfs_get_inode()函数创建eCryptfs的inode 对象并初始化以及建立其与底层文件系统inode间的映射关系，之后通过fsstack_copy_attr_times()、fsstack_copy_inode_size()函数利用底层文件系统的inode对象的值初始化eCryptfs inode的相应值。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(54, 96, 146); font-size: 18px;"><strong>二．初始化eCryptfs新文件</strong></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">经过步骤一完成了在底层文件系统上新建了文件，现在通过函数ecryptfs_initialize_file()将该文件设置成eCryptfs加密文件的格式。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">1.&nbsp;&nbsp;&nbsp;&nbsp;ecryptfs_new_file_context()函数完成初始化文件的context，主要包括加密算法cipher、auth token、生成针对文件加密的随机密钥等，这里使用的关键数据结构是struct ecryptfs_crypt_stat，具体如清单五所示，初始化文件的context基本可以看成是初始化struct ecryptfs_crypt_stat对象，该对象的cipher、auth token、key sign等值从mount eCryptfs传入的option并保存在struct ecryptfs_mount_crypt_stat （详见清单四）对象中获取。具体是：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">首先由ecryptfs_set_default_crypt_stat_vals()函数完成flags、extent_size、metadata_size、cipher、key_size、file_version、mount_crypt_stat等ecryptfs_crypt_stat对象的缺省值设置；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">然后再通过ecryptfs_copy_mount_wide_flags_to_inode_flags()函数根据mount时设置的ecryptfs_mount_crypt_stat的flags重新设置ecryptfs_crypt_stat对象flags；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">接着由ecryptfs_copy_mount_wide_sigs_to_inode_sigs()函数将mount时保存的key sign赋值给ecryptfs_crypt_stat对象的keysig_list中的节点对象中的keysig；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">然后继续将ecryptfs_mount_crypt_stat的cipher、key_size等值赋给ecryptfs_crypt_stat对象中的相应值；再调用函数ecryptfs_generate_new_key()生成key并保存到ecryptfs_crypt_stat对象的key；最后通过ecryptfs_init_crypt_ctx()函数完成kernel crypto context的初始化，如tfm，为后续的写操作时的加密做好准备。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">2.&nbsp;&nbsp;&nbsp;&nbsp;ecryptfs_get_lower_file()通过调用底层文件系统的接口打开文件，需要注意的是ecryptfs_privileged_open()，该函数唤醒了上文清单六提到kthread，借助该内核线程，eCryptfs巧妙避开了底层文件的读写权限的限制。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">3.&nbsp;&nbsp;&nbsp;&nbsp;ecryptfs_write_metadata()完成关键的写入eCryptfs文件格式到新创建的文件中。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">关键函数ecryptfs_write_headers_virt()的代码如清单七所示，eCryptfs保存格式如清单七的注释（也可参考上文的图四），其格式传承自OpenPGP，最后在ecryptfs_generate_key_packet_set()完成EFEK的生成，并根据token_type的类型是ECRYPTFS_PASSWORD还是ECRYPTFS_PRIVATE_KEY生成不同的OpenPGP的Tag，之后保存到eCryptfs文件头部bytes 26开始的地方。这里以ECRYPTFS_PASSWORD为例，因此bytes 26地址起存放的内容是Tag3和Tag11，对应着EFEK和Key sign。否则保存的是Tag1，即EFEK。Tag3或Tag1的具体定义详见OpenPGP的描述文档RFC2440.<br/>之后将生成的eCryptfs文件的头部数据保存到底层文件系统中，该工作由ecryptfs_write_metadata_to_contents()完成。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">4.&nbsp;&nbsp;&nbsp;&nbsp;最后通过ecryptfs_put_lower_file()将文件改动的所有脏数据回写入磁盘。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(54, 96, 146); font-size: 18px;"><strong>三．通过d_instantiate()函数将步骤一生成的inode信息初始化相应的dentry方便后续的读写操作</strong></span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">清单七 写入eCryptfs格式文件的关键函数</span></strong></p><pre class="brush:cpp;toolbar:false">/*&nbsp;Format&nbsp;version:&nbsp;1
+*&nbsp;&nbsp;&nbsp;Header&nbsp;Extent:
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Octets&nbsp;0-7:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Unencrypted&nbsp;file&nbsp;size&nbsp;(big-endian)
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Octets&nbsp;8-15:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eCryptfs&nbsp;special&nbsp;marker
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Octets&nbsp;16-19:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Flags
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Octet&nbsp;16:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;File&nbsp;format&nbsp;version&nbsp;number&nbsp;(between&nbsp;0&nbsp;and&nbsp;255)
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Octets&nbsp;17-18:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Reserved
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Octet&nbsp;19:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Bit&nbsp;1&nbsp;(lsb):&nbsp;Reserved
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Bit&nbsp;2:&nbsp;Encrypted?
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Bits&nbsp;3-8:&nbsp;Reserved
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Octets&nbsp;20-23:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Header&nbsp;extent&nbsp;size&nbsp;(big-endian)
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Octets&nbsp;24-25:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Number&nbsp;of&nbsp;header&nbsp;extents&nbsp;at&nbsp;front&nbsp;of&nbsp;file&nbsp;(big-endian)
+&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Octet&nbsp;&nbsp;26:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Begin&nbsp;RFC&nbsp;2440&nbsp;authentication&nbsp;token&nbsp;packet&nbsp;set
+&nbsp;*&nbsp;&nbsp;&nbsp;Data&nbsp;Extent&nbsp;0:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Lower&nbsp;data&nbsp;(CBC&nbsp;encrypted)
+&nbsp;*&nbsp;&nbsp;&nbsp;Data&nbsp;Extent&nbsp;1:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Lower&nbsp;data&nbsp;(CBC&nbsp;encrypted)
+&nbsp;*&nbsp;&nbsp;&nbsp;...
+*/
+static&nbsp;int&nbsp;ecryptfs_write_headers_virt(char&nbsp;*page_virt,&nbsp;size_t&nbsp;max,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;size_t&nbsp;*size,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;ecryptfs_crypt_stat&nbsp;*crypt_stat,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;struct&nbsp;dentry&nbsp;*ecryptfs_dentry)
+{
+int&nbsp;rc;
+size_t&nbsp;written;
+size_t&nbsp;offset;
+offset&nbsp;=&nbsp;ECRYPTFS_FILE_SIZE_BYTES;
+write_ecryptfs_marker((page_virt&nbsp;+&nbsp;offset),&nbsp;&amp;written);
+offset&nbsp;+=&nbsp;written;
+ecryptfs_write_crypt_stat_flags((page_virt&nbsp;+&nbsp;offset),&nbsp;crypt_stat,
+&amp;written);
+offset&nbsp;+=&nbsp;written;
+ecryptfs_write_header_metadata((page_virt&nbsp;+&nbsp;offset),&nbsp;crypt_stat,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;written);
+offset&nbsp;+=&nbsp;written;
+rc&nbsp;=&nbsp;ecryptfs_generate_key_packet_set((page_virt&nbsp;+&nbsp;offset),&nbsp;crypt_stat,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ecryptfs_dentry,&nbsp;&amp;written,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;max&nbsp;-&nbsp;offset);
+…
+return&nbsp;rc;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">加密文件open过程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这里open过程主要指通过open系统调用打开一个已存在的加密文件的流程。当应用程序在已完成eCryptfs挂载的目录下open一个已存在的加密文件时（这里以普通文件为例），其系统调用流程如图八所示，经由层层调用后进入ecryptfs_open()函数，由其完成加密文件的metadata分析，然后取出EFEK并使用kernel crypto解密得到FEK。另外在文中”create过程”分析时，着重介绍了创建eCryptfs格式文件的过程，省略了在完成lookup_open()函数调用后的vfs_open()的分析，它与这里介绍的vfs_open()流程是一样的。需要特别指出的是在do_dentry_open函数里初始化了struct file的f_mapping成员，让其指向inode-&gt;i_mapping；而在上图五的inode的创建函数ecryptfs_inode_set中存在”inode-&gt;i_mapping-&gt;a_ops = &amp;ecryptfs_aops”的赋值语句，这为后续的加密文件的页读写时使用的关键对象struct address_space_operations a_ops做好了初始化。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">下面重点介绍ecryptfs_open()函数，其主要的函数调用关系如图九所示。eCryptfs支持Tag3和Tag1的形式保存EFEK，这里的分析默认是采用了Tag3的方式。</span></p><p style="text-indent: 0em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><img src="http://p3.qhimg.com/t018055c01773b37b4f.png" title="t017bf8a4d524a72bbf.png" alt="http://p1.qhimg.com/t017bf8a4d524a72bbf.png"/></span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图八 create经由VFS调用ecryptfs_create的流程</span></p><p style="text-indent: 0em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><img src="http://p6.qhimg.com/t01a3bab564195b3525.png" title="t01d4b0c2045d5d3981.png" alt="http://p9.qhimg.com/t01d4b0c2045d5d3981.png"/></span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图九 eCryptfs创建加密文件的函数调用过程<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">ecryptfs_open()函数的完成的主要功能包括读取底层文件，分析其文件头部的metadata，取出关键的EFEK及key sign，之后根据key sign从ecryptfs_mount_crypt_stat对象中匹配到相应的auth token，再调用kernel crypto解密EFEK得到FEK，最后将FEK保存到ecryptfs_crypt_stat的key成员中，完成ecryptfs_crypt_stat对象的初始化，供后续的文件加解密使用。具体如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">1.&nbsp;&nbsp;&nbsp;&nbsp;ecryptfs_set_file_private()巧妙的将struct ecryptfs_file_info保存到struct file的private_data中，完成VFS和eCryptfs之间的链式表达及映射；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">2.&nbsp;&nbsp;&nbsp;&nbsp;ecryptfs_get_lower_file()借助kthread 内核线程巧妙的获取到底层文件的RW权限；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">3.&nbsp;&nbsp;&nbsp;&nbsp;ecryptfs_set_file_lower()完成struct ecryptfs_file_info的wfi_file和底层文件系统文件lower_file之间的映射；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">4.&nbsp;&nbsp;&nbsp;&nbsp;read_or_initialize_metadata()完成了ecryptfs_open的大部分功能，首先通过ecryptfs_copy_mount_wide_flags_to_inode_flags()从文件对应的ecryptfs_mount_crypt_stat中拷贝flags对ecryptfs_crypt_stat的flags进行初始化；之后使用函数ecryptfs_read_lower()读取文件的头部数据，紧接着利用ecryptfs_read_headers_virt()进行数据分析和处理，包括：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">1) 利用ecryptfs_set_default_sizes()初始化ecryptfs_crypt_stat对象的extent_size、iv_bytes、metadata_size等成员的默认值;</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">2) 使用ecryptfs_validate_marker()校验文件的marker标记值是否符合eCryptfs文件格式；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">3) 通过ecryptfs_process_flags()取出文件metadata保存的flag并修正ecryptfs_crypt_stat对象成员flags的值,同时初始化对象成员file_version；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">4) 在parse_header_metadata()分析文件的metadata的大小并保存到ecryptfs_crypt_stat对象成员metadata_size；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">5) 通过ecryptfs_parse_packet_set()解析Tag3和Tag11的OpenPGP格式包，获取EFEK及key sign，后根据key sign匹配到auth token，再调用kernel crypto解密EFEK得到FEK。对应的代码实现逻辑是：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">parse_tag_3_packet()解析Tag3，获取EFEK和cipher，同时将cipher保存到ecryptfs_crypt_stat对象成员cipher；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">parse_tag_11_packet()解析出key sign，保存到auth_tok_list链表中；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">ecryptfs_get_auth_tok_sig()从auth_tok_list链表中获取到key sign；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">然后通过ecryptfs_find_auth_tok_for_sig()根据key sign从ecryptfs_mount_crypt_stat对象中匹配到相应的auth token；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">再利用decrypt_passphrase_encrypted_session_key()使用分析得到的auth token、cipher解密出FEK，并将其保存在ecryptfs_crypt_stat的key成员；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">之后在ecryptfs_compute_root_iv()函数里初始化ecryptfs_crypt_stat的root_iv成员，在ecryptfs_init_crypt_ctx()函数里初始化ecryptfs_crypt_stat的kernel crypto接口tfm。至此，ecryptfs_crypt_stat对象初始化完毕，后续文件在读写操作时使用到的加解密所需的所有信息均在该对象中获取。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">加密文件read过程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">read过程指应用程序通过read()函数在eCryptfs挂载的目录下读取文件的过程。因为挂载点在挂载eCryptfs之前可能已经存在文件，这些已存在的文件属于非加密文件，只有在完成eCryptfs挂载后的文件才自动保存成eCryptfs格式的加密文件，所以读取文件时需要区分文件是否属于加密文件。从应用程序发起read()操作到eCryptfs层响应的函数调用关系流程图如十所示，读取时采用page read的机制，涉及到page cache的问题，图中以首次读取文件，即文件内容还没有被读取到page cache的情况为示例。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">自ecryptfs_read_update_atime()起进入到eCryptfs层，由此函数完成从底层文件系统中读取出文件内容，若是加密文件则利用kernel crypto和open时初始化好的ecryptfs_crypt_stat对象完成内容的解密，之后将解密后的文件内容拷贝到上层应用程序，同时更新文件的访问时间，其中touch_atime()完成文件的访问时间的更新；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">generic_file_read_iter()函数调用内核函数do_generic_file_read()，完成内存页的申请，并借助mapping-&gt;a_ops-&gt;readpage()调用真正干活的主力ecryptfs_readpage()来完成解密工作，最后通过copy_page_to_iter()将解密后的文件内容拷贝到应用程序。到了关键的解密阶段，描述再多也不如代码来的直观，ecryptfs_readpage()的核心代码如清单八、九、十所示。</span></p><p style="text-indent: 0em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><img src="http://p6.qhimg.com/t01326d7c58c0db5b5f.png" title="t016b87152891885ca1.png" alt="http://p9.qhimg.com/t016b87152891885ca1.png"/></span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图十 create经由VFS调用ecryptfs_create的流程<br/></span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">清单八 ecryptfs_readpage()关键代码</span></strong></p><pre class="brush:cpp;toolbar:false">static&nbsp;int&nbsp;ecryptfs_readpage(struct&nbsp;file&nbsp;*file,&nbsp;struct&nbsp;page&nbsp;*page)
+{
+struct&nbsp;ecryptfs_crypt_stat&nbsp;*crypt_stat&nbsp;=
+&amp;ecryptfs_inode_to_private(page-&gt;mapping-&gt;host)-&gt;crypt_stat;
+int&nbsp;rc&nbsp;=&nbsp;0;
+if&nbsp;(!crypt_stat&nbsp;||&nbsp;!(crypt_stat-&gt;flags&nbsp;&amp;&nbsp;ECRYPTFS_ENCRYPTED))&nbsp;{
+&nbsp;
+//读取非加密文件
+rc&nbsp;=&nbsp;ecryptfs_read_lower_page_segment(page,&nbsp;page-&gt;index,&nbsp;0,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PAGE_CACHE_SIZE,
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;page-&gt;mapping-&gt;host);
+}&nbsp;else&nbsp;if&nbsp;(crypt_stat-&gt;flags&nbsp;&amp;&nbsp;ECRYPTFS_VIEW_AS_ENCRYPTED)&nbsp;{
+//直接读取密文给上层，此时应用程序读到的是一堆乱码
+if&nbsp;(crypt_stat-&gt;flags&nbsp;&amp;&nbsp;ECRYPTFS_METADATA_IN_XATTR)&nbsp;{
+rc&nbsp;=&nbsp;ecryptfs_copy_up_encrypted_with_header(page,&nbsp;crypt_stat);
+…
+}&nbsp;else&nbsp;{
+rc&nbsp;=&nbsp;ecryptfs_read_lower_page_segment(
+page,&nbsp;page-&gt;index,&nbsp;0,&nbsp;PAGE_CACHE_SIZE,
+page-&gt;mapping-&gt;host);
+…
+}
+}&nbsp;else&nbsp;{
+//读取密文并调用kernel&nbsp;crypto解密
+rc&nbsp;=&nbsp;ecryptfs_decrypt_page(page);
+…
+}
+…
+return&nbsp;rc;
+}</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">清单九 ecryptfs_decrypt_page()核心代码</span></strong></p><pre class="brush:cpp;toolbar:false">int&nbsp;ecryptfs_decrypt_page(struct&nbsp;page&nbsp;*page)
+{
+…
+ecryptfs_inode&nbsp;=&nbsp;page-&gt;mapping-&gt;host;
+//获取包含有FEK、cipher、crypto&nbsp;context&nbsp;tfm信息的ecryptfs_crypt_stat
+crypt_stat&nbsp;=&nbsp;&amp;(ecryptfs_inode_to_private(ecryptfs_inode)-&gt;crypt_stat);
+//计算加密文件内容在底层文件中的偏移
+lower_offset&nbsp;=&nbsp;lower_offset_for_page(crypt_stat,&nbsp;page);
+page_virt&nbsp;=&nbsp;kmap(page);
+//利用底层文件系统的接口读取出加密文件的内容
+rc&nbsp;=&nbsp;ecryptfs_read_lower(page_virt,&nbsp;lower_offset,&nbsp;PAGE_CACHE_SIZE,&nbsp;ecryptfs_inode);
+kunmap(page);
+&nbsp;&nbsp;&nbsp;&nbsp;…
+for&nbsp;(extent_offset&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;extent_offset&nbsp;&lt;&nbsp;(PAGE_CACHE_SIZE&nbsp;/&nbsp;crypt_stat-&gt;extent_size);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;extent_offset++)&nbsp;{
+//解密文件内容
+rc&nbsp;=&nbsp;crypt_extent(crypt_stat,&nbsp;page,&nbsp;page,
+&nbsp;&nbsp;extent_offset,&nbsp;DECRYPT);
+…
+}
+…
+}</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">清单十 crypt_extent()核心加解密函数的关键代码</span></strong></p><pre class="brush:cpp;toolbar:false">static&nbsp;int&nbsp;crypt_extent(struct&nbsp;ecryptfs_crypt_stat&nbsp;*crypt_stat,
+struct&nbsp;page&nbsp;*dst_page,
+struct&nbsp;page&nbsp;*src_page,
+unsigned&nbsp;long&nbsp;extent_offset,&nbsp;int&nbsp;op)
+{
+//op&nbsp;指示时利用该函数进行加密还是解密功能
+pgoff_t&nbsp;page_index&nbsp;=&nbsp;op&nbsp;==&nbsp;ENCRYPT&nbsp;?&nbsp;src_page-&gt;index&nbsp;:&nbsp;dst_page-&gt;index;
+loff_t&nbsp;extent_base;
+char&nbsp;extent_iv[ECRYPTFS_MAX_IV_BYTES];
+struct&nbsp;scatterlist&nbsp;src_sg,&nbsp;dst_sg;
+size_t&nbsp;extent_size&nbsp;=&nbsp;crypt_stat-&gt;extent_size;
+int&nbsp;rc;
+extent_base&nbsp;=&nbsp;(((loff_t)page_index)&nbsp;*&nbsp;(PAGE_CACHE_SIZE&nbsp;/&nbsp;extent_size));
+rc&nbsp;=&nbsp;ecryptfs_derive_iv(extent_iv,&nbsp;crypt_stat,
+(extent_base&nbsp;+&nbsp;extent_offset));
+…
+sg_init_table(&amp;src_sg,&nbsp;1);
+sg_init_table(&amp;dst_sg,&nbsp;1);
+sg_set_page(&amp;src_sg,&nbsp;src_page,&nbsp;extent_size,
+&nbsp;&nbsp;&nbsp;&nbsp;extent_offset&nbsp;*&nbsp;extent_size);
+sg_set_page(&amp;dst_sg,&nbsp;dst_page,&nbsp;extent_size,
+&nbsp;&nbsp;&nbsp;&nbsp;extent_offset&nbsp;*&nbsp;extent_size);
+//调用kernel&nbsp;crypto&nbsp;API进行加解密
+rc&nbsp;=&nbsp;crypt_scatterlist(crypt_stat,&nbsp;&amp;dst_sg,&nbsp;&amp;src_sg,&nbsp;extent_size,&nbsp;extent_iv,&nbsp;op);
+…
+return&nbsp;rc;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">理顺了mount、open的流程，知道FEK、cipher、kernel crypto context的值及存放位置，同时了解了加密文件的格式，解密的过程显得比较简单，感兴趣的同学可以继续查看crypt_scatterlist()的代码，该函数纯粹是调用kernel crypto API进行加解密的过程，跟eCryptfs已经没有关系。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">加密文件write过程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">eCryptfs文件write的流程跟read类似，在写入lower file前先通过ecryptfs_writepage()函数进行文件内容的加密，这里不再详述。</span><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ChromeOS使用eCryptfs的方法及流程</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Chromeos在保护用户数据隐私方面可谓不遗余力，首先在系统分区上专门开辟出专用于存储用户数据的stateful partition，当用户进行正常和开发者模式切换时，该分区的数据将会被自动擦除；其次该stateful partition的绝大部分数据采用dm-crypt进行加密，在系统启动时用户登录前由mount-encrypted完成解密到/mnt/stateful_partition/encrypted，另外完成以下几个mount工作：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将/Chromeos/mnt/stateful_partition/home bind mount 到/home；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将/mnt/stateful_partition/encrypted/var bind mount到/var目录；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将/mnt/stateful_partition/encrypted/chromos bind mount 到/home/chronos。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后在用户登录时发起对该用户私有数据的eCryptfs加解密的流程，具体工作由cryptohomed守护进程负责完成，eCryptfs加密文件存放在/home/.shadow/[salted_hash_of_username]/vault目录下，感兴趣的读者可通过ecryptfs-stat命令查看其文件状态和格式，mount点在/home/.shadow/[salted_hash_of_username]/mount，之后对/home/.shadow/[salted_hash_of_username]/mount下的user和root建立bind mount点，方便用户使用。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">如将/home/.shadow/[salted_hash_of_username]/mount/user bind mount到/home/user/[salted_hash_of_username]和/home/chronos/u-[salted_hash_of_username] ；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">将/home/.shadow/[salted_hash_of_username]/mount/root bind mount到/home/root/[salted_hash_of_username]。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">用户在存取数据时一般是对目录/home/chronos/u-[salted_hash_of_username]进行操作。</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">eCryptfs在Chromeos中的应用架构如图十所示。系统启动后开启cryptohomed的守护进程，由该进程来响应eCryptfs的挂载和卸载等，进程间采用D-Bus的方式进行通信，cryptohome应用程序主用于封装用户的动作命令，后通过D-Bus向cryptohomed发起请求。如可通过cryptohome命令”cryptohome -–action=mount -–user=[account_id]”来发起eCryptfs的挂载；通过命令”cryptohome -–action=unmount”卸载eCryptfs的挂载，执行成功此命令后，用户的所有个人数据将无法访问，如用户先前下载的文件内容不可见、安装的应用程序不可使用，/home/.shadow/[salted_hash_of_username]/mount内容为空。</span></p><p style="text-indent: 0em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><img src="http://p6.qhimg.com/t01c5c544450c1461a8.png" title="t010950d1bed48be55e.png" alt="http://p2.qhimg.com/t010950d1bed48be55e.png"/></span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图十一 eCryptfs在Chromeos中的架构图<br/></span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">cryptohomed特色的mount流程如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">1.&nbsp;&nbsp;&nbsp;&nbsp;cryptohomed在D-Bus上接收到持（包含用户名和密码）有效用户证书的mount请求，当然D-Bus请求也是有权限控制的；</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">2.&nbsp;&nbsp;&nbsp;&nbsp;假如是用户首次登陆，将进行：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">a.建立/home/.shadow/[salted_hash_of_username]目录，采用SHA1算法和系统的salt对用户名进行加密，生成salted_hash_of_username，简称s_h_o_u;</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">b.生成vault keyset /home/.shadow/[salted_hash_of_username]/master.0和/home/.shadow/[salted_hash_of_username]/master.0.sum。 master.0加密存储了包含有FEK和FNEK的内容以及非敏感信息如salt、password rounds等；master.0.sum是对master.0文件内容的校验和。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">3.&nbsp;&nbsp;&nbsp;&nbsp;采用通过mount请求传入的用户证书解密keyset。当TPM可用时优先采用TPM解密，否则采用Scrypt库，当TPM可用后再自动切换回使用TPM。cryptohome使用TPM仅仅是为了存储密钥，由TPM封存的密钥仅能被TPM自身使用，这可用缓解密钥被暴力破解，增强保护用户隐私数据的安全。TPM的首次初始化由cryptohomed完成。这里默认TPM可正常使用，其解密机制如下图十二所示，其中：</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">UP</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">：User Passkey，用户登录口令</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">EVKK</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">：Ecrypted vault keyset key，保存在master.0中的”tpm_key”字段</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">IEVKK</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">：Intermediate vault keyset key，解密过程生成的中间文件，属于EVKK的解密后产物，也是RSA解密的输入密文</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">TPM_CHK</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">: TPM-wrapped system-wide Cryptohome key，保存在/home/.shadow/cryptohome.key，TPM init时加载到TPM</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">VKK</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">：Vault keyset key</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">VK</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">：Vault Keyset，包含FEK和FNEK</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">EVK</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">：Encrypted vault keyset，保存在master.0里”wrapped_keyset”字段</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图十二中的UP（由发起mount的D-Bus请求中通过key参数传入）做为一个AES key用于解密EVKK，解密后得到的IEVKK；然后将IEVKK做为RSA的密文送入TPM，使用TPM_CHK做为密钥进行解密，解密后得到VKK；最后生成的VKK是一个AES key，用于解密master.0里的EVK，得到包含有FEK和FNEK明文的VK。经过三层解密，终于拿到关键的FEK，那么问题来了，Chromeos的FEK的保存及解密流程与上文介绍的eCryptfs时不一致，FEK不应该是open时从加密文件的头部metadata里的EFEK中解密出来的么？不过一次解密出FEK，全局使用，效率的确比每次读取文件时解析FEK高很多，之后通过key的系统调用将key传入内核的keyring，使用时通过key sign匹配。最后跟上文所述实属异曲同工。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">4.&nbsp;&nbsp;&nbsp;&nbsp;通过mount系统调用传入option完成挂载。该部分与正常的Linux做法一致，在mount的option里传入关键的cipher、key sign、key bytes等信息。</span></p><p style="text-indent: 0em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><img src="http://p2.qhimg.com/t018644839e78ddcedc.png" title="t017e97b15864d70957.png" alt="http://p8.qhimg.com/t017e97b15864d70957.png"/></span></p><p style="text-indent: 2em; text-align: center;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">图十二 TPM解密VK的流程<br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">结语</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ecryptfs建立在系统安全可信的基础上，保护用户数据的安全，核心基础组件是加密密钥，若在内核被攻破后密钥被通过某些手段窃取，ecryptfs的安全性将同样被攻破。另外page cache中加密文件的明文页有可能被交换到swap区，在chromeos中已经禁用了swap，因此不会产生影响，但是其他版本的Linux系统需要注意该问题。</span><br/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">eCryptfs首次实现到现在已经十年有余，直到近几年才在chromeos和Ubuntu上使用，个人认为除了之前人们的安全意识不如现在强烈外，更重要的是随着处理器性能的增强，eCryptfs加解密引起的文件读写性能下降的问题已经得到缓解。但实际的性能损耗如何，有待继续研究。或许出于性能的原因，年初的时候Google在chromeos实现了基于ext4 crypto的 dircrypto，用于实现跟eCryptfs同样的功能，目前chromeos同时支持eCryptfs和dircrypto，但在60版本后优先采用dircrypto技术，相关技术在另外的文章中进行介绍。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">最后，文中必有未及细看而自以为是的东西，望大家能够去伪存真，更求不吝赐教。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">参考资料</span></strong></span></p><hr/><p style="text-indent: 2em;"><a href="https://www.ibm.com/developerworks/cn/linux/l-cn-ecryptfs/" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">企业级加密文件系统 eCryptfs 详解</a></p><p style="text-indent: 2em;"><a href="http://www.linuxjournal.com/article/9400" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><a href="http://www.linuxjournal.com/article/9400" target="_blank" style="text-indent: 32px; white-space: normal; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">eCryptfs: a Stacked Cryptographic Filesystem</a></span></a></p><p style="text-indent: 2em;"><a href="https://chromium.googlesource.com/chromiumos/third_party/kernel/+/v4.4.79" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px; text-decoration: underline;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><a href="https://chromium.googlesource.com/chromiumos/third_party/kernel/+/v4.4.79" target="_blank" style="text-indent: 32px; white-space: normal; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Linux kernel-V4.4.79 sourcecode</a></span></a></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px; text-decoration: none;"><a href="https://chromium.googlesource.com/chromiumos/" target="_blank" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">chromiumos platform-9653 sourcecode</a></span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/4531.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】ChromeOS基于eCryptfs的用户数据安全保护机制 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4531" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="b35647466e73a72e6a4b888c6ad8c3bd">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/0x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="19285637" class="response" data-bind-id="19285637" data-target="17298" user-name="" href="javascript:;">
+                            </a>
+                        <span class="comment-time">2017-10-13 09:45:00</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="19285637" data-target="17298">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_17298" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">dvisory/CVE-2017-11826</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="4531" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4515.html" alt="【漏洞预警】dnsmasq: 多个严重漏洞预警" target="_blank">【漏洞预警】dnsmasq: 多个严重...</a></li>
+                                <li><a href="/learning/detail/4526.html" alt="【技术分享】微软 Office Word 无宏命令执行漏洞" target="_blank">【技术分享】微软 Office W...</a></li>
+                                <li><a href="/learning/detail/4530.html" alt="【技术分享】快报！Windows DNS客户端中惊现多重堆缓冲区溢出漏洞" target="_blank">【技术分享】快报！Windows ...</a></li>
+                                <li><a href="/learning/detail/4520.html" alt="【技术分享】揭秘通杀多款趋势科技产品的RCE漏洞" target="_blank">【技术分享】揭秘通杀多款趋势科技产...</a></li>
+                                <li><a href="/learning/detail/4534.html" alt="【技术分享】Lua程序逆向之Luac文件格式分析" target="_blank">【技术分享】Lua程序逆向之Luac...</a></li>
+                                <li><a href="/learning/detail/4531.html" alt="【技术分享】ChromeOS基于eCryptfs的用户数据安全保护机制" target="_blank">【技术分享】ChromeOS基于eCr...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://appscan.360.cn/  " alt="360显危镜" target="_blank">360显危镜</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

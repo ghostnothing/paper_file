@@ -1,0 +1,571 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】如何在Rubygems.org上实现远程代码执行 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Rubygems,RCE"/>
+    
+        <meta name="description" content="rubygems.org是目前一个非常流行的ruby依赖库托管服务，而本文所介绍的技术将通过rubygems.org上的一个反序列化漏洞来实现远程代码执行。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】如何在Rubygems.org上实现远程代码执行</h2>
+                <div class="article-msg">
+                    <span class="time">2017-10-12 15:31:37</span>
+                    
+                                        <span class="read">阅读：14909次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4537"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4537" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href="https://justi.cz/security/2017/10/07/rubygems-org-rce.html"
+                             target="_blank">来源： justi.cz</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2606963099" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01d4bd8d816ed27ddd.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2606963099" style="color:#848e99;">WisFree</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; background: white; text-indent: 2em; text-align: center;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><img src="http://p2.qhimg.com/t018e96349497781378.png" title="t01bf99b57fbea11885.png" alt="http://p5.qhimg.com/t01bf99b57fbea11885.png"/></span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">译者：</span><a href="http://bobao.360.cn/member/contribute?uid=2606963099" target="_self" style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">WisFree</a></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">预估稿费：200RMB</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="margin: 0px 25px 8px; white-space: normal; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">概述</span></strong></span></p><hr/><p style="text-indent: 2em;"><a href="https://rubygems.org/" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9); text-decoration: underline;"><span style="color: rgb(227, 108, 9);"><strong>rubygems.org</strong></span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">是目前一个非常流行的ruby依赖库托管服务，而本文所介绍的技术将通过rubygems.org上的一个反序列化漏洞来实现远程代码执行。不过在本文发稿之前，该漏洞(</span><a href="https://www.cve.mitre.org/cgi-bin/cvename.cgi?name=2017-0903" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; color: rgb(227, 108, 9); text-decoration: underline;"><span style="color: rgb(227, 108, 9);"><strong>CVE-2017-090</strong></span></a><span style="color: rgb(227, 108, 9);"><strong><span style="color: rgb(227, 108, 9); font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">3</span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">)已经被成功修复，具体信息请参考官方发表的声明文件【</span><a href="http://blog.rubygems.org/2017/10/09/unsafe-object-deserialization-vulnerability.html" style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">传送门</a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">】。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">如果你之前曾经开发过ruby应用程序的话，你很可能已经使用过rubygems.org的服务了。当然了，作为社区中的一个热门ruby依赖托管服务，你肯定会信任该网站在你计算机中所运行的任何程序，不然你也不会选择rubygems.org啦！但是，比如说当你运行命令gem install rails时，gem工具会从rubygems.org获取rails工具源码及其相应的依赖组件，然后自动将所有组件全部安装部署好。但需要注意的是，任何人在注册了一个rubygems.org账号之后，都可以发布gems程序。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞分析</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Ruby gems实际上就是</span><span style="color: rgb(227, 108, 9);"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">tar压缩文件</span></strong></span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">，所以运行完tar -xvf foo.gem命令之后，你将会得到下面这三种文件：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">metadata.gz
+data.tar.gz
+checksums.yaml.gz</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">这些文件都是</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">gzip</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">压缩文件。</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">metadata.gz</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">中包含一个</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">YAML</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">文件，其中存储了跟</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">gem</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">相关的信息，例如工具名称、开发者信息以及版本号等等。</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">data.tar.gz</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">中包含的是另一个存储了工具完整源代码的</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">tar</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">压缩文档。</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">checksums.yaml.gz</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">中同样包含了一个</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">YAML</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">文件，而这个</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">YAML</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">文件中存储的是</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">gem</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">内容的加密哈希。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">在此之前，我一直都不知道“解析不受信任的YAML文件”这种行为是</span><a href="https://www.sitepoint.com/anatomy-of-an-exploit-an-in-depth-look-at-the-rails-yaml-vulnerability/" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">非常危险</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">的，因为我一直认为它跟JSON一样是一种良性的数据交换格式。实际上，YAML允许我们对任意对象进行编码，它跟Python的</span><a href="https://docs.python.org/2/library/pickle.html" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">pickle</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">非常相似。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">当你向rubygems.org上传一个gem之后，应用程序会调用Gem::Package.new(body).spec，而rubygems gem（拥有上述方法）会使用一种不安全的方法来调用YAML.load，并在gem中加载YAML文件。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">但是，rubygems.org的开发人员是知道这一点的（很可能是因为这一次【</span><a href="https://docs.google.com/document/d/10tuM51VKRcSHJtUZotraMlrMHWK1uXs8qQ6Hmguyf1g/edit#heading=h.vklh7bga5mlq" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">事件</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">】才知道的）。在2013年，开发人员曾尝试修复过这个问题(</span><a href="https://github.com/rubygems/rubygems.org/commit/334bff6beb072f17c252dee97a03b5c7b81aef02#diff-61d2ac84a9d683aaee31dfc7bec7e8c0" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">monkey-patching</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">)，并让YAML以及gem解析库只允许接受白名单列表中规定的数据类型，而且在2015年rubygems.org甚至开始使用</span><a href="https://github.com/rubygems/rubygems.org/commit/63bb533ffc3543f4aab049d3af4f83b606442044#diff-61d2ac84a9d683aaee31dfc7bec7e8c0" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">Psych.safe_load</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">不幸的是，monkey-patching根本就没有效果，因为它之修复了Gem::Specification#from_yaml方法。如果我们真的弄清楚了#spec方法在调用过程中所发生的事情，我们就会发现它还会调用#verify方法，其中最重要的部分如下列代码所示：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:ruby;toolbar:false">#&nbsp;...
+&nbsp;&nbsp;@gem.with_read_io&nbsp;do&nbsp;|io|
+&nbsp;&nbsp;&nbsp;&nbsp;Gem::Package::TarReader.new&nbsp;io&nbsp;do&nbsp;|reader|
+&nbsp;&nbsp;&nbsp;&nbsp;read_checksums&nbsp;reader
+&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;verify_files&nbsp;reader
+&nbsp;&nbsp;&nbsp;&nbsp;end
+&nbsp;&nbsp;end
+&nbsp;
+&nbsp;&nbsp;verify_checksums&nbsp;@digests,&nbsp;@checksums
+#&nbsp;...
+#read_checksums方法的相关代码如下所示：
+#&nbsp;...
+&nbsp;&nbsp;Gem.load_yaml
+&nbsp;
+&nbsp;&nbsp;@checksums&nbsp;=&nbsp;gem.seek&nbsp;&#39;checksums.yaml.gz&#39;&nbsp;do&nbsp;|entry|
+&nbsp;&nbsp;&nbsp;&nbsp;Zlib::GzipReader.wrap&nbsp;entry&nbsp;do&nbsp;|gz_io|
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;YAML.load&nbsp;gz_io.read&nbsp;#&nbsp;oops
+&nbsp;&nbsp;&nbsp;&nbsp;end
+&nbsp;&nbsp;end
+#&nbsp;...</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">非常好，接下来我们就可以用我们所能控制的输入数据来调用YAML.load了。但是，我们如何利用这个漏洞呢？一开始，我曾尝试在YAML.load调用其自己的时候来运行我自己的漏洞利用代码，但是实现这个的难度远远比我想象的要困难得多，虽然我可以对任意对象进行反序列化操作，但我真正能够对这些对象所做的操作以及我所能调用的方法实际上是极其有限的。rubygems.org所使用的YAML解析库Psych只允许我调用例如#[]=，#init_with以及#marshal_load之类的方法。这里的#marshal_load并不是Marshal.load，如果是Marshal.load的话那可就简单多了。但是对于绝大多数对象来说，这些方法并不能给攻击者提供多大的灵活性，因为这些对象的常见方法一般都是初始化一些变量然后返回一些值。也有人说某些标准rails库中的对象拥有危险的#[]=方法，但是我并没有找到。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">于是接下来，我又回头开始分析rubygems.org应用程序，我想要确定它会将@checksums变量用在哪里，我们可以在任何类中设置一个相关实例吗?#verify_checksums的相关代码如下所示：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">#&nbsp;...
+&nbsp;&nbsp;checksums.sort.each&nbsp;do&nbsp;|algorithm,&nbsp;gem_digests|
+&nbsp;&nbsp;&nbsp;&nbsp;gem_digests.sort.each&nbsp;do&nbsp;|file_name,&nbsp;gem_hexdigest|
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;computed_digest&nbsp;=&nbsp;digests[algorithm][file_name]
+#&nbsp;...</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">所以，如果我们能够构建一个恶意对象并尝试调用#sort方法的话，我们就可以利用该漏洞来做一些危险的事情了。最终，我设计了如下所示的PoC。其中，有效的攻击Payload包含在base-64编码的代码之中，但我的PoC代码只会在命令行界面中输出字符串“opps”：</span></p><p><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"></span></p><pre class="brush:plain;toolbar:false">SHA1:&nbsp;!ruby/object:Gem::Package::TarReader
+&nbsp;&nbsp;io:&nbsp;!ruby/object:Gem::Package::TarReader::Entry
+&nbsp;&nbsp;&nbsp;&nbsp;closed:&nbsp;false
+&nbsp;&nbsp;&nbsp;&nbsp;header:&nbsp;&#39;foo&#39;
+&nbsp;&nbsp;&nbsp;&nbsp;read:&nbsp;0
+&nbsp;&nbsp;&nbsp;&nbsp;io:&nbsp;!ruby/object:ActiveSupport::Cache::MemoryStore
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;options:&nbsp;{}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;monitor:&nbsp;!ruby/object:ActiveSupport::Cache::Strategy::LocalCache::LocalStore
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;registry:&nbsp;{}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;key_access:&nbsp;{}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#39;3&#39;:&nbsp;!ruby/object:ActiveSupport::Cache::Entry
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;compressed:&nbsp;true
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;value:&nbsp;!binary&nbsp;&#39;\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;eJx1jrsKAjEQRbeQNT4QwQ9Q8hlTRXGL7UTFemMysIGYCZNZ0b/XYsHK8nIO\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nDtRBGbvJDzxMuRMLABHzIzOSqD0G+jbVMQmhzfLwd4jnphebwUrE0ZAoJrz\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;YQpLE0PCRKGCmSnsWr3p0PW000S56G5eQ91cv9oDpScPC8YyRIG18WOMmGD7\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/1X1AV+XPlQ=&#39;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">完成最后一步操作之后，我们还要回头调用#sort方法。在最后一步操作中，我们可以得到一个ActiveSupport::Cache::Entry对象。这个对象扮演着一个非常重要的角色，因为当#value方法被调用时，@compressed的值为true，而它将会调用Marshal.load方法，</span><a href="https://github.com/rails/rails/blob/5-1-stable/activesupport/lib/active_support/cache.rb#L618" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">并对攻击者所提供的数据进行解析处理</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">。这也就意味着，它将负责执行攻击者所提供的代码。这里所使用的数据提取方法在之前已经介绍过了，感兴趣的同学可以参考【</span><a href="https://github.com/charliesome/charlie.bz/blob/master/posts/rails-3.2.10-remote-code-execution.md" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">这篇文章</span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">】。不幸的是，我们无法使用YAML来对这个对象进行反序列化处理并实现代码执行，因为它几乎没有提供任何可以直接调用的方法，包括设置实例变量的方法在内。在这种情况下，我们必须要使用Marshal.load来完成对象的加载。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">接下来，ActiveSupport::Cache::MemoryStore对象会在一个名叫@data的哈希变量中存放我们的恶意对象。在其父类ActiveSupport::Cache::Store中，定义了一个名叫#read的方法，这个方法可以在MemoryStore中调用#read_entry方法。简单说来，#read_entry方法的作用就是从@data存放的数据中提取出entry并将其返回给调用者。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">针对MemoryStore#read方法的调用来自于针对Gem::Package::TarReader::Entry#read的调用，而它本身又会被Gem::Package::TarReader#each方法带哦用。当读取的结果返回给调用者之后，#size方法将会在返回值中被调用，并最终执行我们的恶意Payload（恶意对象）。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">最后，由于Gem::Package::TarReader定义了“include Enumerable”，调用其#sort方法的对象还会调用其#each方法，并开启上述的整个攻击链。</span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">总结</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对我来说，这一次的研究让我深刻地意识到了</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">YAML</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">其功能强大之处。在将来，</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">YAML.load</span><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">方法很可能会被修改成只允许接收白名单中定义的类来当作可选参数了，而这也会让对复杂对象的反序列化操作变成了一种可选行为。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">就目前的情况来看，YAML.load方法确实应该改名为YAML.unsafe_load之类的，这样一来广大用户在使用这个方法的时候就会知道它其实是一种非常不安全的方法，而用户应该使用的是YAML.safe_load...:D</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">最后，感谢rubygems.org的团队能够对我提交的安全报告予以快速响应，如果他们没有设立这样一个高效的</span><a href="https://hackerone.com/rubygems" style="text-decoration: underline; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;"><a href="https://hackerone.com/rubygems" style="text-indent: 32px; white-space: normal; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">漏洞奖励计划</a></span></a><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 16px;">的话，这是不可能办到的，这一点值得其他社区项目团队以及大型企业学习。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 翻译，转载请注明“转自安全客”，并附上链接。<br/><a class="text-more" href="https://justi.cz/security/2017/10/07/rubygems-org-rce.html" target="_blank">原文链接：https://justi.cz/security/2017/10/07/rubygems-org-rce.html</a></p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】如何在Rubygems.org上实现远程代码执行 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4537" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="b35647466e73a72e6a4b888c6ad8c3bd">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment-none alarm-info bg-primary">无任何评论</div>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4515.html" alt="【漏洞预警】dnsmasq: 多个严重漏洞预警" target="_blank">【漏洞预警】dnsmasq: 多个严重...</a></li>
+                                <li><a href="/learning/detail/4526.html" alt="【技术分享】微软 Office Word 无宏命令执行漏洞" target="_blank">【技术分享】微软 Office W...</a></li>
+                                <li><a href="/learning/detail/4530.html" alt="【技术分享】快报！Windows DNS客户端中惊现多重堆缓冲区溢出漏洞" target="_blank">【技术分享】快报！Windows ...</a></li>
+                                <li><a href="/learning/detail/4520.html" alt="【技术分享】揭秘通杀多款趋势科技产品的RCE漏洞" target="_blank">【技术分享】揭秘通杀多款趋势科技产...</a></li>
+                                <li><a href="/learning/detail/4534.html" alt="【技术分享】Lua程序逆向之Luac文件格式分析" target="_blank">【技术分享】Lua程序逆向之Luac...</a></li>
+                                <li><a href="/learning/detail/4531.html" alt="【技术分享】ChromeOS基于eCryptfs的用户数据安全保护机制" target="_blank">【技术分享】ChromeOS基于eCr...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://appscan.360.cn/  " alt="360显危镜" target="_blank">360显危镜</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>

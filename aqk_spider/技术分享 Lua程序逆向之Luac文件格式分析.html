@@ -1,0 +1,825 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns:wb="http://open.weibo.com/wb" xml:lang="en" lang="en">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link rel="shortcut icon" href="http://bobao.360.cn/favicon.ico?v=1.1"/>
+    <link rel="alternate" title="安全资讯" href="/rss?type=news" type="application/rss+xml"/>
+    <link rel="alternate" title="安全知识" href="/rss?type=learning" type="application/rss+xml"/>
+    <link rel="alternate" title="安全圈活动" href="/rss?type=activity" type="application/rss+xml"/>
+    <link rel="alternate" title="所有漏洞" href="/rss?type=vul" type="application/rss+xml"/>
+    <link rel="alternate" title="通用型漏洞" href="/rss?type=commonvul" type="application/rss+xml"/>
+    <link rel="alternate" title="事件型漏洞" href="/rss?type=eventvul" type="application/rss+xml"/>
+    <link rel="alternate" title="热门漏洞" href="/rss?type=hotvul" type="application/rss+xml"/>
+
+        <title>【技术分享】Lua程序逆向之Luac文件格式分析 - 安全客 - 有思想的安全新媒体</title>
+    
+        <meta name="keywords" content="Lua,逆向,文件"/>
+    
+        <meta name="description" content="探究Luac的内幕需要找到合适的资料与工具来辅助分析Luac文件。最好的资料莫过于Lua的源码，它包含了Lua的方方面面，但这里采取阅读第三方Lua反编译工具的代码。主要原因是：这类工具的代码往往更具有针对性，代码量也会少很多，分析与还原理解Luac字节码文件格式可以省掉不少的时间与精力。"/>
+        <meta property="wb:webmaster" content="224437c7be31d633"/>
+
+    <script type="text/javascript" src="http://s7.qhimg.com/!56caa871/xpc_sync_height.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+    <link rel="stylesheet" type="text/css" href="/css/common_new.css?v=4.4.2.1" />
+    <link rel="stylesheet" type="text/css" href="/css/jquery.notyfy.css" />
+    <link rel="stylesheet" type="text/css" href="/css/notyfy.theme.default.css" />
+    <link rel="stylesheet" type="text/css" href="/css/s_common.css?v=2.2.7" media="only screen and
+    (max-device-width:900px), only screen and (max-width:900px)" />
+    <script type="text/javascript" src="/js/jquery.min.js?v=3.1"></script>
+    <script type="text/javascript" src="/js/jquery.notyfy.js"></script>
+    <script type="text/javascript" src="/js/iscroll.js"></script>
+    <script src="http://js.passport.qihucdn.com/5.0.3.js"></script>
+    <script type="text/javascript">
+        var myScroll, myNavScroll;
+
+        function iscrollLoaded() {
+            myScroll = new IScroll('#wrapper',
+                {
+                    scrollX: true,
+                    scrollY: false,
+                    bounceEasing: 'circular',
+                    eventPassthrough: true,
+                    preventDefault: false,
+                    bounceTime: 500
+                }
+            );
+        }
+
+        $(function () {
+
+            //导航横向滚动
+
+
+            function setNavWidth() {
+
+                /* 计算导航宽度 */
+                var allWidth = $(window).width();
+                var scroller = $('#scroller');
+
+                if (allWidth > 900) {
+                    scroller.find('ul').add(scroller.find('.scroll')).removeAttr('style');
+                    scroller.css('overflow', 'visible');
+                    if (myNavScroll) myNavScroll.destroy();
+                } else {
+
+                    var width = 0;
+                    scroller.find('.scroll').children('ul').children('li').each(function (index, el) {
+                        if (!$(this).hasClass('mobile-hide')) {
+                            width += $(this).outerWidth();
+                        }
+                    });
+                    scroller.find('ul').add(scroller.find('.scroll')).width(width);
+
+                    if (myNavScroll) myNavScroll.destroy();
+
+                    myNavScroll = new IScroll('#scroller', {
+                        scrollX: true,
+                        scrollY: false,
+                        momentum: false,
+                        click: true
+                    });
+
+                }
+
+            }
+
+            setNavWidth();
+            $(window).resize(function (event) {
+                setNavWidth();
+            });
+
+        });
+
+    </script>
+</head>
+<body onload="iscrollLoaded();">
+<div style='margin:0 auto;width:0px;height:0px;overflow:hidden;'>
+    <img src=""/>
+</div>
+
+<div id="is-mobile"></div>
+<div class="container">
+        <div class="mobile-header">
+        <div class="header clearfix">
+            <div class="header-wrapper clearfix">
+                <a href="/index/index" class="logo"><img class="slogan" src="/img/logo.png?v=1.5"/></a>
+                                <form id="search" class="search-box" action="/search/index" method="GET">
+                    <input class="keys" name="keywords" type="text" placeholder="搜索漏洞" required="required">
+                    <input class="icon" type="submit" value="">
+                    <input type="hidden" name="type" value=""/>
+                </form>
+                <div class="bug">
+                    <div class="name"><span class="seled">全部</span><i class="arrow"></i></div>
+                    <ul class="typelist">
+                        <li data-index="3"><a href="javascript:void(0);">全部</a></li>
+                        <li data-index="0"><a href="javascript:void(0);">漏洞</a></li>
+                        <li data-index="1"><a href="javascript:void(0);">资讯</a></li>
+                        <li data-index="2"><a href="javascript:void(0);">知识</a></li>
+                    </ul>
+                </div>
+                                <div class="logNreg mobile-hide">
+                    <div class="unlog">
+                        <i></i>
+                        <a href="log.html" class="log">登录</a>
+                        <span>|</span>
+                        <a href="reg.html" class="reg">注册</a>
+                    </div>
+                    <div class="loged">
+                        <a href="/member/profile" class="user-center"><i></i><span class="user-name-tag">个人中心</span></a>
+                        <div class="user-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting"><a href="http://i.360.cn/profile/accountmanage"
+                                                               target="_blank"><i></i><span>账号设置</span></a></li>
+                                <li class="alert-setting"><a href="/keywords/index"
+                                                             target="_blank"><i></i><span>告警设置</span></a></li>
+                                <li class="bug-alert"><a href="/myalarm/index" target="_blank"><i></i><span>漏洞告警</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mylearn/index" target="_blank"><i></i><span>我的知识</span></a>
+                                </li>
+                                <li class="my-knowl"><a href="/mycourse/index" target="_blank"><i></i><span>我的课堂</span></a>
+                                </li>
+                                <li class="my-exit"><a
+                                            href="http://login.360.cn/?src=pcw_adlab&op=logout&destUrl=http://bobao.360.cn"><i></i><span>退出系统</span></a>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <a href="/message" class="message-center" target="_blank"><i></i><span>我的消息</span></a>
+                        <div class="message-links">
+                            <span class="arrow"></span>
+                            <ul>
+                                <li class="account-setting" style="display:none;"><a href="/myres/index"
+                                                                                     target="_blank"><i></i><span>回复我的</span></a>
+                                </li>
+                                <li class="my-bug"><a href="/myvul/index"
+                                                      target="_blank"><i></i><span>我的漏洞</span></a></li>
+                                <!--<li class="my-bug"><a href="/myres/index" target="_blank"><i></i><span>我的评论</span></a></li>-->
+                                <!--<li class="alert-setting"><a href="###" target="_blank"><i></i><span>提到我的</span></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style type="text/css">
+            .nav {
+                overflow: hidden;
+            }
+
+            .nav .scroll {
+                width: auto;
+            }
+        </style>
+        <div id="wrapper">
+            <div id="scroller" class="nav">
+                <div class="scroll">
+                    <ul class="nav-list">
+                        <li ><a class="link-nav"
+                                                                                 href="/index/index">首页</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/vul/index">漏洞</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/introduce/list">招聘</a>
+                        </li>
+                        <li >
+                        <a class="link-nav" href="/news/index">资讯</a><!--<i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/introduce/list">招聘</a></li>
+                        </ul>
+			-->
+                        </li>
+                        <li class="cur">
+                        <a class="link-nav" href="/learning/index">知识</a><i class="arrow mobile-hide"></i>
+                        <ul class="subnav-list mobile-hide">
+                            <li><a class="link-subnav" href="/course/index">学院</a></li>
+                        </ul>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/activity/index">活动</a></li>
+                        <li class="mobile-hide "><a class="link-nav"
+                                                                                                   href="/ctf/index">CTF训练营</a>
+                        </li>
+                        <li ><a class="link-nav"
+                                                               href="/interref/list">安全内参</a></li>
+                        <li ><a class="link-nav" href="/app/index">APP</a></li>
+
+                        <!--<li ><a href="/course/index">学院</a></li>-->
+                        <!--<li ><a href="/introduce/list">招聘</a></li>-->
+                        <!--<li  class="mobile-hide"><a href="/ctf/index">CTF训练营</a></li>-->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mobile-content">
+        <link rel="stylesheet" type="text/css" href="/css/news.css?v=3.5" />
+<link rel="stylesheet" type="text/css" href="/ue/SyntaxHighlighter/shCoreDefault.css?v=1.0" />
+<style>
+    p .syntaxhighlighter {
+        width: 80%;
+    }
+</style>
+
+<div class="cur-pos w1000">当前位置：<a href="http://bobao.360.cn/">安全客</a> &gt;&gt; 知识详情</div>
+
+<div class="content clearfix">
+    <div class="main">
+        <div class="article">
+            <div id="article_box">
+                <h2>【技术分享】Lua程序逆向之Luac文件格式分析</h2>
+                <div class="article-msg">
+                    <span class="time">2017-10-13 15:30:39</span>
+                    
+                                        <span class="read">阅读：16845次</span>
+                    <span><a style="display: none;" class="good" href="javascript:;"
+                             data-target="/learning/good" data-value="g_4534"
+                             data-type="learning">点赞(0)</a></span>
+                    <span><a class="fav" href="javascript:;" data-target="/mylearning/add"
+                             data-pk="4534" data-type="learning">收藏</a></span>
+                                        <span><a style="margin-left: 4px;" class="fav" href=""
+                             target="_blank">来源： 安全客</a></span>
+                    
+                    
+                    <div style="margin-top:10px; ">
+                        <a href="/member/contribute?uid=2669205776" style="color:#848e99;">
+                            <img src="http://p1.qhmsg.com/dm/150_150_100/t01107231badf7fd1ea.jpg" data-is-avatar="true"
+                                 style="border: 1px solid #d5d5d5;padding: 2px; width: 80px;height: 80px;border-radius: 43px;"/>
+                        </a>
+
+                    </div>
+                    <span class="orig">作者：<a href="/member/contribute?uid=2669205776" style="color:#848e99;">非虫</a></span>
+                                    </div>
+                <hr size="1">
+                <div class="article-msg">
+                    <p><!-- JiaThis Button BEGIN -->
+
+<!--
+<span class="jiathis_style"><span class="jiathis_txt">分享到：</span>
+	<a class="jiathis_button_weixin"></a>
+	<a class="jiathis_button_tsina"></a>
+    <a class="jiathis_button_tqq"></a>
+    <a class="jiathis_button_qzone"></a>
+    <a class="jiathis_button_renren"></a>
+    <a class="jiathis_button_xiaoyou"></a>
+    <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank"></a>
+</span>
+
+-->
+</p>
+                </div>
+                <p><p style="text-align: center;"><img src="http://p3.qhimg.com/t013ad6dede46c3f50d.jpg" title="t013ad6dede46c3f50d.jpg" alt="http://p3.qhimg.com/t013ad6dede46c3f50d.jpg"/></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">作者：</span><a href="http://bobao.360.cn/member/contribute?uid=2669205776" target="_self" style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-decoration: underline;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">非虫</span></a></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">预估稿费：600RMB</span></p><p style="margin: 0px 25px 8px; padding: 0px; line-height: 25px; color: rgb(70, 79, 85); word-break: break-all; font-family: Helvetica, &quot;Hiragino Sans GB&quot;, &quot;Microsoft Yahei&quot;, 微软雅黑, serif; white-space: normal; background: white; text-indent: 2em;"><span style="color: rgb(0, 112, 192); font-weight: 900; font-size: 18px; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">投稿方式：发送邮件至linwei#360.cn，或登陆网页版在线投稿</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"><br/></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family:微软雅黑, Microsoft YaHei">简介</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family:微软雅黑, Microsoft YaHei"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">Lua语言对于游戏开发与相关逆向分析的人来说并不陌生。Lua语言凭借其高效、简洁与跨平台等多种特性，一直稳立于游戏、移动APP等特定的开发领域中。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">目前Lua主要有5.1、5.2、5.3共三个版本。5.1版本的Lua之所以目前仍然被广泛使用的原因之一，是由于另一个流行的项目LuaJit采用了该版本Lua的内核。单纯使用Lua来实现的项目中，5.2与5.3版本的Lua则更加流行。这里主要以Lua版本5.2为例，通过分析它生成的Luac字节码文件，完成Lua程序的初步分析，为以后更深入的反汇编、字节码置换与重组等技能打下基础。</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Lua与Luac</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Lua与Python一样，可以被定义为脚本型的语言，与Python生成pyc字节码一样，Lua程序也有自己的字节码格式luac。Lua程序在加载到内存中后，Lua虚拟机环境会将其编译为Luac（下面文中Luac与luac含义相同）字节码，因此，加载本地的Luac字节码与Lua源程序一样，在内存中都是编译好的二进制结构。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">为了探究Luac的内幕，我们需要找到合适的资料与工具来辅助分析Luac文件。最好的资料莫过于Lua的源码，它包含了Lua相关知识的方方面面，阅读并理解Luac的构造与Lua虚拟机加载字节码的过程，便可以通透的了解Luac的格式。但这里并不打算这么做，而采取阅读第三方Lua反编译工具的代码。主要原因是：这类工具的代码往往更具有针对性，代码量也会少很多，分析与还原理解Luac字节码文件格式可以省掉不少的时间与精力。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">luadec</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">与<strong>unlua</strong>是最流行的Luac反汇编与反编译工具，前者使用C++语言开发，后者使用Java语言，这两个工具都能很好的还原与解释Luac文件，但考虑到Lua本身采用C语言开发，并且接下来打算编写<strong>010 Editor</strong>编辑器的Luac.bt文件格式模板，<strong>010 Editor</strong>的模板语法类似于C语言，为了在编码时更加顺利，这里分析时主要针对<strong>luadec</strong>。</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Luac文件格式</span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">一个Luac文件包含两部分：文件头与函数体。文件头格式定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;signature[4];&nbsp;&nbsp;&nbsp;//&quot;.lua&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;version;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;format;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;endian;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;size_int;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;size_size_t;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;size_Instruction;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;size_lua_Number;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;lua_num_valid;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;luac_tail[0x6];
+}&nbsp;GlobalHeader;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">第一个字段<strong>signature</strong>在lua.h头文件中有定义，它是<strong>LUA_SIGNATURE</strong>，取值为“\033Lua&quot;，其中，<strong>\033</strong>表示按键<strong>&lt;esc&gt;</strong>。<strong>LUA_SIGNATURE</strong>作为Luac文件开头的4字节，它是Luac的Magic Number，用来标识它为Luac字节码文件。Magic Number在各种二进制文件格式中比较常见，通过是特定文件的前几个字节，用来表示一种特定的文件格式。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">version</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">字段表示Luac文件的格式版本，它的值对应于Lua编译的版本，对于5.2版本的Lua生成的Luac文件，它的值为0x52。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">format</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">字段是文件的格式标识，取值0代表official，表示它是官方定义的文件格式。这个字段的值不为0，表示这是一份经过修改的Luac文件格式，可能无法被官方的Lua虚拟机正常加载。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">endian</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">表示Luac使用的字节序。现在主流的计算机的字节序主要有小端序<strong>LittleEndian</strong>与大端序<strong>BigEndian</strong>。这个字段的取值为1的话表示为<strong>LittleEndian</strong>，为0则表示使用<strong>BigEndian</strong>。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">size_int</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">字段表示int类型所占的字节大小。<strong>size_size_t</strong>字段表示size_t类型所占的字节大小。这两个字段的存在，是为了兼容各种PC机与移动设备的处理器，以及它们的32位与64位版本，因为在特定的处理器上，这两个数据类型所占的字节大小是不同的。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">size_Instruction</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">字段表示Luac字节码的代码块中，一条指令的大小。目前，指令<strong>Instruction</strong>所占用的大小为固定的4字节，也就表示Luac使用等长的指令格式，这显然为存储与反编译Luac指令带来了便利。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">size_lua_Number</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">字段标识<strong>lua_Number</strong>类型的数据大小。<strong>lua_Number</strong>表示Lua中的<strong>Number</strong>类型，它可以存放整型与浮点型。在Lua代码中，它使用<strong>LUA_NUMBER</strong>表示，它的大小取值大小取决于Lua中使用的浮点数据类型与大小，对于单精度浮点来说，<strong>LUA_NUMBER</strong>被定义为float，即32位大小，对于双精度浮点来说，它被定义为double，表示64位长度。目前，在macOS系统上编译的Lua，它的大小为64位长度。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">lua_num_valid</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">字段通常为0，用来确定<strong>lua_Number</strong>类型能否正常的工作。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">luac_tail</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">字段用来捕捉转换错误的数据。在Lua中它使用<strong>LUAC_TAIL</strong>表示，这是一段固定的字符串内容：&quot;<strong>\x19\x93\r\n\x1a\n</strong>&quot;。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在文件头后面，紧接着的是函数体部分。一个Luac文件中，位于最上面的是一个顶层的函数体，函数体中可以包含多个子函数，子函数可以是嵌套函数、也可以是闭包，它们由常量、代码指令、Upvalue、行号、局部变量等信息组成。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在Lua中，函数体使用<strong>Proto</strong>结构体表示，它的声明如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;//header
+&nbsp;&nbsp;&nbsp;&nbsp;ProtoHeader&nbsp;header;
+&nbsp;&nbsp;&nbsp;&nbsp;//code
+&nbsp;&nbsp;&nbsp;&nbsp;Code&nbsp;code;
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;constants
+&nbsp;&nbsp;&nbsp;&nbsp;Constants&nbsp;constants;
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;functions
+&nbsp;&nbsp;&nbsp;&nbsp;Protos&nbsp;protos;
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;upvalues
+&nbsp;&nbsp;&nbsp;&nbsp;Upvaldescs&nbsp;upvaldescs;
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;string
+&nbsp;&nbsp;&nbsp;&nbsp;SourceName&nbsp;src_name;
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;lines
+&nbsp;&nbsp;&nbsp;&nbsp;Lines&nbsp;lines;
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;locals
+&nbsp;&nbsp;&nbsp;&nbsp;LocVars&nbsp;loc_vars;
+&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;upvalue&nbsp;names
+&nbsp;&nbsp;&nbsp;&nbsp;UpValueNames&nbsp;names;
+}&nbsp;Proto;</pre><p style="text-indent: 2em;"><strong style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ProtoHeader</span></strong><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">是<strong>Proto</strong>的头部分。它的定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;linedefined;
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;lastlinedefined;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;numparams;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;is_vararg;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;maxstacksize;
+}&nbsp;ProtoHeader;</pre><p style="text-indent: 2em;"><strong style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ProtoHeader</span></strong><span style="text-indent: 2em; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在Lua中使用<strong>lua_Debug</strong>表示，<strong>lua_Debug</strong>的作用是调试时提供函数的行号，函数与变量名等信息，只是它部分字段的信息在生成Luac字节码时，最终没有写入Luac文件中。<strong>linedefined</strong>与<strong>lastlinedefined</strong>是定义的两个行信息。<strong>numparams</strong>表示函数有几个参数。<strong>is_vararg</strong>表示参数是否为可变参数列表，例如这个函数声明：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">function&nbsp;f1(a1,&nbsp;a2,&nbsp;...)
+&nbsp;&nbsp;&nbsp;&nbsp;......
+end</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这点与C语言类似，三个点“...”表示这是一个可变参数的函数。<strong>f1()</strong>在这里的<strong>numparams</strong>为2，并且<strong>is_vararg</strong>的值为1。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">maxstacksize</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">字段指明当前函数的Lua栈大小。值为2的幂。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">在<strong>ProtoHeader</strong>下面是函数的代码部分，这里使用<strong>Code</strong>表示。<strong>Code</strong>存放了一条条的Luac机器指令，每条指令是一个32位的整型大小。<strong>Code</strong>定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">struct&nbsp;Code&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;sizecode;
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;inst[];
+}&nbsp;code;</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">sizecode</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">字段标识了接下来的指令条数。<strong>inst</strong>则存放了当前函数所有的指令，在Lua中，指令采用<strong>Instruction</strong>表示，它的定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">#define&nbsp;LUAI_UINT32unsigned&nbsp;int
+typedef&nbsp;LUAI_UINT32&nbsp;lu_int32;
+typedef&nbsp;lu_int32&nbsp;Instruction;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">当<strong>LUAI_BITSINT</strong>定义的长度大于等于32时，<strong>LUAI_UINT32</strong>被定义为unsigned int，否则定义为unsigned long，本质上，也就是要求<strong>lu_int32</strong>的长度为32位。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来是<strong>Constants</strong>，它存放了函数中所有的常量信息。定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;sizek;
+&nbsp;&nbsp;&nbsp;&nbsp;Constant&nbsp;constant[];
+}&nbsp;Constants;</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">sizek</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">字段标识了接下来<strong>Constant</strong>的个数。<strong>constant</strong>则是<strong>Constant</strong>常量列表，存放了一个个的常量信息。的定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;LUA_DATATYPE&nbsp;const_type;
+&nbsp;&nbsp;&nbsp;&nbsp;TValue&nbsp;val;
+}&nbsp;Constant;</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">LUA_DATATYPE</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">是Lua支持的各种数据类型结构。如<strong>LUA_TBOOLEAN</strong>表示bool类型，使用<strong>lua_Val</strong>表示；<strong>LUA_TNUMBER</strong>表示数值型，它可以是整型，使用<strong>lua_Integer</strong>表示，也可以是浮点型，使用lua_Number表示；LUA_TSTRING表示字符串。这些所有的类型信息使用const_type字段表示，大小为1字节。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">TValue用于存放具体的数据内容。它的定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;union&nbsp;Value&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//GCObject&nbsp;*gc;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;collectable&nbsp;objects&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//void&nbsp;*p;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;light&nbsp;userdata&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lua_Val&nbsp;val;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;booleans&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//lua_CFunction&nbsp;f;&nbsp;&nbsp;/*&nbsp;light&nbsp;C&nbsp;functions&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lua_Integer&nbsp;i;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;integer&nbsp;numbers&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lua_Number&nbsp;n;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/*&nbsp;float&nbsp;numbers&nbsp;*/
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;value_;
+}&nbsp;TValue;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">对于<strong>LUA_TBOOLEAN</strong>，它存放的值可以通过Lua中提供的宏<strong>bvalue</strong>来计算它的值。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于<strong>LUA_TNUMBER</strong>，它存放的可能是整型，也可能是浮点型，可以直接通过<strong>nvalue</strong>宏自动进行类型判断，然后获取它格式化后的字符串值。对于Lua的5.3版本，对<strong>nvalue</strong>宏进行了改进，可以使用<strong>ivalue</strong>宏获取它的整型值，使用<strong>fltvalue</strong>宏来获取它的浮点值。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">对于<strong>LUA_TSTRING</strong>，它存放的是字符串信息。可以使用rawtsvalue宏获取它的字符串信息。而写入Luac之后，这里的信息实则是64位的值存放了字符串的大小，并且紧跟着后面是字符串的内容。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来是<strong>Protos</strong>，它表示当前函数包含的子函数信息。定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct(string&nbsp;level)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;sizep;
+&nbsp;&nbsp;&nbsp;&nbsp;Proto&nbsp;proto[];
+}&nbsp;Protos</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">sizep</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">字段表示当前函数包含的子函数的数目。所谓子函数，指的是一个函数中包含的嵌套函数与闭包。如下面的代码：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">function&nbsp;Create(n)&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;local&nbsp;function&nbsp;foo1()&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print(n)&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;end
+&nbsp;&nbsp;&nbsp;&nbsp;local&nbsp;function&nbsp;foo2()&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;n&nbsp;=&nbsp;n&nbsp;+&nbsp;10&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;end
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;foo1,foo2
+end</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">Create()</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">函数包含了foo1()与foo2()两个子函数，因此，这里sizep的值为2。<strong>proto</strong>表示子函数信息，它与父函数使用一样的结构体信息。因此，可见Lua的函数部分使用了一种树式的数据结构进行数据存储。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Upvaldescs</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">与<strong>UpValueNames</strong>共同描述了Lua中的UpValue信息。当函数中包含子函数或团包，并且访问了函数的参数或局部变量时，就会产生UpValue。如上面的<strong>Create()</strong>函数，foo1()与foo2()两个子函数都访问了参数n，因此，这里会产生一个UpValue，它的名称为“n”。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Upvaldesc</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">的定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;instack;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;idx;
+}&nbsp;Upvaldesc;</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">instack</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">字段表示UpValue是否在栈上创建的，是的话取值为1，反之为0。<strong>idx</strong>字段表示UpValue在UpValue数据列表中的索引，取值从0开始。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">UpValueNames</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">存放了当前函数中所有UpValue的名称信息，它的定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;size_upvalue_names;
+&nbsp;&nbsp;&nbsp;&nbsp;UpValueName&nbsp;upvalue_name[];
+}&nbsp;UpValueNames;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">size_upvalue_names字段表示<strong>UpValueName</strong>条目的数目，每一条<strong>UpValueName</strong>存放了一个UpValue的名称，它的定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint64&nbsp;name_size;
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;var_str[];
+}&nbsp;UpValueName;</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">name_size</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">字段是符号串的长度，<strong>var_str</strong>为具体的字符串内容。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">SourceName</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">存放了当前Luac编译前存放的完整文件名路径。它的定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint64&nbsp;src_string_size;
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;str[];
+}&nbsp;SourceName</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">SourceName</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">的定义与<strong>UpValueName</strong>一样，两个字段分别存放了字符串的长度与内容。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Lines</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">存放了所有的行号信息。它的定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;sizelineinfo;
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;line[];
+}&nbsp;Lines;</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">sizelineinfo</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">字段表示当前函数所有的行总数目。<strong>line</strong>字段存放了具体的行号。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">LocVars</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">存放了当前函数所有的局部变量信息，它的定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;sizelocvars;
+&nbsp;&nbsp;&nbsp;&nbsp;LocVar&nbsp;local_var[];
+}&nbsp;LocVars;</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">sizelocvars</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">字段表示局部变量的个数。local_var字段是一个个的局部变量，它的类型LocVar定义如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint64&nbsp;varname_size;
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;varname[];
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;startpc;
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;endpc;
+}&nbsp;LocVar;</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">varname_size</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">字段是变量的名称长度大小。varname字段存放了变量的名称字符串内容。startpc与endpc是两个指针指，存储了局部变量的作用域信息，即它的起始与结束的地方。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">到此，一个Luac的文件格式就讲完了。</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">010 Editor模板语法</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为了方便分析与修改Luac二进制文件，有时候使用<strong>010 Editor</strong>编辑器配合它的文件模板，可以达到很直观的查看与修改效果，但<strong>010 Editor</strong>官方并没有提供Luac的格式模板，因此，决定自己动手编写一个模板文件。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">010 Editor</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">支持模板与脚本功能，两者使用的语法与C语言几乎一样，只是有着细微的差别与限制，我们看看如何编写010 Editor模板文件。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">点击<strong>010 Editor</strong>菜单Templates-&gt;New Template，新建一个模板，会自动生成如下内容：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">//------------------------------------------------
+//---&nbsp;010&nbsp;Editor&nbsp;v8.0&nbsp;Binary&nbsp;Template
+//
+//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;File:&nbsp;
+//&nbsp;&nbsp;&nbsp;Authors:&nbsp;
+//&nbsp;&nbsp;&nbsp;Version:&nbsp;
+//&nbsp;&nbsp;&nbsp;Purpose:&nbsp;
+//&nbsp;&nbsp;Category:&nbsp;
+//&nbsp;File&nbsp;Mask:&nbsp;
+//&nbsp;&nbsp;ID&nbsp;Bytes:&nbsp;
+//&nbsp;&nbsp;&nbsp;History:&nbsp;
+//------------------------------------------------</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">File</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">是文件名，<strong>010 Editor</strong>使用.bt作为模柏树的后缀，这里取名为luac.bt即可。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Authors</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">是作者信息。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Version</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">是当前模板的版本，如果将最终的模板文件上传到<strong>010 Editor</strong>的官方模板仓库，<strong>010 Editor</strong>会以此字段来判断模板文件的版本信息。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Purpose</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">是编写本模板的意图，内容上可以留空。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">Category</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">是模板的分类，<strong>010 Editor</strong>中自带了一些内置的分类，这里选择<strong>Programming</strong>分类。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">File Mask</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">是文件扩展名掩码，表示当前模板支持处理哪种文件类型的数据，支持通配符，如果支持多种文件格式，可以将所有的文件扩展名写在一行，中间使用逗号分开，这里设置它的值为“*.luac, *.lua”。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">ID Bytes</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">是文件开头的Magic Number，用来通过文件的开头来判断是否为支持处理的文件，这里的取值为“1B 4c 75 61”。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">History</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">中可以留空，也可以编写模板的更新历史信息。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最终，Luac.bt的开头内容如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">//------------------------------------------------
+//---&nbsp;010&nbsp;Editor&nbsp;v8.0&nbsp;Binary&nbsp;Template
+//
+//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;File:&nbsp;luac.bt
+//&nbsp;&nbsp;&nbsp;Authors:&nbsp;fei_cong(346345565@qq.com)
+//&nbsp;&nbsp;&nbsp;Version:&nbsp;1.0
+//&nbsp;&nbsp;&nbsp;Purpose:&nbsp;
+//&nbsp;&nbsp;Category:&nbsp;Programming
+//&nbsp;File&nbsp;Mask:&nbsp;*.luac,&nbsp;*.lua
+//&nbsp;&nbsp;ID&nbsp;Bytes:&nbsp;1B&nbsp;4c&nbsp;75&nbsp;61
+//&nbsp;&nbsp;&nbsp;History:&nbsp;
+//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1.0&nbsp;&nbsp;&nbsp;fei_cong:&nbsp;Initial&nbsp;version,&nbsp;support&nbsp;lua&nbsp;5.2.
+//
+//&nbsp;License:&nbsp;This&nbsp;file&nbsp;is&nbsp;released&nbsp;into&nbsp;the&nbsp;public&nbsp;domain.&nbsp;People&nbsp;may&nbsp;
+//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;use&nbsp;it&nbsp;for&nbsp;any&nbsp;purpose,&nbsp;commercial&nbsp;or&nbsp;otherwise.&nbsp;
+//------------------------------------------------</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">010 Editor</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">模板与C语言一样，支持C语言的宏、数据类型、变量、函数、代码语句、控制流程等，还支持调用常见的C语言函数。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">数据类型上，支持的非常丰富，官方列出BS的支持的数据类型如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:plain;toolbar:false">-&nbsp;8-Bit&nbsp;Signed&nbsp;Integer&nbsp;-&nbsp;char,&nbsp;byte,&nbsp;CHAR,&nbsp;BYTE
+-&nbsp;8-Bit&nbsp;Unsigned&nbsp;Integer&nbsp;-&nbsp;uchar,&nbsp;ubyte,&nbsp;UCHAR,&nbsp;UBYTE
+-&nbsp;16-Bit&nbsp;Signed&nbsp;Integer&nbsp;-&nbsp;short,&nbsp;int16,&nbsp;SHORT,&nbsp;INT16
+-&nbsp;16-Bit&nbsp;Unsigned&nbsp;Integer&nbsp;-&nbsp;ushort,&nbsp;uint16,&nbsp;USHORT,&nbsp;UINT16,&nbsp;WORD
+-&nbsp;32-Bit&nbsp;Signed&nbsp;Integer&nbsp;-&nbsp;int,&nbsp;int32,&nbsp;long,&nbsp;INT,&nbsp;INT32,&nbsp;LONG
+-&nbsp;32-Bit&nbsp;Unsigned&nbsp;Integer&nbsp;-&nbsp;uint,&nbsp;uint32,&nbsp;ulong,&nbsp;UINT,&nbsp;UINT32,&nbsp;ULONG,&nbsp;DWORD
+-&nbsp;64-Bit&nbsp;Signed&nbsp;Integer&nbsp;-&nbsp;int64,&nbsp;quad,&nbsp;QUAD,&nbsp;INT64,&nbsp;__int64
+-&nbsp;64-Bit&nbsp;Unsigned&nbsp;Integer&nbsp;-&nbsp;uint64,&nbsp;uquad,&nbsp;UQUAD,&nbsp;UINT64,&nbsp;QWORD,&nbsp;__uint64
+-&nbsp;32-Bit&nbsp;Floating&nbsp;Point&nbsp;Number&nbsp;-&nbsp;float,&nbsp;FLOAT&nbsp;
+-&nbsp;64-Bit&nbsp;Floating&nbsp;Point&nbsp;Number&nbsp;-&nbsp;double,&nbsp;DOUBLE&nbsp;
+-&nbsp;16-Bit&nbsp;Floating&nbsp;Point&nbsp;Number&nbsp;-&nbsp;hfloat,&nbsp;HFLOAT&nbsp;
+-&nbsp;Date&nbsp;Types&nbsp;-&nbsp;DOSDATE,&nbsp;DOSTIME,&nbsp;FILETIME,&nbsp;OLETIME,&nbsp;time_t&nbsp;(for&nbsp;more&nbsp;information&nbsp;on&nbsp;date&nbsp;types&nbsp;see&nbsp;Using&nbsp;the&nbsp;Inspector)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在编写模板时，同一数据类型中列出的类型，使用上是一样，如下面的代码片断：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">local&nbsp;int&nbsp;a;
+local&nbsp;int32&nbsp;a;
+local&nbsp;long&nbsp;a;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">表示的都是一个32位的整型变量，这三种声明方式表达的含义是相同的。声明变量时，需要在前面跟上local关键字，如果没有跟上local，则表明是在声明一个占位的数据字段。所谓占位的数据字段，指的<strong>010 Editor</strong>在解析模板中的变量时，会对占位的数据部分使用指定的数据类型进行解析，如下面的代码：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;GlobalHeader&nbsp;header;
+&nbsp;&nbsp;&nbsp;&nbsp;Proto&nbsp;proto;
+}&nbsp;Luac;
+Luac&nbsp;luac;</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">010 Editor</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">在解析这段代码时，会按照Luac中所有的占位数据字段信息解析当前的二进制文件。GlobalHeader与Proto的声明也中如此，没有加上local的数据字段，都会被0<strong>10 Editor</strong>解析并显示。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">除了支持基本的C语言格式结构体struct外，<strong>010 Editor</strong>模板语法还加入了一些特性，比如字段注释与格式、结构体压缩与处理函数。看如下的结构体信息：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint64&nbsp;varname_size&nbsp;&lt;format=hex&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;char&nbsp;varname[varname_size];
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;startpc&nbsp;&lt;format=hex,&nbsp;comment=&quot;first&nbsp;point&nbsp;where&nbsp;variable&nbsp;is&nbsp;active&quot;&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;endpc&nbsp;&lt;format=hex,&nbsp;comment=&quot;first&nbsp;point&nbsp;where&nbsp;variable&nbsp;is&nbsp;dead&quot;&gt;;
+}&nbsp;LocVar&nbsp;&lt;read&nbsp;=&nbsp;LocVarRead,&nbsp;optimize&nbsp;=&nbsp;false&gt;;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这是按照前面介绍的<strong>LocVar</strong>结构体信息，按照<strong>010 Editor</strong>模板语法处理过后的效果。为字段后添加format可以指定它的输出格式为十六进制hex，默认是10进制；为字段后添加comment可以指定它的注释信息，这两个字段可以同时存在，在中间加入一个逗号即可；可以为结构体指定read来指定它的类型读取函数，也可以指定write来指定它的类型写入函数，read与write有着自己的格式，如下所示：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:java;toolbar:false">string&nbsp;LocVarRead(LocVar&nbsp;&amp;val)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;val.varname;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">所有的read与write返回值必须为string，参数必须为要处理的结构体类型的引用。注意：<strong>010 Editor</strong>模板语法不支持指针，但支持引用类型，但引用类型不能作为变量与函数的返回值，只能作为参数进行传递，在编写模板代码时需要注意。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">除了以上的基础类型外，<strong>010 Editor</strong>模板还支持字符串类型string，这在C语言中是不存在的！它与char[]代表的含义是相同的，而且它支持的操作比较多，如以下字符串相加等操作：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:bash;toolbar:false">local&nbsp;string&nbsp;str&nbsp;=&nbsp;&quot;world&quot;;
+local&nbsp;string&nbsp;str2&nbsp;=&nbsp;&quot;hello&nbsp;&quot;&nbsp;+&nbsp;str&nbsp;+&nbsp;&quot;!\n&quot;;</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">010 Editor</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">模板中的宏有限制，并不能解析那些需要展开后替换符号的宏，只支持那些能够直接计算的宏。如下面的BITRK与ISK宏：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">#define&nbsp;SIZE_B9
+#define&nbsp;BITRK(1&nbsp;&lt;&lt;&nbsp;(SIZE_B&nbsp;-&nbsp;1))
+#define&nbsp;ISK(x)((x)&nbsp;&amp;&nbsp;BITRK)</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">前者可以直接解析并计算出来，<strong>010 Editor</strong>模板就支持它，而对于ISK宏，并不能在展开时计算出它的值，因此，<strong>010 Editor</strong>模板并不支持它。</span></p><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">010 Editor</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">模板支持enum枚举，与C语言中的枚举的差别是，在定义枚举时可以指定它的数据类型，这样的好处是可以在<strong>010 Editor</strong>模板中声明占位的枚举数据。如下所示是Luac.bt中用到的<strong>LUA_DATATYPE</strong>类型：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">enum&nbsp;&lt;uchar&gt;&nbsp;LUA_DATATYPE&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;LUA_TNIL=&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0,
+&nbsp;&nbsp;&nbsp;&nbsp;LUA_TBOOLEAN=&nbsp;&nbsp;1,
+&nbsp;&nbsp;&nbsp;&nbsp;LUA_TLIGHTUSERDATA&nbsp;=&nbsp;&nbsp;2,
+&nbsp;&nbsp;&nbsp;&nbsp;LUA_TNUMBER=&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3,
+&nbsp;&nbsp;&nbsp;&nbsp;LUA_TSTRING=&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4,
+&nbsp;&nbsp;&nbsp;&nbsp;LUA_TTABLE=&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;5,
+&nbsp;&nbsp;&nbsp;&nbsp;LUA_TFUNCTION=&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;6,
+&nbsp;&nbsp;&nbsp;&nbsp;LUA_TUSERDATA=&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;7,
+&nbsp;&nbsp;&nbsp;&nbsp;LUA_TTHREAD=&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8,
+&nbsp;&nbsp;&nbsp;&nbsp;LUA_NUMTAGS&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=&nbsp;&nbsp;&nbsp;&nbsp;9,
+};</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">010 Editor</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">模板中支持调用常见的C语言库函数，如<strong>strlen</strong>()、<strong>strcat</strong>()、<strong>print</strong>()、<strong>sprintf</strong>()、<strong>strstr</strong>()，不同的是，函数名上有些差别，这些可调用的函数在<strong>010 Editor</strong>模板中首字母是大写的，因此，在调用时，它们分别是<strong>Strlen</strong>()、<strong>Strcat</strong>()、<strong>Print</strong>()、<strong>Sprintf</strong>()、<strong>Strstr</strong>()。更多支持的字符串操作的函数可以查看<strong>010 Editor</strong>的帮助文档“String Functions”小节，除了“String Functions”外，还有“I/O Functions”、“Math Functions”、“Tool Functions”、“Interface Functions”等函数可供模板代码使用。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">接下来看下代码结构部分，<strong>010 Editor</strong>模板支持C语言中的for/while/dowhile等循环语句，这些语句可以用来组成到<strong>010 Editor</strong>模板的函数与代码块中。一点细微的差别是<strong>010 Editor</strong>模板的返回类型只能是上面介绍过的基础类型，不支持自定义类型与数组结构，这就给实际编写代码带来了一些麻烦，遇到这种函数场景时，就需要考虑更改代码的结构了。</span></p><p><br/></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">编写luac.bt文件格式模板</span></strong></span></p><p style="text-indent: 2em;"><span style="font-size: 18px;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></strong></span></p><hr/><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">了解了<strong>010 Editor</strong>模板语法后，就可以开始编写Luac.bt模板文件了。编写模板前，需要找好一个Luac文件，然后边写边测试，生成一个Luac文件很简单，可以编写好hello.lua后，执行下面的命令生成hello.luac：</span></p><pre class="brush:bash;toolbar:false">$&nbsp;luac&nbsp;-o&nbsp;./hello.luac&nbsp;./hello.lua</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">生成好Luac文件后，就是编写一个个结构体进行测试，这是纯体力活了。<strong>luadec</strong>提供了一个ChunkSpy52.lua，可以使用它打印Luac的文件格式内容，可以参考它的输出进行Luac.bt的编写工作，实际上我也是这么做的。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先是<strong>GlobalHeader</strong>，它的定义可以这样写：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:cpp;toolbar:false">typedef&nbsp;struct&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;signature&nbsp;&lt;format=hex&gt;;&nbsp;&nbsp;&nbsp;//&quot;.lua&quot;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;version&nbsp;&lt;format=hex&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;format&nbsp;&lt;comment&nbsp;=&nbsp;&quot;format&nbsp;(0=official)&quot;&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;endian&nbsp;&lt;comment&nbsp;=&nbsp;&quot;1&nbsp;==&nbsp;LittleEndian;&nbsp;0&nbsp;==&nbsp;BigEndian&quot;&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;size_int&nbsp;&lt;comment&nbsp;=&nbsp;&quot;sizeof(int)&quot;&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;size_size_t&nbsp;&lt;comment&nbsp;=&nbsp;&quot;sizeof(size_t)&quot;&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;size_Instruction&nbsp;&lt;comment&nbsp;=&nbsp;&quot;sizeof(Instruction)&quot;&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;size_lua_Number&nbsp;&lt;comment&nbsp;=&nbsp;&quot;sizeof(lua_Number)&quot;&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;lua_num_valid&nbsp;&lt;comment&nbsp;=&nbsp;&quot;Determine&nbsp;lua_Number&nbsp;whether&nbsp;it&nbsp;works&nbsp;or&nbsp;not,&nbsp;It&#39;s&nbsp;usually&nbsp;0&quot;&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(version&nbsp;==&nbsp;0x52)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uchar&nbsp;luac_tail[0x6]&nbsp;&lt;format=hex,&nbsp;comment&nbsp;=&nbsp;&quot;data&nbsp;to&nbsp;catch&nbsp;conversion&nbsp;errors&quot;&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}&nbsp;GlobalHeader;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">这种定义的方式与前面介绍的<strong>LocVar</strong>一样，具体就不展开讨论了。下面主要讨论编写过程中遇到的问题与难点。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">首先是输出与ChunkSpy52.lua一样的function level，也就是函数的嵌套级别，定义结构体时可以传递参数，这一点是C语言不具备的，但这个功能非常实用，可以用来传递定义结构时的信息，如这里的function level就用到了该特性。这是Protos的定义：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:java;toolbar:false">typedef&nbsp;struct(string&nbsp;level)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;uint32&nbsp;sizep&nbsp;&lt;format=hex&gt;;
+&nbsp;&nbsp;&nbsp;&nbsp;local&nbsp;uint32&nbsp;sz&nbsp;=&nbsp;sizep;
+&nbsp;&nbsp;&nbsp;&nbsp;local&nbsp;uint32&nbsp;i&nbsp;=&nbsp;0;
+&nbsp;&nbsp;&nbsp;&nbsp;local&nbsp;string&nbsp;s_level;
+&nbsp;&nbsp;&nbsp;&nbsp;while&nbsp;(sz--&nbsp;&gt;&nbsp;0)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SPrintf(s_level,&nbsp;&quot;%s_%d&quot;,&nbsp;level,&nbsp;i++);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Proto&nbsp;proto(s_level);
+&nbsp;&nbsp;&nbsp;&nbsp;};
+}&nbsp;Protos&nbsp;&lt;optimize=false&gt;;</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">为结构体加上一个<strong>string</strong>类型的<strong>level</strong>参数，初始时传值“0”，然后往下传递时，为传递的值累加一，这样就做到了function level的输出。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">然后是<strong>Constant</strong>常量信息的获取，由于TValue支持多种数据的类型，因此在处理上需要分别进行处理，这里参考了<strong>luadec</strong>的实现，不过在细节上还是比较麻烦。<strong>luadec</strong>使用<strong>DecompileConstant</strong>()方法实现，它的代码片断如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:java;toolbar:false">···
+char*&nbsp;DecompileConstant(const&nbsp;Proto*&nbsp;f,&nbsp;int&nbsp;i)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;const&nbsp;TValue*&nbsp;o&nbsp;=&nbsp;&amp;f-&gt;k[i];
+switch&nbsp;(ttype(o))&nbsp;{
+case&nbsp;LUA_TBOOLEAN:
+return&nbsp;strdup(bvalue(o)?&quot;true&quot;:&quot;false&quot;);
+case&nbsp;LUA_TNIL:
+return&nbsp;strdup(&quot;nil&quot;);
+#if&nbsp;LUA_VERSION_NUM&nbsp;==&nbsp;501&nbsp;||&nbsp;LUA_VERSION_NUM&nbsp;==&nbsp;502
+case&nbsp;LUA_TNUMBER:
+{
+char*&nbsp;ret&nbsp;=&nbsp;(char*)calloc(128,&nbsp;sizeof(char));
+sprintf(ret,&nbsp;LUA_NUMBER_FMT,&nbsp;nvalue(o));
+return&nbsp;ret;
+}
+case&nbsp;LUA_TSTRING:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;DecompileString(o);
+default:
+return&nbsp;strdup(&quot;Unknown_Type_Error&quot;);
+}
+}
+···</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">bvalue</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">与<strong>nvalue</strong>是Lua提供的两个宏，这在编写模板时不能直接使用，需要自己实现，由于宏的嵌套较多，实际测试时编写了C语言代码展开它的实现，如<strong>nvalue</strong>展开后的实现为：</span></p><pre class="brush:java;toolbar:false">((((((o))-&gt;tt_)&nbsp;==&nbsp;((3&nbsp;|&nbsp;(1&nbsp;&lt;&lt;&nbsp;4))))&nbsp;?&nbsp;((lua_Number)(((((o)-&gt;value_).i))))&nbsp;:&nbsp;(((o)-&gt;value_).n))));</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">于是编写替换代码number2str函数，实现如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:java;toolbar:false">string&nbsp;number2str(TValue&nbsp;&amp;o)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;local&nbsp;string&nbsp;ret;
+&nbsp;&nbsp;&nbsp;&nbsp;local&nbsp;string&nbsp;fmt;
+&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;(get_inst_sz()&nbsp;==&nbsp;4)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fmt&nbsp;=&nbsp;&quot;(=%.7g)&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;if&nbsp;(get_inst_sz()&nbsp;==&nbsp;8)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fmt&nbsp;=&nbsp;&quot;(=%.14g)&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;}&nbsp;else&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Warning(&quot;error&nbsp;inst&nbsp;size.\n&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;local&nbsp;int&nbsp;tt&nbsp;=&nbsp;o.value_.val.tt_;
+&nbsp;&nbsp;&nbsp;&nbsp;//Printf(&quot;tt:%x\n&quot;,&nbsp;tt);
+&nbsp;&nbsp;&nbsp;&nbsp;local&nbsp;lua_Integer&nbsp;i&nbsp;=&nbsp;o.value_.i;
+&nbsp;&nbsp;&nbsp;&nbsp;local&nbsp;lua_Number&nbsp;n&nbsp;=&nbsp;o.value_.n;
+&nbsp;&nbsp;&nbsp;&nbsp;SPrintf(ret,&nbsp;&quot;%.14g&quot;,&nbsp;((tt&nbsp;==&nbsp;(3&nbsp;|&nbsp;(1&nbsp;&lt;&lt;&nbsp;4)))&nbsp;?&nbsp;i&nbsp;:&nbsp;n));
+&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;ret;
+}</pre><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">然后为Constant编写read方法<strong>ConstantRead</strong>，代码片断如下：</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;"></span></p><pre class="brush:java;toolbar:false">string&nbsp;ConstantRead(Constant&amp;&nbsp;constant)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;local&nbsp;string&nbsp;str;
+&nbsp;&nbsp;&nbsp;&nbsp;switch&nbsp;(constant.const_type)&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;LUA_TBOOLEAN:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SPrintf(str,&nbsp;&quot;%s&quot;,&nbsp;constant.bool_val&nbsp;?&nbsp;&quot;true&quot;&nbsp;:&nbsp;&quot;false&quot;);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;str;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;LUA_TNIL:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;&quot;nil&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;LUA_TNUMBER:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;number2str(constant.num_val);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;case&nbsp;LUA_TSTRING:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;&quot;(=\&quot;&quot;&nbsp;+&nbsp;constant.str_val&nbsp;+&nbsp;&quot;\&quot;)&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;......
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;&quot;&quot;;
+&nbsp;&nbsp;&nbsp;&nbsp;}
+}</pre><p style="text-indent: 2em;"><strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">DecompileConstant</span></strong><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; text-indent: 2em;">中调用的<strong>DecompileString</strong>方法，原实现比较麻烦，处理了非打印字符，这里简单的获取解析的字符串内容，然后直接返回了。</span></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">最后，所有的代码编写完成后，效果如图所示：</span></p><p style="text-align: center; text-indent: 0em;"><img src="http://p9.qhimg.com/t018f4cea1541b4ab48.jpg" title="t018f4cea1541b4ab48.jpg" alt="http://p9.qhimg.com/t018f4cea1541b4ab48.jpg"/></p><p style="text-indent: 2em;"><span style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;;">luac.bt的完整实现可以在这里找到：<a href="https://github.com/feicong/lua_re">https://github.com/feicong/lua_re</a>&nbsp; &nbsp;。</span></p></p>
+                <hr/>
+                <p style="text-align: center;">
+                    <img src="http://bobao.360.cn/img/app.jpeg"/>
+                    <img src="http://bobao.360.cn/img/weixin.jpeg"/>
+                </p>
+                                <p>本文由 安全客 原创发布，如需转载请注明来源及本文地址。<br/>本文地址：http://bobao.360.cn/learning/detail/4534.html
+                </p>
+                            </div>
+            <div style="margin-top: 20px;background-color:#FFFFFF">
+    <input type="hidden" id="detail_title" name="detail_title" value="【技术分享】Lua程序逆向之Luac文件格式分析 - 安全客 - 有思想的安全新媒体" />
+    <input type="hidden" id="use_nickname" name="use_nickname" value="0" />
+    <a name="mao"></a>
+    <div class="reg-log mobile-hiden">
+        <div class="" id="userTo">   
+            <div id="to-list" class="input-text" style="">
+                <textarea disabled="disabled" class="hide"  id="comment-content" to="to"></textarea>
+                <ul id="preadded" style="display:none">       
+                </ul>
+                <div id="to-auto" style="width: 200px">
+                    <ul id="feed">
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="source-id" value="4534" />
+        <input type="hidden" id="source-type" value="learning" />
+        <input type="hidden" id="post-comment-url" value="/comment/add" />
+        <input type="hidden" id="post-nickname-url-ajax" value="/comment/randnicknameajax" />
+        <input type="hidden" id="post-check-login-url-ajax" value="/comment/checklogin" />
+        <input type="hidden" id="stoken_comment_set" value="b35647466e73a72e6a4b888c6ad8c3bd">                 <span class="join">参与讨论，请先 <a href="javascript:;" class="comment-login">登录</a> | <a href="javascript:;" class="comment-reg">注册</a> |  <a href="javascript:;" class="anonymous-comment">匿名评论</a></span>
+            </div>
+    <div class="mobile-hide" style="width: 870px; margin: 0 auto;">
+        <label style="vertical-align:middle;" for="use_nickname">匿名</label> 
+        <input style="vertical-align:middle;" id="trigger-nickname" name="use_nickname" class="use_nickname" type="checkbox" value="0" />
+
+        <a href="javascript:;" class="apply-use button" id="submit-comment" data-target="/comment/add">发布</a>
+    </div>
+
+
+    <div class="clearfix"></div>
+    <div class="comments">
+        <div class="comments-head">
+            <span class="title">用户评论</span>
+        </div>
+                <div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src="/img/photo/10x48x48.png">
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="2741962743" class="response" data-bind-id="2741962743" data-target="17318" user-name="360U2741962743" href="javascript:;">
+                360U2741962743            </a>
+                        <span class="comment-time">2017-10-15 19:18:15</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="2741962743" data-target="17318">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_17318" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">虫大大</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+<div class="comment">
+    <div class="avatar">
+        <a href="javascript:;">
+                                    <img src='http://p1.qhmsg.com/dm/48_48_100/t013f9ed354d9b17d72.jpg'/>              
+                    </a>
+    </div>
+    <div class="comment-main">
+        <div class="comment-user">
+                        <a user-id="52887766" class="response" data-bind-id="52887766" data-target="17302" user-name="孤星泪xly" href="javascript:;">
+                孤星泪xly            </a>
+                        <span class="comment-time">2017-10-13 15:58:09</span>
+            <div class="comment-action">
+                <span class="comment-response"><a href="javascript:;" class="response" data-bind-id="52887766" data-target="17302">回复</a></span>&nbsp;|&nbsp;
+                <span><a href="javascript:;"  class="good" data-target="/comment/good" data-value="g_17302" data-type="comment">点赞</a></span>
+            </div>
+        </div>
+
+        <p class="content">地球上最帅的大脸猫发来贺电！</p>
+        <style>
+    .comment-user p{font-size: 13px; margin: 0;}
+</style>
+    </div>
+    <div>
+
+    </div>
+</div>
+<div class="clearfix"></div>
+
+        <a class="more-long comment-more" href="javascript:;" data-target="/comment/more" data-type="learning" data-source-id="4534" data-page="2">查看更多</a>
+            </div>
+</div>
+<script>
+    $(function () {
+        $('.anonymous-comment').click(function () {
+            $(".join").hide();
+            $(".reg-log textarea").first().removeAttr("disabled").show();
+            $('#use_nickname').val('1');
+//            $('#trigger-nickname').attr('checked', true);
+            $('#trigger-nickname').trigger('click');
+        });
+        //为所有复选框绑定事件
+//        checkbox_on_click();
+        //ajax随机获取昵称
+//        randnicknameajax(0);
+        //ajax检测登录状态
+        comment_check_login();
+    });
+
+
+
+    function input_checkbox(flag) {
+        $('input:checkbox').each(function () {
+            var value = flag ? 1 : 0;
+            $(this).prop('checked', flag);
+            $(this).val(value);
+        });
+    }
+
+//ajax随机获取昵称
+    function randnicknameajax(flag) {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-nickname-url-ajax').val(),
+            data: {limit: 1, flag: flag},
+            dataType: "json",
+            success: function (data) {
+                $('#nick-name').val(data.data[0]);
+                _nick_name=data.data[0];
+            }
+        });
+    }
+    $();
+//ajax检测登录状态
+    function comment_check_login() {
+        $.ajax({
+            type: 'POST',
+            url: $('#post-check-login-url-ajax').val(),
+            data: {},
+            dataType: "json",
+            success: function (data) {
+                if (data.success) {
+                    $('.join').hide();
+                    $(".reg-log textarea").first().removeAttr("disabled").show();
+                    $("#span_use_nickname").show();
+                    $('#use_nickname').val('0');
+                    $('#use_nickname').attr('checked', false);
+                }
+            }
+        });
+    }
+</script>        </div>
+    </div>
+    <div class="side-bar">
+        <div class="mod hot-news">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-hot"></i><span>热门知识</span></h2>
+    </div>
+    <ul class="links-list">
+                                <li><a href="/learning/detail/4515.html" alt="【漏洞预警】dnsmasq: 多个严重漏洞预警" target="_blank">【漏洞预警】dnsmasq: 多个严重...</a></li>
+                                <li><a href="/learning/detail/4526.html" alt="【技术分享】微软 Office Word 无宏命令执行漏洞" target="_blank">【技术分享】微软 Office W...</a></li>
+                                <li><a href="/learning/detail/4530.html" alt="【技术分享】快报！Windows DNS客户端中惊现多重堆缓冲区溢出漏洞" target="_blank">【技术分享】快报！Windows ...</a></li>
+                                <li><a href="/learning/detail/4520.html" alt="【技术分享】揭秘通杀多款趋势科技产品的RCE漏洞" target="_blank">【技术分享】揭秘通杀多款趋势科技产...</a></li>
+                                <li><a href="/learning/detail/4534.html" alt="【技术分享】Lua程序逆向之Luac文件格式分析" target="_blank">【技术分享】Lua程序逆向之Luac...</a></li>
+                                <li><a href="/learning/detail/4531.html" alt="【技术分享】ChromeOS基于eCryptfs的用户数据安全保护机制" target="_blank">【技术分享】ChromeOS基于eCr...</a></li>
+            </ul>
+</div>        <!-- 友情链接 -->
+        <div class="mod blog-links mobile-hide">
+    <div class="head-bar clearfix">
+        <h2><i class="icon icon-link"></i><span>友情链接</span></h2>
+        <a href="/links/index.html" class="more">更多<i></i></a>
+    </div>
+        <ul class="links-list">
+                <li><a href="http://bbs.360safe.com" alt="360安全社区" target="_blank">360安全社区</a></li>
+                <li><a href="http://zhuji.360.cn" alt="360主机卫士" target="_blank">360主机卫士</a></li>
+                <li><a href="http://blogs.360.cn/" alt="奇虎360技术博客" target="_blank">奇虎360技术博客</a></li>
+                <li><a href="http://wangzhan.360.cn/" alt="360网站卫士" target="_blank">360网站卫士</a></li>
+                <li><a href="http://webscan.360.cn/" alt="360网站安全检测" target="_blank">360网站安全检测</a></li>
+                <li><a href="http://research.360.cn/report/" alt="360研究报告" target="_blank">360研究报告</a></li>
+                <li><a href="http://appscan.360.cn/  " alt="360显危镜" target="_blank">360显危镜</a></li>
+                <li><a href="http://unicorn.360.cn/" alt="360 Unicorn Team" target="_blank">360 Unicorn Team</a></li>
+                <li><a href="https://threathunter.org/" alt="ThreatHunter社区" target="_blank">ThreatHunter社区</a></li>
+                <li><a href="http://security.360.cn/" alt="360安全应急响应中心" target="_blank">360安全应急响应中心</a></li>
+            </ul>
+    </div>
+        <!-- 联系我们 -->
+        <div class="mod contact mobile-hide" style="text-align:center">
+    <div class="head-bar clearfix">
+        <h2><i></i><span>关注我们</span></h2>
+    </div>
+    <!-- 微信关注 -->
+    <ul class="contact-way">
+        <li><a>微信关注</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/qrcode_adlab_weixin.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+    <!-- APP下载 -->
+    <ul class="contact-way">
+        <li><a>安全播报APP</a></li>
+    </ul>
+    <div style="padding-left:20px;padding-bottom:15px;">
+    <img src="/img/scan_code_big.png?v=1.1"  width="145px" height="145px;"/>
+    </div>
+    
+</div>
+
+    </div>
+</div>
+
+<script type="text/javascript" src="/js/jquery-ui.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/jquery.noty.packaged.min.js?v=3.0"></script>
+<script type="text/javascript" src="/js/common.js?v=4.5"></script>
+<script>$(function() {sync_count('comment');});</script>
+
+
+<!-- 语法高亮 -->
+<script type="text/javascript" src="/ue/SyntaxHighlighter/shCore.js"></script>
+<script type="text/javascript">SyntaxHighlighter.all();sync_count('vul');sync_count('news');sync_count('learning');sync_count('activity');sync_count('course');sync_count('ctf');</script>
+    </div>
+
+        <div class="footer">
+        <div class="friend-link">
+            <a href="http://www.360.cn/" target="_blank">360首页</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">关于我们</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">联系我们</a>
+            <span>|</span>
+            <a href="/links/index.html" target="_blank">友情链接</a>
+            <span>|</span>
+            <a href="/introduce/index" target="_blank">招贤纳士</a>
+        </div>
+        <div class="copy">
+            Copyright &copy; 360网络攻防实验室 All Rights Reserved <span class="copy_icp">京ICP证080047号[京ICP备08010314号-6]</span>
+        </div>
+    </div>
+    
+</div>
+
+<!--奇舞团统计-->
+
+<script src='https://s.ssl.qhimg.com/static/f5407c785655e6a1/monitor_analytic.js'></script>
+<script>
+    monitor.setProject('QH_171_1').getTrack().getClickAndKeydown().getClickHeatmap(10, 1);
+</script>
+
+<div class="hide">
+    <script src="https://s95.cnzz.com/z_stat.php?id=1253147824&web_id=1253147824" language="JavaScript"></script>
+</div>
+<div class="backToTop_wrap off">
+    <a id="back_to_top" class="backToTop" href="javascript:;" title="返回顶部"></a>
+</div>
+<script>
+    var $backToTop_wrap = $(".backToTop_wrap"),
+        $backToTop_btn = $("#back_to_top");
+
+    if ($(window).scrollTop() > 100) {
+        $backToTop_wrap.removeClass("off");
+    }
+    else {
+        $backToTop_wrap.addClass("off");
+    }
+
+    $(window).on("scroll", function () {
+        if ($(this).scrollTop() > 100) {
+            $backToTop_wrap.removeClass("off");
+        }
+        else {
+            $backToTop_wrap.addClass("off");
+        }
+    });
+
+    $backToTop_btn.on("click", function () {
+        $("html, body").animate({scrollTop: 0}, 120);
+    });
+
+    $(function () {
+        var navlist = $('.nav-list > li');
+
+        navlist.each(function () {
+            $(this).on('mouseenter', function () {
+                $(this).addClass('selected');
+            });
+
+            $(this).on('mouseleave', function () {
+                $(this).removeClass('selected');
+            });
+        });
+    })
+</script>
+
+
+
+</body>
+</html>
